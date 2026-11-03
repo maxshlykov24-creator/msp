@@ -7,11 +7,20 @@ import { getEnv } from "../env.js";
 
 const FINANCE_QUEUE_ROLES = ["finance", "rop", "admin"];
 
-/** Как на фронте canSeeFinanceQueues: финансы + владелец (Максим), даже с ролью logist. */
-function canAccessFinanceQueues(role: string, name?: string): boolean {
-  if (FINANCE_QUEUE_ROLES.includes(role)) return true;
-  const who = (name ?? "").toLowerCase();
-  return who.includes("max") || who.includes("максим");
+export function canAccessFinanceQueues(role: string): boolean {
+  return FINANCE_QUEUE_ROLES.includes(role);
+}
+
+/** В журнал не должны попадать JWT, секрет вебхука и поисковые телефоны. */
+export function safeRequestLog(req: { method: string; url: string; hostname?: string; ip?: string }) {
+  return { method: req.method, url: req.url.split("?")[0], hostname: req.hostname, remoteAddress: req.ip };
+}
+
+export function completedDealEditError(stage: string, role: string, reason?: string): { status: number; message: string } | null {
+  if (!["Успех", "Провал", "Не слив"].includes(stage)) return null;
+  if (!["rop", "admin"].includes(role)) return { status: 403, message: "Завершённую заявку может изменить только РОП или администратор" };
+  if (!reason?.trim()) return { status: 400, message: "Укажите причину изменения завершённой заявки" };
+  return null;
 }
 
 declare module "fastify" {
@@ -19,7 +28,7 @@ declare module "fastify" {
     authenticate: (req: FastifyRequest, reply: FastifyReply) => Promise<void>;
     requireAdmin: (req: FastifyRequest, reply: FastifyReply) => Promise<void>;
     requireRoles: (roles: string[]) => (req: FastifyRequest, reply: FastifyReply) => Promise<void>;
-    /** Очередь Эдвина / счета компаний — finance|rop|admin или Максим. */
+    /** Очередь Эдвина / счета компаний — finance|rop|admin. */
     requireFinanceQueues: (req: FastifyRequest, reply: FastifyReply) => Promise<void>;
   }
 }
@@ -40,11 +49,6 @@ export default fp(async (app) => {
 
   app.decorate("authenticate", async (req: FastifyRequest, reply: FastifyReply) => {
     try {
-      // Поддержка токена и в заголовке, и в query (для WebSocket).
-      const q = req.query as { token?: string } | undefined;
-      if (q?.token && !req.headers.authorization) {
-        req.headers.authorization = `Bearer ${q.token}`;
-      }
       await req.jwtVerify();
     } catch {
       reply.code(401).send({ message: "Не авторизован" });
@@ -78,7 +82,7 @@ export default fp(async (app) => {
   app.decorate("requireFinanceQueues", async (req: FastifyRequest, reply: FastifyReply) => {
     try {
       await req.jwtVerify();
-      if (!canAccessFinanceQueues(req.user.role, req.user.name)) {
+      if (!canAccessFinanceQueues(req.user.role)) {
         reply.code(403).send({ message: "Недостаточно прав для очереди Эдвина" });
       }
     } catch {

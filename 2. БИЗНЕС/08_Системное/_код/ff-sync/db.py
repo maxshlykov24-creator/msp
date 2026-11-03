@@ -172,7 +172,7 @@ def migrate(conn):
     ships = _cols(conn, "shipments")
     fresh = "status_group" not in ships
     for col in (
-        "status_group", "work_state", "accepted_at", "deadline_at", "track", "warehouse", "image",
+        "status_group", "work_state", "accepted_at", "deadline_at", "track", "scanit", "warehouse", "image",
         "supply_ext", "trbx_ext", "archived_at",
         # куда везти задание и его габаритный тип: от них зависит,
         # ПВЗ это или сортировочный центр и нужны ли грузоместа
@@ -1228,7 +1228,7 @@ def upsert_order_log(cabinet_id, ext_order_id, ms_order_id, result, error, creat
 # Поля отправления, которые приходят с площадки. work_state сюда не входит:
 # это наша локальная отметка оператора, и выгрузка её не трогает.
 SHIP_EXTRA = (
-    "status_group", "accepted_at", "deadline_at", "track", "warehouse", "image",
+    "status_group", "accepted_at", "deadline_at", "track", "scanit", "warehouse", "image",
     # куда везти задание и его габаритный тип
     "office", "cargo_type", "pickup_allowed", "items_json",
 )
@@ -1262,7 +1262,7 @@ def upsert_shipment(client_id, cabinet_id, marketplace, kind, ext_id, status, sh
     extra = extra or {}
     conn = connect()
     existing = conn.execute(
-        "SELECT id, pickup_allowed, office, items_json FROM shipments WHERE cabinet_id = ? AND kind = ? AND ext_id = ?",
+        "SELECT id, pickup_allowed, office, items_json, scanit FROM shipments WHERE cabinet_id = ? AND kind = ? AND ext_id = ?",
         (cabinet_id, kind, ext_id),
     ).fetchone()
     # адрес сдачи и флаг ПВЗ приходят не из выгрузки, а от поставки: точку
@@ -1272,6 +1272,8 @@ def upsert_shipment(client_id, cabinet_id, marketplace, kind, ext_id, status, sh
             extra[col] = str(col in existing.keys() and existing[col] or "")
     if 'items_json' not in extra:
         extra['items_json'] = existing['items_json'] if existing else '[]'
+    if existing and not extra.get('scanit'):
+        extra['scanit'] = existing['scanit'] or ''
     more = [str(extra.get(col) or "") for col in SHIP_EXTRA]
     if existing:
         conn.execute(
@@ -1387,6 +1389,23 @@ def list_open_shipments(cabinet_id, kind="", groups=("ready", "shipped")):
     rows = conn.execute(sql + " ORDER BY id", args).fetchall()
     conn.close()
     return rows
+
+
+def set_shipment_scanit(ship_id, scanit):
+    """QR Ozon is an order lookup key, separate from tracking/product/mark codes."""
+    if not isinstance(scanit, str) or not scanit.strip():
+        return 0
+    value = scanit.strip()
+    if len(value) > 512 or any(ord(c) < 32 for c in value):
+        raise ValueError('Ozon: некорректный QR отправления')
+    conn = connect()
+    try:
+        cur = conn.execute("UPDATE shipments SET scanit=? WHERE id=? AND marketplace='ozon' AND kind='fbs' AND coalesce(scanit,'')<>?",
+                           (value, int(ship_id), value))
+        conn.commit()
+        return cur.rowcount
+    finally:
+        conn.close()
 
 
 def set_shipment_status(ship_id, status, status_group, clear_work=False, track=None):
@@ -1926,7 +1945,7 @@ def list_shipments(client_id=None, marketplace="", kind="", marked=None, day_fro
     for row in rows:
         hay = " ".join(
             str(row[k] or "").lower()
-            for k in ("ext_id", "article", "barcode", "name", "status", "client_name")
+            for k in ("ext_id", "article", "barcode", "name", "status", "client_name", "track", "scanit")
         )
         hay += " " + status_label(row["status"]).lower()
         if text in hay:
@@ -2015,7 +2034,7 @@ def _assembly_filters(
             " AND casefold(ifnull(shipments.ext_id,'') || ' ' || ifnull(shipments.article,'') || ' ' || "
             "ifnull(shipments.barcode,'') || ' ' || ifnull(shipments.name,'') || ' ' || "
             "ifnull(shipments.status,'') || ' ' || ifnull(clients.name,'') || ' ' || "
-            "ifnull(shipments.track,'') || ' ' || ifnull(shipments.warehouse,'') || ' ' || ifnull(shipments.items_json,'')) LIKE ?"
+            "ifnull(shipments.track,'') || ' ' || ifnull(shipments.scanit,'') || ' ' || ifnull(shipments.warehouse,'') || ' ' || ifnull(shipments.items_json,'')) LIKE ?"
         )
         args.append("%" + text + "%")
     return sql, args

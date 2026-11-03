@@ -640,6 +640,7 @@ def save_lot_product(lot_id, data, actor):
             snapshot = fetch_snapshot()
             snapshot['receipt_transfers'] = json.loads(get_setting('ledger:receipt_transfers') or '[]')
             snapshot['late_receipts'] = json.loads(get_setting('ledger:late_receipts') or '[]')
+            snapshot['independent_scopes'] = json.loads(get_setting('ledger:independent_scopes') or '[]')
             if any(snapshot['products'][pid][key] != value for key, value in desired.items()):
                 raise ValueError('Карточка изменилась во время сверки. Проверь её значения.')
             snapshot_verified = True
@@ -647,14 +648,11 @@ def save_lot_product(lot_id, data, actor):
         except Exception as exc:
             set_setting('ledger:last_error', str(exc)[:500])
             if snapshot_verified:
-                from accept import sync_transfer_scope
+                from accept import sync_transfer_scope, independent_scopes
                 from db import get_lot
                 party = get_client_by_id(get_lot(lot_id)['client_id'])['ms_counterparty_id']
-                scopes = [{r[k]['party'] for k in ('source_before', 'destination')}
-                          for r in snapshot.get('receipt_transfers', [])]
-                scopes += [{r['party']} for r in snapshot.get('late_receipts', [])]
                 current_result = None
-                for scope in {tuple(sorted(s)) for s in scopes}:
+                for scope in independent_scopes(snapshot):
                     try:
                         result = sync_transfer_scope(snapshot, groups, set(scope), billing_locked=True)
                         if party in scope:

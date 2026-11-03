@@ -80,4 +80,14 @@ class LateReceipt(unittest.TestCase):
  def test_duplicate_rule_rejected(self):
   self.s['late_receipts'].append(self.rule)
   with self.assertRaises(ValueError):a.build_plan(self.s,[])
+class IndependentScopes(unittest.TestCase):
+ def test_registered_client(self):
+  self.assertEqual(a.independent_scopes({'parties':{'gay':{}},'independent_scopes':[['gay']]}),{('gay',)})
+ def test_unknown_client_blocked(self):
+  with self.assertRaises(ValueError):a.independent_scopes({'parties':{},'independent_scopes':[['missing']]})
+ def test_overlap_blocked(self):
+  s={'parties':{'wb':{},'ozon':{}},'receipt_transfers':[{'source_before':{'party':'wb'},'destination':{'party':'ozon'}}],'independent_scopes':[['wb']]}
+  with self.assertRaises(ValueError):a.independent_scopes(s)
+ def test_default_no_added_scope(self):
+  self.assertEqual(a.independent_scopes({'parties':{}}),set())
 unittest.main()

@@ -79,10 +79,20 @@ def pause():
     _last = time.time()
 
 
-def fbs_list_paused():
+def fbs_pause_key(headers=None):
+    import hashlib
+    if not headers:
+        return FBS_LIST_PAUSE_KEY
+    seller = str(headers.get('Client-Id') or headers.get('Client-ID') or '')
+    if not seller:
+        seller = str(headers.get('Api-Key') or '')
+    return FBS_LIST_PAUSE_KEY + ':' + hashlib.sha256(seller.encode()).hexdigest()
+
+
+def fbs_list_paused(headers=None):
     from db import get_setting
 
-    raw = get_setting(FBS_LIST_PAUSE_KEY) or ""
+    raw = get_setting(fbs_pause_key(headers)) or ""
     if not raw:
         return False
     try:
@@ -94,7 +104,7 @@ def fbs_list_paused():
     return datetime.now(timezone.utc) < until
 
 
-def pause_fbs_list(response=None):
+def pause_fbs_list(response=None, headers=None):
     from db import set_setting
 
     seconds = FBS_LIST_PAUSE_SECONDS
@@ -110,18 +120,19 @@ def pause_fbs_list(response=None):
         elif remaining == "0":
             seconds = 1800
     until = datetime.now(timezone.utc) + timedelta(seconds=seconds)
-    set_setting(FBS_LIST_PAUSE_KEY, until.strftime("%Y-%m-%dT%H:%M:%SZ"))
+    set_setting(fbs_pause_key(headers), until.strftime("%Y-%m-%dT%H:%M:%SZ"))
     body = ""
     if response is not None:
         body = (response.text or "").replace("\n", " ")[:160]
     print("Ozon список на паузе %s с, ответ: %s" % (seconds, body), flush=True)
 
 
-def clear_fbs_list_pause():
+def clear_fbs_list_pause(headers=None):
     from db import get_setting, set_setting
 
-    if get_setting(FBS_LIST_PAUSE_KEY):
-        set_setting(FBS_LIST_PAUSE_KEY, "")
+    key = fbs_pause_key(headers)
+    if get_setting(key):
+        set_setting(key, "")
 
 
 def req(method, url, headers=None, retry_safe=True, **kw):
@@ -157,7 +168,7 @@ def req(method, url, headers=None, retry_safe=True, **kw):
             # Повтор сразу продлевает отказ. Список после этого молчит полчаса.
             print("%s %s → 429" % (method, url), flush=True)
             if "/posting/fbs/list" in url:
-                pause_fbs_list(last)
+                pause_fbs_list(last, headers=headers)
             return last
         if last.status_code >= 500:
             print("%s %s → %s (попытка %s)" % (method, url, last.status_code, attempt))
@@ -167,6 +178,31 @@ def req(method, url, headers=None, retry_safe=True, **kw):
     if broke is not None:
         raise broke
     return last
+
+
+def wb_read(method, url, **kwargs):
+    """Bounded 429 retry for explicitly read-only WB methods, never mutations."""
+    import math
+    allowed_post = ('/api/v3/orders/status', '/api/marketplace/v3/orders/meta')
+    if not url.startswith(WB_BASE + '/') or method not in ('GET', 'POST') or (method == 'POST' and not url.endswith(allowed_post)):
+        raise ValueError('WB retry is restricted to read-only methods')
+    for attempt in range(4):
+        response = req(method, url, **kwargs)
+        if response.status_code != 429 or attempt == 3:
+            return response
+        values = [response.headers.get(k) for k in ('Retry-After', 'X-Ratelimit-Retry', 'X-Ratelimit-Reset')]
+        waits = []
+        for value in values:
+            try:
+                number = float(value)
+                if math.isfinite(number) and number > 0:
+                    waits.append(number)
+            except (TypeError, ValueError):
+                pass
+        delay = max(waits or [15 * (attempt + 1)])
+        if delay > 60:
+            return response
+        time.sleep(max(1, delay))
 
 
 def ms_headers():

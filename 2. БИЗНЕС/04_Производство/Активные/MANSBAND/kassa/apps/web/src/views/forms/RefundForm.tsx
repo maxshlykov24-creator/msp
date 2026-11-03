@@ -20,7 +20,7 @@ import {
 import { STORE_ADDRESS } from "../../data/mock";
 import { money } from "../../lib/format";
 import type { CartItem, Deal } from "../../data/types";
-import { USE_MOCK } from "../../api/client";
+import { api, USE_MOCK } from "../../api/client";
 
 export function RefundForm({
   onDone,
@@ -34,8 +34,8 @@ export function RefundForm({
   embedded?: boolean;
 }) {
   const { activeStore, activeConsultant, addDeal, addQueueItem, nextNumber, deals } = useStore();
-  const { saved, setSaved, toast } = useSaved();
-  const [meta] = useState(() => ({ number: nextNumber(), createdAt: new Date().toISOString() }));
+  const { saved, saving, runSave, toast } = useSaved();
+  const [meta] = useState(() => ({ id: crypto.randomUUID(), number: nextNumber(), createdAt: new Date().toISOString() }));
 
   const [consultants, setConsultants] = useState<ConsultantData>({
     consultant: activeConsultant,
@@ -44,6 +44,8 @@ export function RefundForm({
   const [clientName, setClientName] = useState(sourceDeal?.clientName ?? "");
   const [clientPhone, setClientPhone] = useState(sourceDeal?.clientPhone ?? "");
   const [source, setSource] = useState<Deal | null>(() => sourceDeal ?? null);
+  const [sourceError, setSourceError] = useState("");
+  const [sourceLoading, setSourceLoading] = useState(!!sourceDeal && !USE_MOCK);
   const [unlinked, setUnlinked] = useState(false);
   const [items, setItems] = useState<CartItem[]>([]);
 
@@ -54,13 +56,24 @@ export function RefundForm({
 
   // Исходная подтянулась асинхронно (NewDeal fetch) — подставляем.
   useEffect(() => {
-    if (sourceDeal) setSource(sourceDeal);
+    if (!sourceDeal) return;
+    if (USE_MOCK) { setSource(sourceDeal); return; }
+    let cancelled = false;
+    setSourceLoading(true);
+    setSourceError("");
+    api.get<Deal>(`/deals/${sourceDeal.number}/return-items`)
+      .then(row => { if (!cancelled) setSource(row); })
+      .catch(err => { if (!cancelled) setSourceError(err instanceof Error ? err.message : "Не удалось проверить возврат"); })
+      .finally(() => { if (!cancelled) setSourceLoading(false); });
+    return () => { cancelled = true; };
   }, [sourceDeal]);
 
   const refundAmount = cartTotal(items);
   const phoneDigits = clientPhone.replace(/\D/g, "");
 
   const missingRequired = [
+    sourceLoading && "Проверка исходной продажи",
+    sourceError,
     !source && !unlinked && "Исходная заявка",
     unlinked && !clientName.trim() && "Имя клиента",
     unlinked && phoneDigits.length < 10 && "Телефон клиента",
@@ -70,49 +83,49 @@ export function RefundForm({
   const baseFilled = missingRequired.length === 0;
 
   function save(s: string) {
-    if (!source && !unlinked) return;
-    addDeal({
-      id: crypto.randomUUID(),
-      number: meta.number,
-      createdAt: meta.createdAt,
-      funnel: "return",
-      kind: "refund",
-      consultant: consultants.consultant,
-      clientName: source?.clientName || clientName.trim() || "Клиент",
-      clientPhone: source?.clientPhone || clientPhone,
-      store: activeStore,
-      storeAddress: STORE_ADDRESS[activeStore],
-      channel: source?.channel,
-      purpose: source?.purpose,
-      linkedDealNumber: source?.number,
-      items: items.map((it) => ({
-        ...it,
-        price: -Math.abs(it.price),
-        isReturn: true,
-      })),
-      payments: [],
-      stage: s,
-      comment,
-      ...returnDealFields(refundAmount, returnInfo),
-      total: -refundAmount,
-      paid: 0,
-    });
-    if (USE_MOCK && returnInfo.status === "pending") {
-      addQueueItem({
-        id: crypto.randomUUID(),
-        kind: "refund",
-        dealNumber: meta.number,
-        client: source?.clientName || clientName.trim() || "Клиент",
-        amount: refundAmount,
-        destination: returnInfo.destination,
-        status: "pending",
-        issuedAmount: 0,
-        payouts: [],
+    void runSave(async () => {
+      if (!source && !unlinked) return;
+      await addDeal({
+        id: meta.id,
+        number: meta.number,
         createdAt: meta.createdAt,
+        funnel: "return",
+        kind: "refund",
+        consultant: consultants.consultant,
+        clientName: source?.clientName || clientName.trim() || "Клиент",
+        clientPhone: source?.clientPhone || clientPhone,
+        store: activeStore,
+        storeAddress: STORE_ADDRESS[activeStore],
+        channel: source?.channel,
+        purpose: source?.purpose,
+        linkedDealNumber: source?.number,
+        items: items.map((it) => ({
+          ...it,
+          price: -Math.abs(it.price),
+          isReturn: true,
+        })),
+        payments: [],
+        stage: s,
+        comment,
+        ...returnDealFields(refundAmount, returnInfo),
+        total: -refundAmount,
+        paid: 0,
       });
-    }
-    setSaved(true);
-    setTimeout(onDone, 1100);
+      if (USE_MOCK && returnInfo.status === "pending") {
+        addQueueItem({
+          id: crypto.randomUUID(),
+          kind: "refund",
+          dealNumber: meta.number,
+          client: source?.clientName || clientName.trim() || "Клиент",
+          amount: refundAmount,
+          destination: returnInfo.destination,
+          status: "pending",
+          issuedAmount: 0,
+          payouts: [],
+          createdAt: meta.createdAt,
+        });
+      }
+    }, onDone);
   }
 
   return (
@@ -130,7 +143,7 @@ export function RefundForm({
           stage={stage === "Взято в работу" ? "Успех" : stage}
           onStageChange={setStage}
           onSave={save}
-          saved={saved}
+          saved={saved || saving}
           disabled={!baseFilled}
           successStage="Успех"
           successDisabled={!baseFilled}
@@ -177,7 +190,7 @@ export function RefundForm({
       {(source || unlinked) && (
         <Card>
           <SectionTitle>Позиции к возврату</SectionTitle>
-          {source && source.items.some((item) => !item.isReturn && item.price >= 0) ? (
+          {source ? (
           <ReturnItemsSelector
             original={source.items.filter((item) => !item.isReturn && item.price >= 0)}
             selected={items}

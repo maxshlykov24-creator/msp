@@ -20,8 +20,8 @@ import { Hint, useHints } from "../../lib/hints";
 export function SlivForm({ onDone, onBack = onDone }: { onDone: () => void; onBack?: () => void }) {
   const { enabled: hintsOn } = useHints();
   const { activeStore, activeConsultant, addDeal, nextNumber } = useStore();
-  const { saved, setSaved, toast } = useSaved();
-  const [meta] = useState(() => ({ number: nextNumber(), createdAt: new Date().toISOString() }));
+  const { saved, saving, runSave, toast } = useSaved();
+  const [meta] = useState(() => ({ id: crypto.randomUUID(), number: nextNumber(), createdAt: new Date().toISOString() }));
 
   const [consultants, setConsultants] = useState<ConsultantData>({ consultant: activeConsultant, referredBy: "" });
   const [client, setClient] = useState<ClientData>({ name: "", phone: "", channel: "", purpose: "" });
@@ -46,28 +46,28 @@ export function SlivForm({ onDone, onBack = onDone }: { onDone: () => void; onBa
   const baseFilled = missingRequired.length === 0;
 
   function save(s: string) {
-    addDeal({
-      id: crypto.randomUUID(),
-      number: meta.number,
-      createdAt: meta.createdAt,
-      funnel: "offline",
-      kind: "sliv",
-      consultant: consultants.consultant,
-      referredBy: consultants.referredBy || undefined,
-      clientName: client.name || "Клиент (слив)",
-      clientPhone: client.phone,
-      store: activeStore,
-      storeAddress: STORE_ADDRESS[activeStore],
-      meetingDate: meetingDate || undefined,
-      items: [],
-      payments: [],
-      stage: s,
-      comment,
-      total: 0,
-      paid: 0,
-    });
-    setSaved(true);
-    setTimeout(onDone, 1100);
+    void runSave(async () => {
+      await addDeal({
+        id: meta.id,
+        number: meta.number,
+        createdAt: meta.createdAt,
+        funnel: "offline",
+        kind: "sliv",
+        consultant: consultants.consultant,
+        referredBy: consultants.referredBy || undefined,
+        clientName: client.name || "Клиент (слив)",
+        clientPhone: client.phone,
+        store: activeStore,
+        storeAddress: STORE_ADDRESS[activeStore],
+        meetingDate: meetingDate || undefined,
+        items: [],
+        payments: [],
+        stage: s,
+        comment,
+        total: 0,
+        paid: 0,
+      });
+    }, onDone);
   }
 
   return (
@@ -84,7 +84,7 @@ export function SlivForm({ onDone, onBack = onDone }: { onDone: () => void; onBa
           stage={stage}
           onStageChange={setStage}
           onSave={save}
-          saved={saved}
+          saved={saved || saving}
           disabled={!baseFilled}
         />
       }

@@ -125,7 +125,7 @@ interface ExpenseSplitRow {
 export function EdwinQueue() {
   const { queue, issueQueueItem, reopenQueueItem, deals } = useStore();
   const { user } = useAuth();
-  const allowed = canSeeFinanceQueues(user?.role, user?.login, user?.name);
+  const allowed = canSeeFinanceQueues(user?.role);
   const rows = queue as unknown as ExtendedQueueItem[];
   const [kind, setKind] = useState("all");
   const [status, setStatus] = useState("pending");

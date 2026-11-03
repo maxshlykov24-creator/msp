@@ -6,7 +6,12 @@ import { handleAmoWebhook } from "../services/amoWebhook.js";
 
 // Входящие вебхуки из amoCRM и МойСклад. Проверка простого секрета в query (?secret=).
 
-export default async function webhooksRoutes(app: FastifyInstance) {
+export default async function webhooksRoutes(app: FastifyInstance, dependencies: {
+  handleAmoWebhook?: typeof handleAmoWebhook;
+  syncCatalog?: typeof syncCatalog;
+} = {}) {
+  const handleAmo = dependencies.handleAmoWebhook ?? handleAmoWebhook;
+  const synchronizeCatalog = dependencies.syncCatalog ?? syncCatalog;
   const env = getEnv();
 
   // amo шлёт application/x-www-form-urlencoded — без парсера body пустой.
@@ -26,7 +31,7 @@ export default async function webhooksRoutes(app: FastifyInstance) {
   app.post("/webhooks/amo", async (req, reply) => {
     if (!checkSecret(req)) return reply.code(403).send({ message: "forbidden" });
     try {
-      const result = await handleAmoWebhook(req.body);
+      const result = await handleAmo(req.body);
       for (const row of result.results) {
         if (!row.dealNumber || row.skipped === "stage_unchanged") continue;
         broadcast("deal.updated", { source: "amo", number: row.dealNumber });
@@ -39,22 +44,25 @@ export default async function webhooksRoutes(app: FastifyInstance) {
       return result;
     } catch (err) {
       req.log.error({ err }, "amo webhook failed");
-      // amo ретраит 5xx — отвечаем 200 после логирования, чтобы не зациклить,
-      // но только если секрет верный (уже проверили).
+      // Сбой нельзя подтверждать: отправитель должен повторить событие.
       broadcast("deal.updated", { source: "amo", error: true });
-      return reply.code(200).send({
+      return reply.code(503).send({
         ok: false,
-        message: err instanceof Error ? err.message : "webhook error",
+        message: "Не удалось обработать событие amoCRM",
       });
     }
   });
 
   app.post("/webhooks/ms", async (req, reply) => {
     if (!checkSecret(req)) return reply.code(403).send({ message: "forbidden" });
-    // Изменение товара/остатков в МойСклад → обновляем кэш каталога в фоне.
-    syncCatalog()
-      .then(() => broadcast("catalog.updated", { source: "ms" }))
-      .catch(() => {});
-    return { ok: true };
+    try {
+      // Подтверждаем событие только после обновления каталога и остатков.
+      await synchronizeCatalog();
+      broadcast("catalog.updated", { source: "ms" });
+      return { ok: true };
+    } catch (err) {
+      req.log.error({ err }, "ms webhook failed");
+      return reply.code(503).send({ ok: false, message: "Не удалось обновить каталог МойСклад" });
+    }
   });
 }

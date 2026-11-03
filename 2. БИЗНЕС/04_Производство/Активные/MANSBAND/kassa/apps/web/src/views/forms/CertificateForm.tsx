@@ -56,8 +56,8 @@ export function CertificateForm({
   digital?: boolean;
 }) {
   const { activeStore, activeConsultant, addDeal, nextNumber, certificates } = useStore();
-  const { saved, setSaved, toast } = useSaved();
-  const [meta] = useState(() => ({ number: nextNumber(), createdAt: new Date().toISOString() }));
+  const { saved, saving, runSave, toast } = useSaved();
+  const [meta] = useState(() => ({ id: crypto.randomUUID(), number: nextNumber(), createdAt: new Date().toISOString() }));
 
   const [consultants, setConsultants] = useState<ConsultantData>({
     consultant: activeConsultant,
@@ -131,46 +131,46 @@ export function CertificateForm({
   const canSave = missingRequired.length === 0;
 
   function save(s: string) {
-    const certLine: CartItem = {
-      productId: "cert",
-      name: `Сертификат №${certNumber}`,
-      price: certNominal,
-      qty: 1,
-    };
-    addDeal({
-      id: crypto.randomUUID(),
-      number: meta.number,
-      createdAt: meta.createdAt,
-      funnel: digital ? "online" : "offline",
-      kind: digital ? "cert_digital" : "cert_plastic",
-      consultant: consultants.consultant,
-      referredBy: consultants.referredBy || undefined,
-      callManager: digital ? DEFAULT_CALL_MANAGER : undefined,
-      clientName: client.name,
-      clientPhone: client.phone,
-      recipientPhone: digital ? recipientPhone : undefined,
-      certificateGreeting: digital ? certificateGreeting : undefined,
-      store: activeStore,
-      storeAddress: STORE_ADDRESS[activeStore],
-      channel: client.channel,
-      guestName: guest,
-      certificateNumber: certNumber,
-      receivedAt,
-      validUntil,
-      paymentDate: lastPaymentDate(payments),
-      items: [certLine, ...items],
-      payments,
-      stage: s,
-      comment,
-      checkDiscount: discount || undefined,
-      ...tipsDealFields(tips, change),
-      ...changeDealFields(Math.max(0, change - (tips.amount || 0)), changeInfo),
-      photoAttached: digital ? undefined : photos.length > 0,
-      total,
-      paid,
-    }, digital ? undefined : attachmentsToUpload(photos));
-    setSaved(true);
-    setTimeout(onDone, 1100);
+    void runSave(async () => {
+      const certLine: CartItem = {
+        productId: "cert",
+        name: `Сертификат №${certNumber}`,
+        price: certNominal,
+        qty: 1,
+      };
+      await addDeal({
+        id: meta.id,
+        number: meta.number,
+        createdAt: meta.createdAt,
+        funnel: digital ? "online" : "offline",
+        kind: digital ? "cert_digital" : "cert_plastic",
+        consultant: consultants.consultant,
+        referredBy: consultants.referredBy || undefined,
+        callManager: digital ? DEFAULT_CALL_MANAGER : undefined,
+        clientName: client.name,
+        clientPhone: client.phone,
+        recipientPhone: digital ? recipientPhone : undefined,
+        certificateGreeting: digital ? certificateGreeting : undefined,
+        store: activeStore,
+        storeAddress: STORE_ADDRESS[activeStore],
+        channel: client.channel,
+        guestName: guest,
+        certificateNumber: certNumber,
+        receivedAt,
+        validUntil,
+        paymentDate: lastPaymentDate(payments),
+        items: [certLine, ...items],
+        payments,
+        stage: s,
+        comment,
+        checkDiscount: discount || undefined,
+        ...tipsDealFields(tips, change),
+        ...changeDealFields(Math.max(0, change - (tips.amount || 0)), changeInfo),
+        photoAttached: digital ? undefined : photos.length > 0,
+        total,
+        paid,
+      }, digital ? undefined : attachmentsToUpload(photos));
+    }, onDone);
   }
 
   return (
@@ -188,7 +188,7 @@ export function CertificateForm({
           stage={stage}
           onStageChange={setStage}
           onSave={save}
-          saved={saved}
+          saved={saved || saving}
           disabled={!canSave}
         />
       }

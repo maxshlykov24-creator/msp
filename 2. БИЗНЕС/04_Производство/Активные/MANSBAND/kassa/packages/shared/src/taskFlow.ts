@@ -437,3 +437,26 @@ export function taskKindsForRole(role: TaskAssigneeRole): TaskKind[] {
   }).map((rule) => rule.kind);
   return [...new Set(kinds)];
 }
+
+/** Только выдача товара может быть основанием возврата. У обмена возвращаются новые позиции. */
+export function isReturnSource(deal: Pick<Deal, "stage" | "kind">): boolean {
+  return deal.stage === "Успех" && ["sale", "company", "delivery", "exchange"].includes(deal.kind);
+}
+
+/** Учитываем возвраты и обмены, включая ссылки по номеру amoCRM. */
+export function returnableItems(source: Deal, returns: Deal[]): Deal["items"] {
+  const returned = new Map<string, number>();
+  for (const prior of returns) {
+    if (prior.stage !== "Успех" || !["refund", "exchange"].includes(prior.kind)) continue;
+    if (prior.linkedDealNumber !== source.number && (!source.amoLeadId || prior.linkedDealNumber !== source.amoLeadId)) continue;
+    for (const item of prior.items) {
+      if (prior.kind === "exchange" && !item.isReturn) continue;
+      returned.set(item.productId, (returned.get(item.productId) ?? 0) + item.qty);
+    }
+  }
+  return source.items.filter(item => !item.isReturn && item.price >= 0).flatMap(item => {
+    const used = Math.min(item.qty, returned.get(item.productId) ?? 0);
+    returned.set(item.productId, Math.max(0, (returned.get(item.productId) ?? 0) - used));
+    return used < item.qty ? [{ ...item, qty: item.qty - used }] : [];
+  });
+}

@@ -39,8 +39,8 @@ const COMPANY_CREATE_STAGES = ["Дано обещание", "Ждет товар
 
 export function CompanyForm({ onDone, onBack = onDone }: { onDone: () => void; onBack?: () => void }) {
   const { activeStore, activeConsultant, addDeal, nextNumber } = useStore();
-  const { saved, setSaved, toast } = useSaved();
-  const [meta] = useState(() => ({ number: nextNumber(), createdAt: new Date().toISOString() }));
+  const { saved, setSaved, saving, runSave, toast } = useSaved();
+  const [meta] = useState(() => ({ id: crypto.randomUUID(), number: nextNumber(), createdAt: new Date().toISOString() }));
   const [dealId] = useState(() => crypto.randomUUID());
   const persistedRef = useRef<number | null>(null);
   const [persistedNumber, setPersistedNumber] = useState<number | null>(null);
@@ -141,14 +141,12 @@ export function CompanyForm({ onDone, onBack = onDone }: { onDone: () => void; o
   }
 
   function save(s: string) {
-    if (persistedRef.current != null) {
-      setSaved(true);
-      setTimeout(onDone, 1100);
-      return;
-    }
-    void addDeal(buildDeal(s)).then((savedDeal) => rememberDeal(savedDeal.number));
-    setSaved(true);
-    setTimeout(onDone, 1100);
+    void runSave(async () => {
+      if (persistedRef.current != null) {
+        return;
+      }
+      await addDeal(buildDeal(s)).then((savedDeal) => rememberDeal(savedDeal.number));
+    }, onDone);
   }
 
   async function ensureDealForMove() {
@@ -180,7 +178,7 @@ export function CompanyForm({ onDone, onBack = onDone }: { onDone: () => void; o
           stage={stage}
           onStageChange={setStage}
           onSave={save}
-          saved={saved}
+          saved={saved || saving}
           disabled={!baseFilled}
         />
       }

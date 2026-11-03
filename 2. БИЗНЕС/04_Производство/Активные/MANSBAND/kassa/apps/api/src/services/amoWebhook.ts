@@ -55,7 +55,7 @@ export function parseAmoWebhookBody(raw: unknown): Record<string, unknown> {
 
 function setFormPath(root: Record<string, unknown>, path: string, value: string): void {
   const keys = [...path.matchAll(/([^[\]]+)/g)].map((m) => m[1]!);
-  if (keys.length === 0) return;
+  if (keys.length === 0 || keys.some(key => ["__proto__", "constructor", "prototype"].includes(key))) return;
   let cur: unknown = root;
   for (let i = 0; i < keys.length - 1; i++) {
     const k = keys[i]!;

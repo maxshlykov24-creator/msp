@@ -23,7 +23,7 @@ from db import (
     set_shipment_supply,
     upsert_shipment,
 )
-from net import OZON_BASE, WB_BASE, ozon_headers, req, wb_headers
+from net import OZON_BASE, WB_BASE, ozon_headers, req, wb_headers, wb_read
 from orders_pull import WB_FBS_WAREHOUSES, filter_wb_fbs, moment_of, ozon_list, pull_wb_fbo, pull_wb_fbs, since_days
 
 MSK = timezone(timedelta(hours=3))
@@ -233,7 +233,7 @@ def wb_statuses(token, order_ids, strict=False):
             continue
     for i in range(0, len(ids), 1000):
         try:
-            r = req(
+            r = wb_read(
                 "POST",
                 WB_BASE + "/api/v3/orders/status",
                 headers=wb_headers(token),
@@ -271,7 +271,7 @@ def wb_meta(token, order_ids):
     for i in range(0, len(ids), 100):
         chunk = ids[i : i + 100]
         try:
-            r = req(
+            r = wb_read(
                 "POST",
                 WB_BASE + "/api/marketplace/v3/orders/meta",
                 headers=wb_headers(token),
@@ -324,6 +324,32 @@ def ozon_marks(detail):
 
 
 ACTIVE = (statuses_mod.NEW, statuses_mod.ASSEMBLING, statuses_mod.READY)
+
+
+def stage_wb_new(client, cab, orders):
+    """Persist only unseen orders confirmed by orders/new before history is read.
+
+    Existing orders and operator work states are left for the normal status
+    reconciliation. This never creates MoySklad documents or guessed marks.
+    """
+    orders = filter_wb_fbs(client, orders)
+    ids = [str(o.get('id') or '') for o in orders if isinstance(o, dict)]
+    if len(ids) != len(orders) or len(ids) != len(set(ids)) or any(not i.isdigit() or int(i) <= 0 for i in ids):
+        raise RuntimeError('WB новые: неверные или повторяющиеся номера заданий')
+    known = map_shipments(cab['id'], 'fbs')
+    saved = 0
+    for order, ext in zip(orders, ids):
+        if ext in known:
+            continue
+        article = order.get('article') or ''
+        barcode = (order.get('skus') or [''])[0]
+        cat = catalog_of(client['id'], barcode, article)
+        saved += save_row(client, cab, 'fbs', ext, statuses_mod.wb_text('new', 'waiting'),
+            day_of(order.get('createdAt')), article, barcode, cat['name'] or article, 1, None,
+            extra={'status_group': statuses_mod.NEW, 'accepted_at': stamp_of(order.get('createdAt')),
+                   'warehouse': WB_FBS_WAREHOUSES.get(client['ms_counterparty_id'] if 'ms_counterparty_id' in client.keys() else None, {}).get(str(order.get('warehouseId') or ''), ''),
+                   'image': cat['image'], 'cargo_type': str(order.get('cargoType') or '')})
+    return saved
 
 
 def handle_wb_fbs(client, cab, orders, status_cache=None):
@@ -478,6 +504,8 @@ def same_ozon(row, post):
     track = post.get("tracking_number")
     if track and str(track) != (row["track"] or ""):
         return False
+    if post.get('scanit') and str(post['scanit']) != (dict(row).get('scanit') or ''):
+        return False
     saved = json.loads(dict(row).get('items_json') or '[]')
     if not saved:
         return False
@@ -510,7 +538,7 @@ def handle_ozon(client, cab, kind, postings, headers, status_cache=None):
         elif row is not None and same_ozon(row, post):
             # ни статус, ни трек не менялись — строку не перезаписываем
             if status_cache is not None:
-                status_cache[ext_id] = {k: post.get(k) for k in ('posting_number', 'status', 'tracking_number')}
+                status_cache[ext_id] = {k: post.get(k) for k in ('posting_number', 'status', 'tracking_number', 'scanit')}
             continue
         items = ozon_items(client, cab, detail.get('products') or post.get('products'))
         if str(detail.get('posting_number') or '') != ext_id:
@@ -534,7 +562,8 @@ def handle_ozon(client, cab, kind, postings, headers, status_cache=None):
             raise RuntimeError("Ozon: неизвестный или пустой статус, прежние данные сохранены")
         if status_cache is not None:
             status_cache[ext_id] = {'posting_number': ext_id, 'status': raw_status,
-                                    'tracking_number': detail.get('tracking_number') or post.get('tracking_number')}
+                                    'tracking_number': detail.get('tracking_number') or post.get('tracking_number'),
+                                    'scanit': detail.get('scanit') or post.get('scanit')}
         method = detail.get("delivery_method") or post.get("delivery_method") or {}
         if not isinstance(method, dict):
             method = {}
@@ -558,6 +587,7 @@ def handle_ozon(client, cab, kind, postings, headers, status_cache=None):
                 # крайний срок отгрузки: до него отправление надо собрать и сдать
                 "deadline_at": ozon_stamp(detail.get("shipment_date") or post.get("shipment_date")),
                 "track": detail.get("tracking_number") or post.get("tracking_number") or "",
+                "scanit": detail.get('scanit') or post.get('scanit') or '',
                 "warehouse": method.get("warehouse") or "",
                 "image": items[0]['image'],
                 "items_json": json.dumps(items, ensure_ascii=False),
@@ -657,12 +687,20 @@ def _run(days, client_id=None, fbs_only=False, status_cache=None):
         if not client or cab["marketplace"] not in ("wb", "ozon"):
             continue
         for kind in (("fbs",) if fbs_only else ("fbs", "fbo")):
+            fresh_saved = 0
             try:
                 cached = status_cache.setdefault(cab["id"], {}) if status_cache is not None and kind == "fbs" else None
                 if cab["marketplace"] == "wb":
                     pull = pull_wb_fbs if kind == "fbs" else pull_wb_fbo
                     handler = handle_wb_fbs if kind == "fbs" else handle_wb_fbo
-                    rows = pull(cab["token"], start, strict=True)
+                    if kind == 'fbs':
+                        def save_new(rows):
+                            nonlocal fresh_saved
+                            fresh_saved = stage_wb_new(client, cab, rows)
+                            record_sync(cab['id'], 'fbs_new', count=len(rows))
+                        rows = pull(cab['token'], start, strict=True, on_new=save_new)
+                    else:
+                        rows = pull(cab["token"], start, strict=True)
                     n = handler(client, cab, rows, status_cache=cached) if cached is not None else handler(client, cab, rows)
                 else:
                     headers = ozon_headers(cab["client_id_ext"], cab["token"])
@@ -675,6 +713,9 @@ def _run(days, client_id=None, fbs_only=False, status_cache=None):
                 record_sync(cab["id"], kind, count=len(rows))
                 notes.append("%s %s %s: %s отправлений" % (client["name"], cab["marketplace"], kind, n))
             except Exception as exc:
+                created += fresh_saved
+                if fresh_saved:
+                    notes.append('%s: новых заданий WB сохранено %s; история не завершена' % (client['name'], fresh_saved))
                 err = str(exc) if isinstance(exc, RuntimeError) else type(exc).__name__
                 record_sync(cab["id"], kind, error=err)
                 errors.append("%s %s %s: %s" % (client["name"], cab["marketplace"], kind, err))

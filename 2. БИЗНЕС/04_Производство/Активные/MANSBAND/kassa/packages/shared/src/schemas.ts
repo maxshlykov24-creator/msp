@@ -171,6 +171,7 @@ export const updateDealSchema = z
 /** Конвейер продажи компании: счёт и оплата от Эдвина, документы и ателье от Миши. */
 export const companyStatusSchema = z
   .object({
+    reason: z.string().trim().max(1000).optional(),
     invoiceNo: z.string().min(1).max(64).optional(),
     invoiceDate: z.string().min(1).max(32).optional(),
     invoiceStatus: z.enum(["draft", "awaiting_payment", "paid"]).optional(),
@@ -185,6 +186,7 @@ export const companyStatusSchema = z
 /** Выдача клиенту: товар и документы консультант отмечает из карточки заявки. */
 export const companyHandoverSchema = z
   .object({
+    reason: z.string().trim().max(1000).optional(),
     issued: z.boolean().optional(),
     documentsHanded: z.boolean().optional(),
   })
@@ -195,6 +197,7 @@ export const companyHandoverSchema = z
 /** Смена типа отложки/обещания без смены номера заявки (п.1.1 правок 10.08). */
 export const convertKindSchema = z
   .object({
+    reason: z.string().trim().max(1000).optional(),
     kind: z.enum(["sale", "company", "rental", "delivery", "deferred", "promise"]),
     deliveryCity: z.string().max(500).optional(),
     companyName: z.string().optional(),
@@ -425,6 +428,11 @@ export const createDealSchema = z
   })
   .passthrough()
   .superRefine((v, ctx) => {
+    if (v.kind === "no_sliv") {
+      if (!v.clientName.trim()) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["clientName"], message: "Укажите имя клиента" });
+      if (v.clientPhone.replace(/\D/g, "").length < 10) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["clientPhone"], message: "Укажите телефон клиента целиком" });
+      if (!v.comment?.trim()) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["comment"], message: "Укажите комментарий" });
+    }
     const holdError = holdStageError(v as unknown as Deal);
     if (holdError) ctx.addIssue({ code: z.ZodIssueCode.custom, message: holdError });
     if (!v.idempotencyKey && !v.id) {

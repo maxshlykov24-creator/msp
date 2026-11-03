@@ -1,3 +1,4 @@
+import { validateReturnItems } from "./deals.routes.js";
 import type { FastifyInstance } from "fastify";
 import { createSaleSchema } from "@kassa/shared";
 import type { Deal } from "@kassa/shared";
@@ -68,6 +69,8 @@ export default async function saleRoutes(app: FastifyInstance) {
     if (deal.kind === "company" && input.fulfill && !deal.issued) {
       return reply.code(400).send({ message: "Продажа компании проводится только после фактической выдачи" });
     }
+    const returnError = await validateReturnItems(deal);
+    if (returnError) return reply.code(400).send({ message: returnError });
     const { number: _number, createdAt, ...requested } = deal;
     const reserved = await deals.reserveServerDeal({ ...requested, createdAt }, input.idempotencyKey);
     if (reserved.duplicate) return reserved.deal;

@@ -1,9 +1,11 @@
+import { recalculateDealTotals } from "@kassa/shared";
 import { DatePicker } from "../components/DatePicker";
 import { holdPaymentError, isPaidHold, amoOtlozhka, AUTOMATIC_HOLD_STAGES, HOLD_DEAL_KINDS, RESERVE_UNTIL_KINDS, isApproxDateStage, isHoldStage, isPartialPayment, defaultPromiseUntil, defaultHoldUntil, holdStageError, reserveUntilForSave, stageDateError } from "@kassa/shared";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Store } from "lucide-react";
 import type { CartItem, Deal, Payment } from "../data/types";
 import { useStore } from "../store";
+import { useAuth } from "../auth/AuthContext";
 import { FUNNEL_LABEL, KIND_LABEL } from "../lib/labels";
 import { Button, Card, Field, Modal, StageBadge } from "../components/ui";
 import { ProductPicker } from "../components/ProductPicker";
@@ -145,6 +147,8 @@ export function DealWorkspace({
   const live = deals.find((d) => d.id === deal.id || d.number === deal.number) ?? deal;
 
   const closed = isClosed(live);
+  const { user } = useAuth();
+  const canEdit = !closed || ["rop", "admin"].includes(user?.role ?? "");
 
   const [consultants, setConsultants] = useState<ConsultantData>({
     consultant: live.consultant,
@@ -276,12 +280,12 @@ export function DealWorkspace({
       returnInfo,
     }) !== baseline;
 
-  const total = useMemo(
-    () => items.reduce((s, it) => s + (it.noPrice || it.isGift ? 0 : it.price * it.qty), 0),
-    [items]
-  );
-  const paid = payments.reduce((s, p) => s + p.amount, 0);
-  const orderTotal = live.total || total;
+  const { total, paid } = useMemo(() => recalculateDealTotals(live, {
+    items,
+    payments,
+    ...(live.kind === "company" ? { atelierAmount: Number(atelier) || 0, deliveryAmount: Number(deliveryAmount) || 0 } : {}),
+  }), [live, items, payments, atelier, deliveryAmount]);
+  const orderTotal = total;
   const partialPay = isPartialPayment(paid, orderTotal);
   useEffect(() => {
     if (!RESERVE_UNTIL_KINDS.includes(live.kind) || stage === "Успех") return;
@@ -311,7 +315,7 @@ export function DealWorkspace({
     .filter((s) => !(live.kind === "sliv" && !live.meetingDate && s !== "Провал"));
   const stageOptions = stages.includes(stage) || HIDDEN_STAGES.has(stage) ? stages : [stage, ...stages];
   const history = [...(live.history ?? [])].reverse();
-  const closedNeedsReason = closed && stage !== live.stage;
+  const closedNeedsReason = closed && canEdit;
   const showSuccess = !holdKind && (live.kind === "sale" || live.kind === "company" || live.kind === "rental");
   const stageChoices = showSuccess ? stageOptions.filter((item) => item !== "Успех") : stageOptions;
   const tracksCart = live.kind === "sale" || live.kind === "company" || live.kind === "rental" || holdKind;
@@ -340,7 +344,7 @@ export function DealWorkspace({
     tracksCart ? movementRequiredGap(stage, movementSatisfied) : false,
   ].filter(Boolean) as string[];
   const baseFilled = missingRequired.length === 0;
-  const due = live.total || total;
+  const due = total;
   const successGaps = [
     !phone && "Телефон клиента",
     !clientName && "Имя клиента",
@@ -362,7 +366,8 @@ export function DealWorkspace({
     if (holdError) { setError(holdError); return; }
     const dateError = stageDateError({ stage: nextStage, meetingDate, approxMeetingDate });
     if (dateError) { setError(dateError); return; }
-    if (closed && nextStage !== live.stage && !stageReason.trim()) {
+    if (!canEdit) { setError("Завершённую заявку может изменить только РОП или администратор"); return; }
+    if (closed && !stageReason.trim()) {
       setError("Укажите причину изменения завершённой заявки");
       return;
     }
@@ -371,7 +376,7 @@ export function DealWorkspace({
       return;
     }
     if (nextStage === "Успех" && live.stage !== "Успех" && (live.kind === "sale" || live.kind === "company" || live.kind === "rental")) {
-      const due = live.total || total;
+      const due = total;
       const gaps = [
         paid < due && `оплата, остаток ${(due - paid).toLocaleString("ru-RU")} ₽`,
         ...sourceMissingForSuccess(client),
@@ -422,15 +427,15 @@ export function DealWorkspace({
         meetingDate: meetingDate || undefined,
         approxMeetingDate: approxMeetingDate || undefined,
         reason: stageReason.trim() || undefined,
-        total: live.total || total,
+        total,
         paid,
         ...(live.kind === "company"
           ? {
               companyName: companyName.trim() || undefined,
               managerName: managerName.trim() || undefined,
               managerPhone: managerPhone.trim() || undefined,
-              atelierAmount: Number(atelier) || undefined,
-              deliveryAmount: Number(deliveryAmount) || undefined,
+              atelierAmount: Number(atelier) || 0,
+              deliveryAmount: Number(deliveryAmount) || 0,
               issued,
             }
           : {}),
@@ -478,7 +483,7 @@ export function DealWorkspace({
     }
   }
 
-  const canReturnExchange = closed && live.kind !== "refund" && live.kind !== "exchange";
+  const canReturnExchange = live.stage === "Успех" && ["sale", "company", "delivery", "exchange"].includes(live.kind);
   const linkedReturns = deals.filter(
     (d) => d.linkedDealNumber === live.number && (d.kind === "refund" || d.kind === "exchange")
   );
@@ -793,8 +798,9 @@ export function DealWorkspace({
           </fieldset>
         </Card>
 
-        {(holdKind || closedNeedsReason || canReturnExchange || linkedReturns.length > 0) && <Card>
+        {(holdKind || closed || canReturnExchange || linkedReturns.length > 0) && <Card>
           <SectionTitle>Дополнительные действия</SectionTitle>
+          {closed && !canEdit && <p className="text-[12px] text-mute">Завершённую заявку может изменить только РОП или администратор.</p>}
           {holdKind && <p className="text-[12px] text-mute">Это заявка старого вида. Перед завершением выберите продажу, онлайн-продажу, компанию или аренду через «Сменить тип».</p>}
           {closedNeedsReason && (
             <label className="block mt-3">
@@ -863,7 +869,7 @@ export function DealWorkspace({
               compact
               className="text-[13px]"
             />
-            <Button variant="subtle" disabled={!baseFilled || saving || !dirty} onClick={() => void saveAll()}>
+            <Button variant="subtle" disabled={!canEdit || !baseFilled || saving || !dirty} onClick={() => void saveAll()}>
               {savedFlash ? "Сохранено" : saving ? "Сохраняем…" : "Сохранить"}
             </Button>
             <Button variant="subtle" onClick={onClose}>

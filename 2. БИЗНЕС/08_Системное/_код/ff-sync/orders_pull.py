@@ -19,7 +19,7 @@ from db import (
     upsert_order_log,
 )
 from ms import ensure_projects, ms_meta, order_attrs, org_id, project_id, store_id
-from net import MS_BASE, OZON_BASE, WB_BASE, WB_STATS, ms_headers, ozon_headers, req, wb_headers
+from net import MS_BASE, OZON_BASE, WB_BASE, WB_STATS, ms_headers, ozon_headers, req, wb_headers, wb_read
 
 MSK = timezone(timedelta(hours=3))
 
@@ -140,7 +140,7 @@ def pull_wb_new(token, strict=False):
     свежие задания от сборщика.
     """
     try:
-        r = req("GET", WB_BASE + "/api/v3/orders/new", headers=wb_headers(token))
+        r = wb_read("GET", WB_BASE + "/api/v3/orders/new", headers=wb_headers(token))
     except Exception as exc:
         if strict:
             raise RuntimeError("WB новые: ошибка соединения") from exc
@@ -151,10 +151,13 @@ def pull_wb_new(token, strict=False):
             raise RuntimeError("WB новые: HTTP %s" % r.status_code)
         print("WB новые %s %s" % (r.status_code, (r.text or "")[:180]))
         return []
-    return (r.json() or {}).get("orders") or []
+    data = r.json()
+    if not isinstance(data, dict) or not isinstance(data.get('orders'), list):
+        raise RuntimeError('WB новые: неполный ответ, список заданий отсутствует')
+    return data['orders']
 
 
-def pull_wb_fbs(token, date_from, strict=False):
+def pull_wb_fbs(token, date_from, strict=False, on_new=None):
     """Задания за окно плюс все новые.
 
     Страницы идут от старых к новым, поэтому обрыв выборки терял свежие заказы.
@@ -162,12 +165,15 @@ def pull_wb_fbs(token, date_from, strict=False):
     отбрасываем.
     """
     out = list(pull_wb_new(token, strict=strict))
+    if on_new is not None:
+        on_new(out)
     seen = {str(o.get("id") or "") for o in out}
     nxt = 0
+    cursors = {0}
     ts = int(date_from.timestamp())
     while True:
         try:
-            r = req(
+            r = wb_read(
                 "GET",
                 WB_BASE + "/api/v3/orders",
                 headers=wb_headers(token),
@@ -184,6 +190,8 @@ def pull_wb_fbs(token, date_from, strict=False):
             print("WB FBS %s %s" % (r.status_code, (r.text or "")[:180]))
             break
         data = r.json()
+        if not isinstance(data, dict) or not isinstance(data.get('orders'), list):
+            raise RuntimeError('WB FBS: неполный ответ, список заданий отсутствует')
         batch = data.get("orders") or []
         for order in batch:
             ext = str(order.get("id") or "")
@@ -194,6 +202,10 @@ def pull_wb_fbs(token, date_from, strict=False):
         nxt = data.get("next")
         if not batch or not nxt:
             break
+        if nxt in cursors:
+            raise RuntimeError('WB FBS: повтор курсора, история не загружена целиком')
+        cursors.add(nxt)
+        time.sleep(3.1)
     return out
 
 
@@ -244,7 +256,7 @@ def ozon_list(url, headers, date_from, strict=False):
     from net import clear_fbs_list_pause, fbs_list_paused
 
     is_fbs = "/posting/fbs/list" in url
-    if is_fbs and fbs_list_paused():
+    if is_fbs and fbs_list_paused(headers):
         raise RuntimeError("Ozon: список на паузе после 429")
     out, seen, cursors = [], set(), set()
     cursor = ""
@@ -275,7 +287,7 @@ def ozon_list(url, headers, date_from, strict=False):
         out.extend(batch)
         if not more:
             if is_fbs:
-                clear_fbs_list_pause()
+                clear_fbs_list_pause(headers)
             return out
         nxt = data.get("cursor")
         if not batch or not isinstance(nxt, str) or not nxt or nxt in cursors:

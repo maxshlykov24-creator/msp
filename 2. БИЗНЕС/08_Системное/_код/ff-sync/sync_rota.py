@@ -69,10 +69,6 @@ def sync_client(client_id, days=14):
     notes = []
     done = False
     try:
-        run_orders(client_id=client_id, blocking=False)
-    except Exception as exc:
-        notes.append("заказы: %s" % exc)
-    try:
         res = run_ships(days=days, blocking=False, client_id=client_id)
         notes.extend(res.get("notes") or [])
         notes.extend(res.get("errors") or [])
@@ -81,6 +77,11 @@ def sync_client(client_id, days=14):
         done = True
     except Exception as exc:
         notes.append("отправления: %s" % exc)
+    # Warehouse work must be visible before the slower creation of MS orders.
+    try:
+        run_orders(client_id=client_id, blocking=False)
+    except Exception as exc:
+        notes.append("заказы: %s" % exc)
     if done:
         set_setting(KEY % int(client_id), stamp(now()))
     else:

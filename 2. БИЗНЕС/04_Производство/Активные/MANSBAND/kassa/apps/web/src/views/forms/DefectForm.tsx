@@ -59,8 +59,8 @@ export function DefectForm({
   const k = kind as DefectKind;
   const cfg = CONFIG[k] ?? CONFIG.defect;
   const { activeStore, activeConsultant, addDeal, nextNumber } = useStore();
-  const { saved, setSaved, toast } = useSaved();
-  const [meta] = useState(() => ({ number: nextNumber(), createdAt: new Date().toISOString() }));
+  const { saved, saving, runSave, toast } = useSaved();
+  const [meta] = useState(() => ({ id: crypto.randomUUID(), number: nextNumber(), createdAt: new Date().toISOString() }));
 
   const [consultants, setConsultants] = useState<ConsultantData>({ consultant: activeConsultant, referredBy: "" });
   const [items, setItems] = useState<CartItem[]>([]);
@@ -76,28 +76,28 @@ export function DefectForm({
   const baseFilled = missingRequired.length === 0;
 
   function save(s: string) {
-    const funnel = activeStore === "Онлайн-магазин" ? "online" : "offline";
-    addDeal({
-      id: crypto.randomUUID(),
-      number: meta.number,
-      createdAt: meta.createdAt,
-      funnel,
-      kind,
-      consultant: consultants.consultant,
-      clientName: "—",
-      clientPhone: "—",
-      store: activeStore,
-      storeAddress: STORE_ADDRESS[activeStore],
-      items: items.map((it) => ({ ...it, price: 0, noPrice: true })),
-      payments: [],
-      stage: s,
-      comment,
-      photoAttached: cfg.needPhoto ? photos.length > 0 : undefined,
-      total: 0,
-      paid: 0,
-    }, attachmentsToUpload(photos));
-    setSaved(true);
-    setTimeout(onDone, 1100);
+    void runSave(async () => {
+      const funnel = activeStore === "Онлайн-магазин" ? "online" : "offline";
+      await addDeal({
+        id: meta.id,
+        number: meta.number,
+        createdAt: meta.createdAt,
+        funnel,
+        kind,
+        consultant: consultants.consultant,
+        clientName: "—",
+        clientPhone: "—",
+        store: activeStore,
+        storeAddress: STORE_ADDRESS[activeStore],
+        items: items.map((it) => ({ ...it, price: 0, noPrice: true })),
+        payments: [],
+        stage: s,
+        comment,
+        photoAttached: cfg.needPhoto ? photos.length > 0 : undefined,
+        total: 0,
+        paid: 0,
+      }, attachmentsToUpload(photos));
+    }, onDone);
   }
 
   return (
@@ -114,7 +114,7 @@ export function DefectForm({
           stage={stage}
           onStageChange={setStage}
           onSave={save}
-          saved={saved}
+          saved={saved || saving}
           disabled={!baseFilled}
         />
       }

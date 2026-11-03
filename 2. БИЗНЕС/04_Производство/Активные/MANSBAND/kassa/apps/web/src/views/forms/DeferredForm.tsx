@@ -57,8 +57,8 @@ function addDays(dateStr: string, n: number): string {
 export function DeferredForm({ onDone, onBack = onDone }: { onDone: () => void; onBack?: () => void }) {
   const { activeStore, activeConsultant, addDeal, nextNumber, findSlivByPhone } = useStore();
   const { user } = useAuth();
-  const { saved, setSaved, toast } = useSaved();
-  const [meta] = useState(() => ({ number: nextNumber(), createdAt: new Date().toISOString() }));
+  const { saved, setSaved, saving, runSave, toast } = useSaved();
+  const [meta] = useState(() => ({ id: crypto.randomUUID(), number: nextNumber(), createdAt: new Date().toISOString() }));
   const [dealId] = useState(() => crypto.randomUUID());
 
   // Отложка от колл-менеджера (созвон 20.08): консультант пуст, авторство — при продаже.
@@ -173,11 +173,11 @@ export function DeferredForm({ onDone, onBack = onDone }: { onDone: () => void; 
     };
   }
 
-  async function save(s: string) {
-    const savedDeal = await addDeal(buildDeal(s));
-    setPersistedNumber(savedDeal.number);
-    setSaved(true);
-    setTimeout(onDone, 1100);
+  function save(s: string) {
+    void runSave(async () => {
+      const savedDeal = await addDeal(buildDeal(s));
+      setPersistedNumber(savedDeal.number);
+    }, onDone);
   }
 
   async function ensureDealForMove() {
@@ -207,7 +207,7 @@ export function DeferredForm({ onDone, onBack = onDone }: { onDone: () => void; 
           stage={stage}
           onStageChange={setStage}
           onSave={(s) => void save(s)}
-          saved={saved}
+          saved={saved || saving}
           disabled={!baseFilled}
         />
       }

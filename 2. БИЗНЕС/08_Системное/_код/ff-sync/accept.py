@@ -553,6 +553,22 @@ def sync_transfer_scope(snapshot, groups, parties=None, billing_locked=False):
         return apply_plan(scoped, plan, groups, scope_parties=parties)
 
 
+def independent_scopes(snapshot):
+    scopes = {tuple(sorted({r[k]['party'] for k in ('source_before','destination')}))
+              for r in snapshot.get('receipt_transfers', [])}
+    scopes.update((r['party'],) for r in snapshot.get('late_receipts', []))
+    for scope in snapshot.get('independent_scopes', []):
+        if not isinstance(scope, list) or not scope or any(not isinstance(p, str) or p not in snapshot['parties'] for p in scope):
+            raise ValueError('Некорректный список контрагентов отдельной сверки')
+        scopes.add(tuple(sorted(set(scope))))
+    seen = set()
+    for scope in scopes:
+        if seen.intersection(scope):
+            raise ValueError('Пересекаются независимые группы сверки')
+        seen.update(scope)
+    return scopes
+
+
 def run(blocking=True):
     init_db()
     with run_lock('ledger', blocking=blocking):
@@ -565,16 +581,14 @@ def run(blocking=True):
             snapshot = fetch_snapshot()
             snapshot['receipt_transfers'] = json.loads(get_setting('ledger:receipt_transfers') or '[]')
             snapshot['late_receipts'] = json.loads(get_setting('ledger:late_receipts') or '[]')
+            snapshot['independent_scopes'] = json.loads(get_setting('ledger:independent_scopes') or '[]')
             plan = build_plan(snapshot, groups)
             with run_lock('billing'):
                 return apply_plan(snapshot, plan, groups)
         except Exception as exc:
             set_setting('ledger:last_error', str(exc)[:500])
             if snapshot is not None:
-                scopes = {tuple(sorted({r[k]['party'] for k in ('source_before','destination')}))
-                          for r in snapshot['receipt_transfers']}
-                scopes.update((r['party'],) for r in snapshot['late_receipts'])
-                for parties in scopes:
+                for parties in independent_scopes(snapshot):
                     try:
                         result = sync_transfer_scope(snapshot, groups, set(parties))
                         if result:

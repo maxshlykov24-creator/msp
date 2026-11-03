@@ -12,6 +12,9 @@ import {
   selfPayouts,
   isDealOverdue,
   isDealRelevantToUser,
+  isReturnSource,
+  returnableItems,
+  recalculateDealTotals,
 } from "../dist/index.js";
 
 test("overdue remains until closed or extended; today's deadline is not overdue", () => {
@@ -454,4 +457,37 @@ test("online conversion preserves the order and queues assembly after CRM stage 
     assert.equal(state.tasks.length, 1); assert.equal(state.tasks[0].kind, "assemble_cdek");
     assert.equal(state.tasks[0].assigneeRole, "consultant"); assert.equal(state.tasks[0].store, original.store);
   }
+});
+
+test("no_sliv requires client name, complete phone and comment", () => {
+  const valid = { ...baseDeal, kind: "no_sliv", stage: "Не слив", clientName: "Тест", clientPhone: "79999999999", comment: "Тест" };
+  assert.equal(createDealSchema.safeParse(valid).success, true);
+  for (const patch of [{clientName:" "},{clientPhone:""},{clientPhone:"123"},{comment:" "}]) {
+    assert.equal(createDealSchema.safeParse({...valid,...patch}).success,false);
+  }
+});
+test("return source excludes refunds, rentals, certificates and failed deals", () => {
+  for (const kind of ["refund","rental","cert_plastic","cert_digital","promise"]) assert.equal(isReturnSource({kind,stage:"Успех"}),false);
+  for (const kind of ["sale","company","delivery","exchange"]) assert.equal(isReturnSource({kind,stage:"Успех"}),true);
+  assert.equal(isReturnSource({kind:"sale",stage:"Провал"}),false);
+});
+test("remaining returns account for aliases, partial quantities, exchanges and failed attempts", () => {
+  const item={productId:"p",name:"Товар",price:100,qty:3};
+  const source={...baseDeal,number:10,amoLeadId:20,stage:"Успех",items:[item]};
+  const refund={...baseDeal,kind:"refund",stage:"Успех",linkedDealNumber:10,items:[{...item,qty:1,isReturn:true}]};
+  const exchange={...baseDeal,kind:"exchange",stage:"Успех",linkedDealNumber:20,items:[{...item,qty:1,isReturn:true},{...item,qty:5}]};
+  assert.equal(returnableItems(source,[refund,exchange])[0].qty,1);
+  assert.deepEqual(returnableItems(source,[refund,exchange,{...refund,items:[{...item,qty:1}]}]),[]);
+  assert.equal(returnableItems(source,[{...refund,stage:"Провал"}])[0].qty,3);
+  assert.equal(source.items[0].qty,3);
+});
+
+test("editing products recalculates total and payments while keeping the receipt discount", () => {
+  const original={...baseDeal,items:[{productId:"a",name:"A",price:17100,qty:1}],total:17100,paid:0};
+  const items=[...original.items,{productId:"b",name:"B",price:5500,qty:1}];
+  assert.equal(recalculateDealTotals(original,{items,total:17100}).total,22600);
+  assert.equal(recalculateDealTotals({...original,total:16100},{items}).total,21600);
+  assert.equal(recalculateDealTotals(original,{payments:[{id:"p",methodId:"cash",amount:1000}],paid:9999}).paid,1000);
+  assert.equal(recalculateDealTotals(original,{}).total,17100);
+  assert.equal(recalculateDealTotals({...original,items:[],total:17100},{items}).total,22600);
 });

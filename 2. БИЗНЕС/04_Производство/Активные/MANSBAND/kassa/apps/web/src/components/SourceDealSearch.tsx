@@ -1,3 +1,4 @@
+import { isReturnSource, returnableItems } from "@kassa/shared";
 import { useState } from "react";
 import { ExternalLink, Search } from "lucide-react";
 import { api, apiPath, USE_MOCK } from "../api/client";
@@ -15,11 +16,11 @@ function samePhone(deal: Deal, tail: string): boolean {
   return phoneTail(deal.clientPhone) === tail;
 }
 
-/** Успех любого вида: продажа, компания, аренда, сертификат, доставка и остальные. */
+/** Только успешная выдача товаров. */
 export function localSuccessByPhone(deals: Deal[], phone: string): Deal[] {
   const tail = phoneTail(phone);
   if (!tail) return [];
-  return deals.filter((deal) => deal.stage === "Успех" && samePhone(deal, tail));
+  return deals.filter((deal) => isReturnSource(deal) && samePhone(deal, tail));
 }
 
 async function remoteSuccessByPhone(phone: string): Promise<Deal[]> {
@@ -27,7 +28,7 @@ async function remoteSuccessByPhone(phone: string): Promise<Deal[]> {
   const tail = phoneTail(phone);
   if (!tail) return [];
   const rows = await api.get<Deal[]>(apiPath("/deals/search", { phone: tail }));
-  return rows.filter((deal) => deal.stage === "Успех" && (!phoneTail(deal.clientPhone) || samePhone(deal, tail)));
+  return rows.filter((deal) => isReturnSource(deal) && (!phoneTail(deal.clientPhone) || samePhone(deal, tail)));
 }
 
 export function SourceDealSearch({
@@ -61,6 +62,25 @@ export function SourceDealSearch({
     window.location.hash = `board/all/all/${number}`;
   }
 
+  async function pick(deal: Deal) {
+    setBusy(true);
+    setError(null);
+    try {
+      const available = USE_MOCK
+        ? { ...deal, items: returnableItems(deal, deals) }
+        : await api.get<Deal>(`/deals/${deal.number}/return-items`);
+      if (!available.items.length) {
+        setError("В этой заявке нет доступных позиций для возврата: товар уже возвращён или состав продажи не заполнен");
+        return;
+      }
+      onPick(available);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось проверить позиции возврата");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function find() {
     const tail = phoneTail(phone);
     if (!tail) {
@@ -84,7 +104,7 @@ export function SourceDealSearch({
       for (const deal of local) byNumber.set(deal.number, deal);
       const found = [...byNumber.values()].sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
       setMatches(found);
-      if (found.length === 1) onPick(found[0]);
+      if (found.length === 1) await pick(found[0]);
     } finally {
       setBusy(false);
     }
@@ -184,7 +204,8 @@ export function SourceDealSearch({
             <button
               key={deal.id || deal.number}
               type="button"
-              onClick={() => onPick(deal)}
+              disabled={busy}
+              onClick={() => void pick(deal)}
               className="w-full text-left rounded-lg border border-ink-700 bg-ink-900 px-3 py-2 hover:border-ink-500"
             >
               <span className="text-white text-[13px] font-semibold">#{deal.number}</span>

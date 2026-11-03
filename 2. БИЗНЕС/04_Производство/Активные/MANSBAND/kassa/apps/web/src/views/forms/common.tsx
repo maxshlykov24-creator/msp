@@ -1486,12 +1486,38 @@ export function FormShell({
 
 export function useSaved() {
   const [saved, setSaved] = useState(false);
-  const toast = saved ? (
-    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 bg-white text-ink-950 font-semibold px-5 py-3 rounded-xl shadow-glow animate-[fadein_0.2s]">
-      <CheckCircle2 size={18} /> Заявка сохранена и отправлена в amoCRM
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const pending = useRef(false);
+
+  async function runSave(action: () => Promise<unknown>, onDone: () => void) {
+    if (pending.current) return;
+    pending.current = true;
+    setSaving(true);
+    setError(null);
+    setSaved(false);
+    try {
+      await action();
+      setSaved(true);
+      window.setTimeout(onDone, 1100);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось сохранить заявку");
+    } finally {
+      pending.current = false;
+      setSaving(false);
+    }
+  }
+
+  const toast = error ? (
+    <div role="alert" className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 max-w-[90vw] rounded-xl border border-amber-400 bg-ink-900 px-5 py-3 text-amber-300">
+      {error}
+    </div>
+  ) : saved ? (
+    <div role="status" className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 bg-white text-ink-950 font-semibold px-5 py-3 rounded-xl shadow-glow animate-[fadein_0.2s]">
+      <CheckCircle2 size={18} /> Заявка сохранена
     </div>
   ) : null;
-  return { saved, setSaved, toast };
+  return { saved, setSaved, saving, runSave, toast };
 }
 
 // ── SectionTitle ────────────────────────────────────────────────────────

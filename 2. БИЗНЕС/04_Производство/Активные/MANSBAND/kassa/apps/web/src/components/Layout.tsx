@@ -100,7 +100,7 @@ export function Layout({
   const pendingCompany = queue.filter(
     (q) => q.status === "pending" && (q.kind === "documents" || q.kind === "atelier")
   ).length;
-  const canSeeMoney = canSeeFinanceQueues(user?.role, user?.login, user?.name);
+  const canSeeMoney = canSeeFinanceQueues(user?.role);
   const mobileNav = canSeeMoney ? [...MOBILE_NAV_BASE, MOBILE_NAV_FINANCE] : MOBILE_NAV_BASE;
   // На экране новой заявки нижнее меню скрываем — место под sticky-блок суммы/кнопок.
   const showMobileNav = route !== "new";

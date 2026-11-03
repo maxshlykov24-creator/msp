@@ -219,7 +219,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       activeConsultant,
       setActiveStore,
       setActiveConsultant,
-      addDeal: async (d, photos, opts) => {
+      addDeal: async (d, photos) => {
         setDeals((prev) => [d, ...prev]); // оптимистично
         // Сдача → очередь Эдвина только при «Получить от Mansband», не при «Выдано клиенту».
         if (USE_MOCK && d.changeStatus === "pending") {
@@ -287,13 +287,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           if (touchedCert) {
             api.get<Certificate[]>("/certificates").then(setCertificates).catch(() => {});
           }
+          if (saved.syncStatus === "failed" || saved.syncStatus === "pending") {
+            throw new Error(`Заявка №${saved.number} сохранена, но синхронизация не завершена: ${saved.syncError || saved.syncStatus}. Откройте заявку и проверьте синхронизацию.`);
+          }
           return saved;
         } catch (err) {
-          if (opts?.strict) {
-            setDeals((prev) => prev.filter((x) => x.id !== d.id));
-            throw err;
-          }
-          return d;
+          // Не оставляем в доске заявку, которую сервер мог отклонить.
+          setDeals((prev) => prev.filter((x) => x.id !== d.id));
+          void api.get<Deal[]>("/deals").then(setDeals).catch(() => {});
+          throw err;
         }
       },
       updateDealStage: (id, stage, reason) => {

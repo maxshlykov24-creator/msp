@@ -17,6 +17,7 @@ from db import (
     list_open_shipments,
     run_lock,
     set_shipment_status,
+    set_shipment_scanit,
     record_sync,
     lock_name,
     prune_old_shipments,
@@ -97,11 +98,13 @@ def check_ozon_live(cab, status_cache=None):
         raw = result.get("status") or ""
         if result.get("posting_number") != row["ext_id"] or raw not in statuses_mod.OZON:
             continue
+        qr_updated = set_shipment_scanit(row['id'], result.get('scanit'))
         status = statuses_mod.ru(raw)
         group = statuses_mod.ozon_group(raw)
         track = result.get("tracking_number") or row["track"] or ""
         if not _changed(row, status, group) and not (group in DONE and (row["work_state"] or "")):
             if not (group == statuses_mod.READY and (row["work_state"] or "") == statuses_mod.ASSEMBLING):
+                fixed += qr_updated
                 continue
         set_shipment_status(row["id"], status, group, clear_work=group in DONE, track=track)
         if group == statuses_mod.READY and (row["work_state"] or "") == statuses_mod.ASSEMBLING:

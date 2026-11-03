@@ -16,38 +16,38 @@ import { STORE_ADDRESS } from "../../data/mock";
 
 export function NoSlivForm({ onDone, onBack = onDone }: { onDone: () => void; onBack?: () => void }) {
   const { activeStore, activeConsultant, addDeal, nextNumber } = useStore();
-  const { saved, setSaved, toast } = useSaved();
-  const [meta] = useState(() => ({ number: nextNumber(), createdAt: new Date().toISOString() }));
+  const { saved, saving, runSave, toast } = useSaved();
+  const [meta] = useState(() => ({ id: crypto.randomUUID(), number: nextNumber(), createdAt: new Date().toISOString() }));
 
   const [consultants, setConsultants] = useState<ConsultantData>({ consultant: activeConsultant, referredBy: "" });
   const [client, setClient] = useState<ClientData>({ name: "", phone: "", channel: "", purpose: "" });
   const [comment, setComment] = useState("");
 
-  const missingRequired = [!comment.trim() && "Комментарий"].filter(Boolean) as string[];
+  const missingRequired = [!client.name.trim() && "Имя клиента", client.phone.replace(/\D/g, "").length < 10 && "Телефон клиента", !comment.trim() && "Комментарий"].filter(Boolean) as string[];
   const baseFilled = missingRequired.length === 0;
 
   function save(s: string) {
-    addDeal({
-      id: crypto.randomUUID(),
-      number: meta.number,
-      createdAt: meta.createdAt,
-      funnel: "offline",
-      kind: "no_sliv",
-      consultant: consultants.consultant,
-      referredBy: consultants.referredBy || undefined,
-      clientName: client.name || "Клиент (не слив)",
-      clientPhone: client.phone || "—",
-      store: activeStore,
-      storeAddress: STORE_ADDRESS[activeStore],
-      items: [],
-      payments: [],
-      stage: s,
-      comment,
-      total: 0,
-      paid: 0,
-    });
-    setSaved(true);
-    setTimeout(onDone, 1100);
+    void runSave(async () => {
+      await addDeal({
+        id: meta.id,
+        number: meta.number,
+        createdAt: meta.createdAt,
+        funnel: "offline",
+        kind: "no_sliv",
+        consultant: consultants.consultant,
+        referredBy: consultants.referredBy || undefined,
+        clientName: client.name || "Клиент (не слив)",
+        clientPhone: client.phone || "—",
+        store: activeStore,
+        storeAddress: STORE_ADDRESS[activeStore],
+        items: [],
+        payments: [],
+        stage: s,
+        comment,
+        total: 0,
+        paid: 0,
+      });
+    }, onDone);
   }
 
   return (
@@ -64,7 +64,7 @@ export function NoSlivForm({ onDone, onBack = onDone }: { onDone: () => void; on
           stage="Не слив"
           onStageChange={() => {}}
           onSave={save}
-          saved={saved}
+          saved={saved || saving}
           disabled={!baseFilled}
         />
       }

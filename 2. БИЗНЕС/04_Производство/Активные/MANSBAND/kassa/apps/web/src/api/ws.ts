@@ -1,7 +1,7 @@
 import type { WsEvent } from "@kassa/shared";
 import { getToken } from "./client";
 
-// WebSocket с авто-переподключением. Токен передаём query-параметром.
+// WebSocket с авто-переподключением. Токен передаём в заголовке протокола, чтобы он не попадал в URL и access log.
 
 type Handler = (ev: WsEvent) => void;
 
@@ -19,8 +19,8 @@ export function connectWs(onEvent: Handler): () => void {
   function open() {
     if (closed) return;
     const token = getToken();
-    const url = token ? `${wsBase}?token=${encodeURIComponent(token)}` : wsBase;
-    socket = new WebSocket(url);
+    if (!token) return;
+    socket = new WebSocket(wsBase, ["kassa", `bearer.${token}`]);
 
     socket.onopen = () => {
       retry = 0;

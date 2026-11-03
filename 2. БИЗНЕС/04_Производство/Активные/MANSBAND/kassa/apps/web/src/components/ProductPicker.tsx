@@ -1,3 +1,4 @@
+import { cartLineTotal } from "@kassa/shared";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowRightLeft,
@@ -30,12 +31,7 @@ function itemKey(it: CartItem): string {
 }
 
 export function lineTotal(it: CartItem): number {
-  if (it.noPrice) return 0;
-  let unit = it.price;
-  if (it.isGift) return 0;
-  if (it.discountPct) unit = unit * (1 - it.discountPct / 100);
-  if (it.discountRub) unit = unit - it.discountRub;
-  return Math.max(0, Math.round(unit)) * it.qty;
+  return cartLineTotal(it);
 }
 
 export function cartTotal(items: CartItem[]): number {

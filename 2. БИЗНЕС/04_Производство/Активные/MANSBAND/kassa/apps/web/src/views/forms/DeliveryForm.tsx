@@ -161,8 +161,8 @@ function CityCombobox({ value, onChange }: { value: string; onChange: (v: string
 
 export function DeliveryForm({ onDone, onBack = onDone }: { onDone: () => void; onBack?: () => void }) {
   const { activeConsultant, addDeal, nextNumber } = useStore();
-  const { saved, setSaved, toast } = useSaved();
-  const [meta] = useState(() => ({ number: nextNumber(), createdAt: new Date().toISOString() }));
+  const { saved, saving, runSave, toast } = useSaved();
+  const [meta] = useState(() => ({ id: crypto.randomUUID(), number: nextNumber(), createdAt: new Date().toISOString() }));
 
   const store = "Онлайн-магазин" as const;
 
@@ -207,37 +207,37 @@ export function DeliveryForm({ onDone, onBack = onDone }: { onDone: () => void; 
   const baseFilled = missingRequired.length === 0;
 
   function save(s: string) {
-    addDeal({
-      id: crypto.randomUUID(),
-      number: meta.number,
-      createdAt: meta.createdAt,
-      funnel: "online",
-      kind: "delivery",
-      consultant: consultants.consultant,
-      callManager: DEFAULT_CALL_MANAGER,
-      clientName: recipientName,
-      clientPhone: recipientPhone,
-      store,
-      storeAddress: STORE_ADDRESS[store],
-      deliveryCity: city.trim(),
-      deliveryAmount: deliveryAmount || undefined,
-      recipientName,
-      recipientPhone,
-      channel: client.channel,
-      purpose: client.purpose,
-      items,
-      payments,
-      stage: s,
-      comment,
-      paymentDate: lastPaymentDate(payments),
-      checkDiscount: discount || undefined,
-      ...tipsDealFields(tips, change),
-      ...changeDealFields(Math.max(0, change - (tips.amount || 0)), changeInfo),
-      total,
-      paid,
-    });
-    setSaved(true);
-    setTimeout(onDone, 1100);
+    void runSave(async () => {
+      await addDeal({
+        id: meta.id,
+        number: meta.number,
+        createdAt: meta.createdAt,
+        funnel: "online",
+        kind: "delivery",
+        consultant: consultants.consultant,
+        callManager: DEFAULT_CALL_MANAGER,
+        clientName: recipientName,
+        clientPhone: recipientPhone,
+        store,
+        storeAddress: STORE_ADDRESS[store],
+        deliveryCity: city.trim(),
+        deliveryAmount: deliveryAmount || undefined,
+        recipientName,
+        recipientPhone,
+        channel: client.channel,
+        purpose: client.purpose,
+        items,
+        payments,
+        stage: s,
+        comment,
+        paymentDate: lastPaymentDate(payments),
+        checkDiscount: discount || undefined,
+        ...tipsDealFields(tips, change),
+        ...changeDealFields(Math.max(0, change - (tips.amount || 0)), changeInfo),
+        total,
+        paid,
+      });
+    }, onDone);
   }
 
   return (
@@ -255,7 +255,7 @@ export function DeliveryForm({ onDone, onBack = onDone }: { onDone: () => void; 
           stage="Передан на сборку"
           onStageChange={() => {}}
           onSave={save}
-          saved={saved}
+          saved={saved || saving}
           disabled={!baseFilled}
         />
       }

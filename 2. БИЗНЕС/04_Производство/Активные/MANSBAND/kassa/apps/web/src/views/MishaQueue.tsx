@@ -112,7 +112,7 @@ function FilterChip({
 export function MishaQueue() {
   const { queue, deals, reopenQueueItem } = useStore();
   const { user } = useAuth();
-  const allowed = canSeeFinanceQueues(user?.role, user?.login, user?.name);
+  const allowed = canSeeFinanceQueues(user?.role);
   const [period, setPeriod] = useState<QueuePeriod>("all");
   const [status, setStatus] = useState("pending");
   const [kindFilter, setKindFilter] = useState<"" | MishaKind>("");

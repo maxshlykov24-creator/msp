@@ -3,8 +3,8 @@ import { initializeCertificateRegistry } from "./services/certificateRegistry.js
 import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
 import { getEnv } from "./env.js";
-import authPlugin from "./plugins/auth.js";
-import { addClient } from "./ws/hub.js";
+import authPlugin, { safeRequestLog } from "./plugins/auth.js";
+import { registerRealtime } from "./ws/hub.js";
 
 import messageTemplatesRoutes from "./routes/messageTemplates.routes.js";
 import healthRoutes from "./routes/health.routes.js";
@@ -32,8 +32,8 @@ export async function buildServer() {
   const app = Fastify({
     logger:
       env.NODE_ENV === "production"
-        ? { level: "info" }
-        : { level: "debug", transport: { target: "pino-pretty" } },
+        ? { level: "info", serializers: { req: safeRequestLog }, redact: ["req.headers.authorization", "req.headers.cookie"] }
+        : { level: "debug", serializers: { req: safeRequestLog }, transport: { target: "pino-pretty" } },
     bodyLimit: 40 * 1024 * 1024, // до 40 МБ — несколько фотофиксаций base64 в одной заявке
   });
 
@@ -83,20 +83,7 @@ export async function buildServer() {
     { prefix: "/api" }
   );
 
-  // WebSocket-канал на открытые кассы (токен в query).
-  app.register(async (wsApp) => {
-    wsApp.get("/ws", { websocket: true }, (socket, req) => {
-      const token = (req.query as { token?: string } | undefined)?.token;
-      try {
-        if (token) wsApp.jwt.verify(token);
-      } catch {
-        socket.close(4001, "unauthorized");
-        return;
-      }
-      addClient(socket);
-      socket.send(JSON.stringify({ type: "ping", at: new Date().toISOString(), payload: { ok: true } }));
-    });
-  });
+  registerRealtime(app);
 
   return app;
 }
