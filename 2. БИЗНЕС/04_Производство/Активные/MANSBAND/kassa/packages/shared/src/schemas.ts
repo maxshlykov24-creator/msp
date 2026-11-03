@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { cartLineTotal } from "./pricing.js";
 import { holdStageError, isApproxDateStage, isHoldStage, stageDateError } from "./taskFlow.js";
 import type { Deal } from "./types.js";
 import { COMPANY_STAGES_WITH_INVOICE, EDWIN_EXPENSE_CATEGORIES } from "./constants.js";
@@ -27,6 +28,7 @@ export const cartItemStatusSchema = z.enum(["waiting", "in_store", "booked", "re
 
 export const cartItemSchema = z.object({
   productId: z.string(),
+  lineId: z.string().optional(),
   name: z.string(),
   price: z.number(),
   settledUnitPrice: z.number().nonnegative().optional(),
@@ -43,7 +45,7 @@ export const cartItemSchema = z.object({
 export const paymentSchema = z.object({
   id: z.string(),
   methodId: z.string(),
-  amount: z.number(),
+  amount: z.number().nonnegative(),
   certificateNumber: z.string().transform(value=>{const n=value.trim().toUpperCase().replace(/[\s-]/g,"");return /^MB\d{8}$/.test(n)?`MB-${n.slice(2,6)}-${n.slice(6)}`:value.trim();}).optional(),
   paidAt: z.string().optional(), // YYYY-MM-DD
 });
@@ -345,6 +347,7 @@ export const catalogBrowseSchema = z.object({
 export type CatalogBrowseQuery = z.infer<typeof catalogBrowseSchema>;
 
 export const redeemCertificateSchema = z.object({
+  expectedBalance: z.number().nonnegative(),
   number: z.string().min(1),
   amount: z.number().positive(),
 });
@@ -429,6 +432,8 @@ export const createDealSchema = z
   })
   .passthrough()
   .superRefine((v, ctx) => {
+    const error = financialDealError(v as unknown as Deal, v.photos?.length ?? 0);
+    if (error) ctx.addIssue({ code: z.ZodIssueCode.custom, message: error });
     if (v.kind === "no_sliv") {
       if (!v.clientName.trim()) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["clientName"], message: "Укажите имя клиента" });
       if (v.clientPhone.replace(/\D/g, "").length < 10) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["clientPhone"], message: "Укажите телефон клиента целиком" });
@@ -664,3 +669,28 @@ export const createUserSchema = z.object({
   store: z.string().trim().max(120).optional(),
 });
 export type CreateUserInput = z.infer<typeof createUserSchema>;
+
+
+/** Общие ограничения создания и перехода: UI не является границей финансовой проверки. */
+export function financialDealError(deal: Deal, photoCount = 0): string | null {
+  if (new Set(deal.payments.map(p => p.id)).size !== deal.payments.length) return "Идентификаторы оплат должны быть уникальными";
+  if (deal.payments.some(p => !p.id || !Number.isFinite(p.amount) || p.amount < 0)) return "Некорректная оплата";
+  const paid = deal.payments.reduce((s, p) => s + Math.round(p.amount * 100), 0);
+  if (Math.abs(paid - Math.round(deal.paid * 100)) > 1) return "Оплаченная сумма не совпадает со строками оплат";
+  if (["defect", "drycleaning", "resew", "wrong_size", "wrong_label"].includes(deal.kind)) {
+    if (!deal.items.length || !deal.comment?.trim()) return "Для дефекта нужны товары и комментарий";
+    if (["defect", "drycleaning"].includes(deal.kind) && !photoCount && !deal.photoAttached) return "Прикрепите фото дефекта";
+  }
+  if (["refund", "exchange"].includes(deal.kind)) {
+    const total = deal.items.reduce((sum, item) => sum + Math.round(cartLineTotal(item) * 100) * (deal.kind === "refund" || item.isReturn ? -1 : 1), 0);
+    if (total !== Math.round(deal.total * 100)) return "Сумма возврата или обмена не совпадает с выбранными товарами";
+    if (deal.stage === "Успех" && deal.paid < deal.total) return "Доплата за обмен ещё не внесена";
+  }
+  if (["sale", "company", "delivery"].includes(deal.kind) && deal.stage === "Успех") {
+    if (!deal.items.length) return "Нельзя завершить продажу без товаров";
+    if (!deal.clientName?.trim() || (deal.clientPhone ?? "").replace(/\D/g, "").length < 10) return "Укажите имя и полный телефон клиента";
+    if (deal.paid < deal.total) return "Продажа ещё не оплачена полностью";
+    if (!deal.channel || !deal.purpose) return "Укажите источник рекламы и цель покупки";
+  }
+  return null;
+}

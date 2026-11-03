@@ -326,6 +326,7 @@ export async function updateDealFields(
     ...deal,
     ...fields,
     stage: nextStage,
+    completedAt: nextStage === "Успех" ? deal.completedAt ?? new Date().toISOString() : deal.completedAt,
     history: [
       ...(deal.history ?? []),
       {
@@ -371,6 +372,7 @@ export async function updateStage(
   const updated: Deal = {
     ...deal,
     stage,
+    completedAt: stage === "Успех" ? deal.completedAt ?? new Date().toISOString() : deal.completedAt,
     kind: patch?.kind ?? deal.kind,
     reservedUntil: stage === "Товар отложен" && deal.stage !== stage ? defaultHoldUntil(deal.paid) : deal.reservedUntil,
     meetingDate: patch?.meetingDate ?? deal.meetingDate,

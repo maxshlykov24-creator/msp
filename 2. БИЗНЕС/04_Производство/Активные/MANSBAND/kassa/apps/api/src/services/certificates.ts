@@ -85,7 +85,7 @@ export async function listUsages(number: string): Promise<CertificateUsage[]> {
   });
 }
 
-export async function redeem(number: string, amountRub: number): Promise<Certificate | null> {
+export async function redeem(number: string, amountRub: number, expectedBalance?: number): Promise<Certificate | null> {
   const amount = Math.round(amountRub * 100);
   if (amount <= 0) return null;
   const [updated] = await db
@@ -96,6 +96,7 @@ export async function redeem(number: string, amountRub: number): Promise<Certifi
     })
     .where(and(
       eq(certificates.number, canonicalNumber(number)),
+      expectedBalance == null ? undefined : eq(certificates.balance, Math.round(expectedBalance * 100)),
       eq(certificates.status, "active"),
       gte(certificates.balance, amount),
       gte(certificates.validUntil, moscowTodayYmd()),
@@ -268,6 +269,8 @@ export async function redeemDealPayments(deal: Deal): Promise<Certificate[]> {
       if (receipt) {
         const value = receipt.result as { number: string; amount: number };
         if (value.number !== number || value.amount !== amount) throw new Error("Проведённую оплату сертификатом нельзя изменить");
+        const [current] = await tx.select().from(certificates).where(eq(certificates.number, number));
+        if (current) completed.push(toCert(current));
         continue;
       }
       // Старый полностью завершённый процесс уже списал эти строки.

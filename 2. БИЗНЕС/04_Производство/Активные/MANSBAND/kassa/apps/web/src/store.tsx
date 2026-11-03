@@ -521,7 +521,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       },
       redeemCertificate: async (number, amount) => {
         if (!USE_MOCK) {
-          const updated = await api.post<Certificate>("/certificates/redeem", { number, amount });
+          const updated = await api.post<Certificate>("/certificates/redeem", { number, amount, expectedBalance: certificates.find(c => c.number === number)?.balance });
           setCertificates(prev => prev.map(c => c.number === number ? updated : c));
           return;
         }

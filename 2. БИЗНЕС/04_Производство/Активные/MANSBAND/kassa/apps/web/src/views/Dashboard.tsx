@@ -34,6 +34,8 @@ interface StatsSummary {
   totals: StatsRow;
   consultants: StatsRow[];
   stores: StatsRow[];
+  channels?: StatsRow[];
+  callManagers?: StatsRow[];
   purchasing: PurchasingStats;
 }
 
@@ -310,6 +312,12 @@ export function Dashboard() {
       </div>
 
       <div className="space-y-4">
+        <CollapsibleSection title="Магазины и онлайн" count={summary.channels?.length ?? 0}>
+          <StatsTable rows={summary.channels ?? []} nameLabel="Канал" />
+        </CollapsibleSection>
+        <CollapsibleSection title="Колл-менеджеры" count={summary.callManagers?.length ?? 0}>
+          <StatsTable rows={summary.callManagers ?? []} nameLabel="Колл-менеджер" />
+        </CollapsibleSection>
         <CollapsibleSection title="Консультанты" count={summary.consultants.length}>
           <StatsTable rows={summary.consultants} nameLabel="Консультант" />
         </CollapsibleSection>

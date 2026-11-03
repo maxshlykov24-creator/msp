@@ -1,4 +1,4 @@
-import { settledItems } from "./pricing.js";
+import { settledItems, cartLineTotal } from "./pricing.js";
 import type { Deal, DealKind, Task, TaskAssigneeRole, TaskKind, User } from "./types.js";
 
 /** Продажа сохраняет вид на этапах обещания, доставки в магазин и резерва. */
@@ -446,20 +446,25 @@ export function isReturnSource(deal: Pick<Deal, "stage" | "kind">): boolean {
 
 /** Учитываем возвраты и обмены, включая ссылки по номеру amoCRM. */
 export function returnableItems(source: Deal, returns: Deal[]): Deal["items"] {
-  const returned = new Map<string, number>();
+  const available = settledItems(source).map(item => ({ ...item }));
   for (const prior of returns) {
     if (prior.stage !== "Успех" || !["refund", "exchange"].includes(prior.kind)) continue;
     if (prior.linkedDealNumber !== source.number && (!source.amoLeadId || prior.linkedDealNumber !== source.amoLeadId)) continue;
     for (const item of prior.items) {
       if (prior.kind === "exchange" && !item.isReturn) continue;
-      returned.set(item.productId, (returned.get(item.productId) ?? 0) + item.qty);
+      let remaining = item.qty;
+      const price = Math.round(cartLineTotal(item) * 100 / item.qty);
+      const matching = available.filter(line => line.productId === item.productId)
+        .sort((a, b) => Number(Math.round((b.settledUnitPrice ?? 0) * 100) === price) - Number(Math.round((a.settledUnitPrice ?? 0) * 100) === price));
+      for (const line of matching) {
+        const used = Math.min(remaining, line.qty);
+        line.qty -= used;
+        remaining -= used;
+        if (!remaining) break;
+      }
     }
   }
-  return settledItems(source).flatMap(item => {
-    const used = Math.min(item.qty, returned.get(item.productId) ?? 0);
-    returned.set(item.productId, Math.max(0, (returned.get(item.productId) ?? 0) - used));
-    return used < item.qty ? [{ ...item, qty: item.qty - used }] : [];
-  });
+  return available.filter(item => item.qty > 0);
 }
 
 

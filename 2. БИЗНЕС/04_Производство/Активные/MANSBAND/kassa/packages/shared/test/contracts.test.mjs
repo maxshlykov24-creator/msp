@@ -86,6 +86,9 @@ test("company success requires issued flag", () => {
 test("company success accepts paid and issued invoice", () => {
   const parsed = createDealSchema.safeParse({
     ...baseDeal,
+    clientPhone: "+79990000000", channel: "Сайт", purpose: "Работа",
+    items: [{ productId: "a", name: "A", price: 100, qty: 1 }],
+    payments: [{ id: "p", methodId: "cash", amount: 100 }], total: 100, paid: 100,
     kind: "company",
     stage: "Успех",
     invoiceNo: "СЧ-1",
@@ -515,4 +518,37 @@ test("explicitly confirmed removal survives a failed deal and extended deadlines
  const deal={...baseDeal,id:"task-test",kind:"deferred",stage:"Провал"};
  assert.equal(isObsoleteStageTask(deal,{kind:"unreserve",idempotencyKey:"unreserve:task-test",metadata:{confirmedByRole:"rop"}}),false);
  assert.equal(isObsoleteStageTask({...deal,stage:"Товар отложен",reservedUntil:"2026-11-10"},{kind:"reserve_call",idempotencyKey:"reserve-call:task-test:2026-11-02",metadata:{reservedUntil:"2026-11-02"}}),true);
+});
+
+
+test("receipt and referral discounts stay in full and partial returns, including kopecks", async () => {
+  const { settledItems, cartLineTotal } = await import('../dist/index.js');
+  const source = { ...baseDeal, number: 991, stage: 'Успех', total: 9000, paid: 9000,
+    items: [{ productId: 'a', name: 'A', price: 10000, qty: 1 }], saryBonus: 1000 };
+  assert.equal(settledItems(source).reduce((s, i) => s + cartLineTotal(i), 0), 9000);
+  assert.equal(returnableItems(source, []).reduce((s, i) => s + cartLineTotal(i), 0), 9000);
+  const thirds = settledItems({ ...source, total: 1, items: [{ productId: 'a', name: 'A', price: 1, qty: 3 }] });
+  assert.equal(thirds.reduce((s, i) => s + Math.round(cartLineTotal(i) * 100), 0), 100);
+  assert.equal(thirds.reduce((s, i) => s + i.qty, 0), 3);
+  const withFees = settledItems({ ...source, total: 9500, deliveryAmount: 500 });
+  assert.equal(withFees.reduce((s, i) => s + cartLineTotal(i), 0), 9000);
+});
+
+
+test("server rejects unpaid success, forged totals, duplicate payments and missing defect evidence", async () => {
+  const {financialDealError} = await import('../dist/index.js');
+  const complete={...baseDeal,stage:'Успех',clientPhone:'+79990000000',channel:'Сайт',purpose:'Работа',items:[{productId:'a',name:'A',price:100,qty:1}],total:100,paid:100,payments:[{id:'p',methodId:'cash',amount:100}]};
+  assert.equal(financialDealError(complete),null);
+  for (const patch of [{items:[]},{paid:0,payments:[]},{paid:200,payments:[...complete.payments,...complete.payments]}]) assert(financialDealError({...complete,...patch}));
+  assert(financialDealError({...complete,kind:'refund',total:-1000}));
+  assert.equal(financialDealError({...complete,kind:'refund',total:-100,paid:0,payments:[]}),null);
+  assert(financialDealError({...baseDeal,kind:'defect',items:complete.items,comment:'Дефект'}));
+  assert.equal(financialDealError({...baseDeal,kind:'defect',items:complete.items,comment:'Дефект'},1),null);
+});
+test("report dates use Moscow completion, and returns/defects are not new clients", async () => {
+  const {dealAccountingDay,isSalesVisit,isTestDeal}=await import('../dist/index.js');
+  assert.equal(dealAccountingDay({...baseDeal,createdAt:'2026-10-01T10:00:00Z',stage:'Успех',completedAt:'2026-11-02T21:30:00Z'}),'2026-11-03');
+  assert(isTestDeal({...baseDeal,clientName:'ТЕСТ кассы'}));
+  assert(!isTestDeal({...baseDeal,clientName:'Клиент'}));
+  for (const kind of ['refund','exchange','defect','drycleaning']) assert.equal(isSalesVisit({...baseDeal,kind}),false);
 });

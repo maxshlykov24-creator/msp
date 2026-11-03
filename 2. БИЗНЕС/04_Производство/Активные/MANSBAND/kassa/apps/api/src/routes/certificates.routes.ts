@@ -39,7 +39,7 @@ export default async function certificatesRoutes(app: FastifyInstance) {
   app.post("/certificates/redeem", { preHandler: [app.authenticate] }, async (req, reply) => {
     const parsed = redeemCertificateSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ message: parsed.error.issues[0]?.message });
-    const updated = await certs.redeem(parsed.data.number, parsed.data.amount);
+    const updated = await certs.redeem(parsed.data.number, parsed.data.amount, parsed.data.expectedBalance);
     if (!updated) return reply.code(409).send({ message: "Сертификат не найден, неактивен или его баланс недостаточен" });
     await appendAudit({
       actor: { id: req.user.sub, name: req.user.name, role: req.user.role },

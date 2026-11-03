@@ -103,3 +103,6 @@ assert(retry.ok&&retry.processed===1,'failed event can be retried');checks++;
 const batchHooks=Fastify();await batchHooks.register(webhooks,{handleAmoWebhook:body=>handleAmoWebhook(body,async()=>{throw Error('offline')})});
 assert((await batchHooks.inject({method:'POST',url:'/webhooks/amo?secret=change-me',payload:{leads:{status:[{id:11}]}}})).statusCode===503,'real event handler failures propagate to HTTP 503');checks++;
 await batchHooks.close();console.log(JSON.stringify({checks,result:'passed',scope:'including amo binding and partial webhook failures'}));
+
+const {sql: testPool} = await import("../src/db/index.ts");
+await testPool.end();

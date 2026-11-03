@@ -22,9 +22,9 @@ export function recalculateDealTotals(existing: Deal, patch: Partial<Deal>): Pic
   const adjustment = existing.items.length
     ? existing.total - oldGoods
     : fees(existing) - (existing.checkDiscount ?? 0) - (existing.saryBonus ?? 0);
-  const changed = patch.items !== undefined || patch.atelierAmount !== undefined || patch.deliveryAmount !== undefined || patch.saryBonus !== undefined;
+  const changed = patch.items !== undefined || patch.atelierAmount !== undefined || patch.deliveryAmount !== undefined || patch.saryBonus !== undefined || patch.checkDiscount !== undefined;
   const total = changed
-    ? signedItemsTotal(merged.items) + adjustment + fees(merged) - fees(existing) - (merged.saryBonus ?? 0) + (existing.saryBonus ?? 0)
+    ? signedItemsTotal(merged.items) + adjustment + fees(merged) - fees(existing) - (merged.saryBonus ?? 0) + (existing.saryBonus ?? 0) - (merged.checkDiscount ?? 0) + (existing.checkDiscount ?? 0)
     : existing.total;
   return {
     total: Math.round((existing.kind === "refund" || existing.kind === "exchange" ? total : Math.max(0, total)) * 100) / 100,
@@ -55,4 +55,18 @@ export function settledItems(deal: Deal): CartItem[] {
     return [ ...(item.qty > extra ? [line(item.qty - extra, unit, "base")] : []),
       ...(extra ? [line(extra, unit + 1, "cent")] : []) ];
   });
+}
+
+
+export function isTestDeal(deal: Deal): boolean {
+  return deal.isTest === true || /(^|[\s·_—-])(тест|test)(?=$|[\s·_—-])/i.test(deal.clientName ?? "");
+}
+export function dealAccountingDay(deal: Deal): string {
+  const success = deal.completedAt ?? [...(deal.history ?? [])].reverse().find(h => /→ Успех/.test(h.action))?.at;
+  const value = deal.stage === "Успех" ? success ?? deal.createdAt : deal.createdAt;
+  const date = new Date(value);
+  return Number.isFinite(date.valueOf()) ? new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Moscow" }).format(date) : "";
+}
+export function isSalesVisit(deal: Deal): boolean {
+  return !["refund", "exchange", "defect", "drycleaning", "resew", "wrong_size", "wrong_label"].includes(deal.kind);
 }

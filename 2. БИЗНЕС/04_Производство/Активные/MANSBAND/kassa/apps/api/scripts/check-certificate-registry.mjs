@@ -6,6 +6,8 @@ const {db,sql:pg}=await import('../dist/db/index.js');const {sql}=await import('
 const r=await import('../dist/services/certificateRegistry.js');const c=await import('../dist/services/certificates.js');
 const {moscowTodayYmd}=await import('@kassa/shared');
 try{
+const {migrate}=await import("drizzle-orm/postgres-js/migrator");
+await migrate(db,{migrationsFolder:"./drizzle"});
 await db.execute(sql`CREATE TABLE IF NOT EXISTS certificates (number text PRIMARY KEY,nominal integer NOT NULL,balance integer NOT NULL,status text NOT NULL,type text NOT NULL,guest_name text,buyer_deal_number integer,issued_at text NOT NULL,valid_until text NOT NULL)`);
 await r.initializeCertificateRegistry();await r.initializeCertificateRegistry();
 const reserved=await r.reservedNumbers();assert(reserved.some(x=>x.number==='00873'));assert.equal(r.canonicalNumber(' mb48379261 '),'MB-4837-9261');assert.equal(r.canonicalNumber('00881'),'00881');
@@ -22,5 +24,47 @@ const a=await r.ensureCertificate('test:'+crypto.randomUUID(),base);const b=awai
 await assert.rejects(()=>c.redeemMany([{number:a.number,amountRub:10},{number:b.number,amountRub:101}]));
 const after=(await c.list()).find(x=>x.number===a.number);assert.equal(after.balance,100);
 const voided=await r.ensureCertificate('test:'+crypto.randomUUID(),base);assert(await c.cancel(voided.number));assert.equal(await c.redeem(voided.number,1),null);assert.equal((await r.ensureCertificate('test:'+crypto.randomUUID(),base)).status,'active');await assert.rejects(()=>r.ensureCertificate('test:'+crypto.randomUUID(),base,voided.number));
+
+const q=await import('../dist/services/queue.js');
+const fixture=900000000+Math.floor(Math.random()*10000000);
+const payload={kind:'refund',dealNumber:fixture,client:'ТЕСТ',amount:100,destination:'isolated-test'};
+const created=await Promise.all(Array.from({length:8},()=>q.addQueue(payload)));
+assert.equal(new Set(created.map(x=>x.id)).size,1,'concurrent queue creation deduplicated');
+const id=created[0].id;
+assert.equal(await q.closeQueue(id,'ТЕСТ'),null,'money cannot be closed as documents');
+const payouts=await Promise.allSettled(Array.from({length:8},()=>q.issueQueue(id,{by:'ТЕСТ',methodId:'cash',amountRub:30,expectedIssuedAmount:0})));
+assert.equal(payouts.filter(x=>x.status==='fulfilled').length,1,'only one payout with expected balance');
+let current=(await q.listQueue()).find(x=>x.id===id);
+assert.equal(current.issuedAmount,30);assert.equal(current.payouts.length,1);
+await assert.rejects(()=>q.reopenQueue(id,'ТЕСТ'),'paid history cannot be erased');
+await q.issueQueue(id,{by:'ТЕСТ',methodId:'cash',amountRub:70,expectedIssuedAmount:30});
+assert.equal((await q.addQueue(payload)).id,id,'issued obligation is still deduplicated');
+current=(await q.listQueue()).find(x=>x.id===id);assert.equal(current.issuedAmount,100);assert.equal(current.payouts.length,2);
+const cert=await r.ensureCertificate('test:'+crypto.randomUUID(),base);
+const paymentDeal={id:'test:'+crypto.randomUUID(),number:fixture,payments:[{id:'p1',methodId:'certificate',certificateNumber:cert.number,amount:30}]};
+await Promise.all(Array.from({length:8},()=>c.redeemDealPayments(paymentDeal)));
+assert.equal((await c.list()).find(x=>x.number===cert.number).balance,70,'replayed certificate payment spent once');
+await assert.rejects(()=>c.redeemDealPayments({...paymentDeal,payments:[{...paymentDeal.payments[0],amount:40}]}));
+assert.equal((await c.list()).find(x=>x.number===cert.number).balance,70);
+const idem=await import('../dist/lib/idempotency.js');let invoked=0;const operation='test:'+crypto.randomUUID();
+const external=()=>{invoked++;return Promise.resolve({id:'external-id'})};
+await idem.withIdempotency(operation,'test',external);await idem.withIdempotency(operation,'test',external);assert.equal(invoked,1);
+const uncertain='test:'+crypto.randomUUID();await assert.rejects(()=>idem.withIdempotency(uncertain,'test',async()=>{throw Error('connection lost after commit')}));
+await assert.rejects(()=>idem.withIdempotency(uncertain,'test',external));assert.equal(invoked,1,'unknown result not replayed');
+const salary=await q.addQueue({...payload,kind:'salary',dealNumber:fixture+1});
+await Promise.all(Array.from({length:6},()=>q.issueSalary(salary.id,{by:'ТЕСТ:'+fixture,methodId:'cash',expectedIssuedAmount:0})));
+const expenseCount=await pg`select count(*)::int as count from expenses where category='Зарплата' and created_by=${'ТЕСТ:'+fixture}`;
+assert.equal(expenseCount[0].count,1,'concurrent salary only records one expense');
+
+const {deals:dealTable}=await import('../dist/db/schema.js');
+const date='2098-12-25T10:00:00.000Z';
+const sample={id:'stats:'+crypto.randomUUID(),number:fixture+10,createdAt:date,completedAt:date,kind:'sale',funnel:'offline',store:'На Бауманской',consultant:'Консультант '+fixture,clientName:'Покупатель',clientPhone:'',stage:'Успех',total:9000,paid:9000,payments:[],items:[{productId:'a',name:'A',qty:1,price:10000}]};
+const fixtures=[sample,{...sample,id:'stats:'+crypto.randomUUID(),number:fixture+11,kind:'refund',funnel:'return',linkedDealNumber:sample.number,consultant:'Другой',total:-9000,paid:0,items:[{...sample.items[0],isReturn:true,settledUnitPrice:9000}]},{...sample,id:'stats:'+crypto.randomUUID(),number:fixture+12,clientName:'ТЕСТ кассы',total:500000},{...sample,id:'stats:'+crypto.randomUUID(),number:fixture+13,kind:'defect',funnel:'defects',total:0}];
+for (const data of fixtures) await db.insert(dealTable).values({number:data.number,data});
+const {summary}=await import('../dist/services/stats.js');
+const report=await summary({from:'2098-12-25',to:'2098-12-25'},{name:sample.consultant,role:'consultant'});
+assert.equal(report.totals.clients,1);assert.equal(report.totals.success,1);assert.equal(report.totals.revenue,0);assert.equal(report.totals.upt,1);
+console.log(JSON.stringify({statistics:['refund attributed to original consultant','refund and defect not new clients','test deal excluded','net revenue'],result:'passed'}));
+console.log(JSON.stringify({finance:['queue concurrency','partial payout retries','no paid reopen','closed queue dedup','certificate payment replay','external unknown outcome','salary concurrency'],result:'passed'}));
 console.log(JSON.stringify({checks:['legacy reservations and zeros','canonical format','concurrent issuance','reserved conflict','atomic spending','repeat issuance keeps balance','future date blocks both spending paths','batch rollback'],result:'passed'}));
 }finally{await pg.end();}

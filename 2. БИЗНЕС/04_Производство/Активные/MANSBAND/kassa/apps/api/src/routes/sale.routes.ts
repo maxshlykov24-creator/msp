@@ -1,6 +1,7 @@
+import { withOperationLock } from "../lib/idempotency.js";
 import { validateReturnItems } from "./deals.routes.js";
 import type { FastifyInstance } from "fastify";
-import { createSaleSchema } from "@kassa/shared";
+import { createSaleSchema, financialDealError, cartLineTotal } from "@kassa/shared";
 import type { Deal } from "@kassa/shared";
 import * as sale from "../services/sale.js";
 import { notifyDeal } from "../services/notify.js";
@@ -15,7 +16,7 @@ export default async function saleRoutes(app: FastifyInstance) {
     if (!parsed.success) return reply.code(400).send({ message: parsed.error.issues[0]?.message });
     const input = parsed.data;
 
-    const total = input.items.reduce((acc, i) => acc + i.price * i.qty, 0);
+    const total = input.items.reduce((acc, i) => acc + cartLineTotal(i) * (i.isReturn || input.kind === "refund" ? -1 : 1), 0) + (input.atelierAmount ?? 0) + (input.deliveryAmount ?? 0) - (input.saryBonus ?? 0);
     const paid = input.payments.reduce((acc, p) => acc + p.amount, 0);
 
     const deal: Deal = {
@@ -69,11 +70,15 @@ export default async function saleRoutes(app: FastifyInstance) {
     if (deal.kind === "company" && input.fulfill && !deal.issued) {
       return reply.code(400).send({ message: "Продажа компании проводится только после фактической выдачи" });
     }
+    const source = deal.linkedDealNumber ? (await deals.getByNumber(deal.linkedDealNumber)) ?? (await deals.getByAmoLeadId(deal.linkedDealNumber)) : null;
+    return withOperationLock(["refund", "exchange"].includes(deal.kind) && source ? `return-source:${source.id}` : `create:${deal.id}`, async () => {
+    const financialError = financialDealError(deal, input.photos?.length ?? 0);
+    if (financialError) return reply.code(400).send({ message: financialError });
     const returnError = await validateReturnItems(deal);
     if (returnError) return reply.code(400).send({ message: returnError });
     const { number: _number, createdAt, ...requested } = deal;
     const reserved = await deals.reserveServerDeal({ ...requested, createdAt }, input.idempotencyKey);
-    if (reserved.duplicate) return reserved.deal;
+    if (reserved.duplicate) return sale.synchronizeFinancialDeal(reserved.deal, req.user.name);
     try {
       const saved = await sale.processSale(reserved.deal, {
         fulfill: input.fulfill,
@@ -87,8 +92,9 @@ export default async function saleRoutes(app: FastifyInstance) {
       return synced;
     } catch (error) {
       const message = (error as Error).message;
-      await deals.markSync(reserved.deal, "failed", message).catch(() => {});
+      await deals.markSync((await deals.getByNumber(reserved.deal.number)) ?? reserved.deal, "failed", message).catch(() => {});
       return reply.code(502).send({ message, number: reserved.deal.number, syncStatus: "failed" });
     }
+    });
   });
 }

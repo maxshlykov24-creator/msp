@@ -160,6 +160,10 @@ export async function applyAmoLeadStatusEvent(event: LeadStatusEvent): Promise<{
     // Этап уже совпал — задачи всё равно досоздаём (если вебхук пришёл повторно
     // после сбоя постановки).
     await taskFlow.onDealStage(deal, ACTOR);
+    if (stage === "Успех" && deal.financialSyncRequired) {
+      const { synchronizeFinancialDeal } = await import("./sale.js");
+      await synchronizeFinancialDeal(deal, ACTOR);
+    }
     return { dealNumber: deal.number, stage, tasks: true, skipped: "stage_unchanged" };
   }
 
@@ -183,6 +187,10 @@ export async function applyAmoLeadStatusEvent(event: LeadStatusEvent): Promise<{
   });
 
   await taskFlow.onDealStage(updated, ACTOR);
+  if (stage === "Успех") {
+    const { synchronizeFinancialDeal } = await import("./sale.js");
+    await synchronizeFinancialDeal(updated, ACTOR);
+  }
   deals.invalidateAmoOpenCache();
   return { dealNumber: updated.number, stage: updated.stage, tasks: true };
 }

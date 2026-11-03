@@ -1,7 +1,7 @@
 import { desc } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { deals as dealsTable, payrollSettings } from "../db/schema.js";
-import { DEFAULT_PAYROLL_SETTINGS } from "@kassa/shared";
+import { DEFAULT_PAYROLL_SETTINGS, isTestDeal, isSalesVisit, dealAccountingDay } from "@kassa/shared";
 import type {
   Deal,
   PayrollDay,
@@ -108,10 +108,15 @@ function pctOf(revenue: number, pct: number): number {
 export async function payrollReport(from: string, to: string): Promise<PayrollReport> {
   const settings = await getPayrollSettings();
   const rows = await db.select().from(dealsTable);
-  const all = rows
-    .map((r) => r.data as Deal)
+  const originals = rows.map(r => r.data as Deal);
+  const all = originals.map(d => {
+    if (!["refund", "exchange"].includes(d.kind) || !d.linkedDealNumber) return d;
+    const source = originals.find(s => s.number === d.linkedDealNumber || s.amoLeadId === d.linkedDealNumber);
+    return source ? { ...d, consultant: source.consultant } : d;
+  })
     .filter((d) => {
-      const day = (d.createdAt ?? "").slice(0, 10);
+      if (isTestDeal(d) || d.funnel === "defects") return false;
+      const day = dealAccountingDay(d);
       return day >= from && day <= to;
     });
 
@@ -121,14 +126,14 @@ export async function payrollReport(from: string, to: string): Promise<PayrollRe
   for (const d of all) {
     const consultant = d.consultant?.trim();
     if (!consultant) continue;
-    const day = (d.createdAt ?? "").slice(0, 10);
+    const day = dealAccountingDay(d);
     if (!day) continue;
     const days = workDays.get(consultant) ?? new Set<string>();
-    days.add(day);
+    if (isSalesVisit(d)) days.add(day);
     workDays.set(consultant, days);
     if (d.stage !== "Успех") continue;
     const byDay = revenueByConsultantDay.get(consultant) ?? new Map<string, number>();
-    byDay.set(day, (byDay.get(day) ?? 0) + Math.max(0, d.total ?? 0));
+    byDay.set(day, (byDay.get(day) ?? 0) + (d.total ?? 0));
     revenueByConsultantDay.set(consultant, byDay);
   }
 
@@ -141,12 +146,12 @@ export async function payrollReport(from: string, to: string): Promise<PayrollRe
     a[0].localeCompare(b[0], "ru")
   )) {
     const byDay = revenueByConsultantDay.get(consultant) ?? new Map<string, number>();
-    const dayRows: PayrollDay[] = [...days]
+    const dayRows: PayrollDay[] = [...new Set([...days, ...byDay.keys()])]
       .sort()
       .map((date) => {
         const revenue = byDay.get(date) ?? 0;
         const pctAmount = Math.round((revenue * settings.revenuePct) / 100);
-        const payout = Math.max(pctAmount, settings.dailyFloor);
+        const payout = days.has(date) ? Math.max(pctAmount, settings.dailyFloor) : pctAmount;
         return { date, revenue, pctAmount, payout, floorApplied: payout > pctAmount };
       });
     const basePay = dayRows.reduce((s, d) => s + d.payout, 0);
@@ -159,10 +164,10 @@ export async function payrollReport(from: string, to: string): Promise<PayrollRe
     const uptBonusPct = tierPct(settings.uptTiers, upt);
     const conversionPenaltyPct = tierPct(settings.penaltyConversionTiers, conversionPct);
     const uptPenaltyPct = tierPct(settings.penaltyUptTiers, upt);
-    const conversionBonus = pctOf(periodRevenue, conversionBonusPct);
-    const uptBonus = pctOf(periodRevenue, uptBonusPct);
-    const conversionPenalty = pctOf(periodRevenue, conversionPenaltyPct);
-    const uptPenalty = pctOf(periodRevenue, uptPenaltyPct);
+    const conversionBonus = pctOf(Math.max(0, periodRevenue), conversionBonusPct);
+    const uptBonus = pctOf(Math.max(0, periodRevenue), uptBonusPct);
+    const conversionPenalty = pctOf(Math.max(0, periodRevenue), conversionPenaltyPct);
+    const uptPenalty = pctOf(Math.max(0, periodRevenue), uptPenaltyPct);
     reportRows.push({
       consultant,
       days: dayRows,

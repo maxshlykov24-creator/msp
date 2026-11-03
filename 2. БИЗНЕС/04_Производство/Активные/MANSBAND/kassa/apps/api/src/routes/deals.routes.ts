@@ -1,6 +1,9 @@
+import { withOperationLock } from "../lib/idempotency.js";
 import { completedDealEditError } from "../plugins/auth.js";
 import type { FastifyInstance } from "fastify";
 import {
+  financialDealError,
+  cartLineTotal,
   addCommentSchema,
   recalculateDealTotals,
   isReturnSource,
@@ -44,20 +47,22 @@ export async function validateReturnItems(deal: Deal): Promise<string | null> {
   if (deal.kind !== "refund" && deal.kind !== "exchange") return null;
   const selected = deal.kind === "refund" ? deal.items : deal.items.filter((item) => item.isReturn);
   if (!selected.length) return "Не выбраны позиции возврата";
-  if (!deal.linkedDealNumber) return null;
+  if (!deal.linkedDealNumber) return "Выберите исходную заявку для проверки суммы и количества возврата";
   const source =
     (await deals.getByNumber(deal.linkedDealNumber)) ??
     (await deals.getByAmoLeadId(deal.linkedDealNumber));
   if (!source) return "Исходная заявка не найдена";
   if (!isReturnSource(source)) return "Возврат возможен только по успешной выдаче товара";
   const available = new Map<string, number>();
+  const priceKey = (item: Deal["items"][number]) => `${item.productId}:${Math.round(cartLineTotal(item) * 100 / item.qty)}`;
   for (const item of returnableItems(source, (await deals.listLocal()).filter(row => row.id !== deal.id))) {
-    available.set(item.productId, (available.get(item.productId) ?? 0) + item.qty);
+    available.set(priceKey(item), (available.get(priceKey(item)) ?? 0) + item.qty);
   }
   for (const item of selected) {
-    const left = available.get(item.productId) ?? 0;
-    if (item.qty > left) return `Позиция «${item.name}» отсутствует в исходной сделке или превышает проданное количество`;
-    available.set(item.productId, left - item.qty);
+    const key = priceKey(item);
+    const left = available.get(key) ?? 0;
+    if (item.qty > left) return `Количество или цена «${item.name}» не совпадают с остатком исходной продажи после скидок. Обновите товары возврата.`;
+    available.set(key, left - item.qty);
   }
   return null;
 }
@@ -159,6 +164,11 @@ export default async function dealsRoutes(app: FastifyInstance, dependencies: {
         issues: parsed.error.issues,
       });
     }
+    const sourceNumber = typeof parsed.data.linkedDealNumber === "number" ? parsed.data.linkedDealNumber : undefined;
+    const source = sourceNumber ? (await deals.getByNumber(sourceNumber)) ?? (await deals.getByAmoLeadId(sourceNumber)) : null;
+    const operationKey = ["refund", "exchange"].includes(parsed.data.kind) && source
+      ? `return-source:${source.id}` : `create:${parsed.data.idempotencyKey ?? parsed.data.id}`;
+    return withOperationLock(operationKey, async () => {
     const { photos, number: _ignoredNumber, createdAt, ...raw } = parsed.data;
     const idempotencyKey = raw.idempotencyKey ?? raw.id!;
     const requested = raw as unknown as Omit<Deal, "number" | "createdAt">;
@@ -183,8 +193,7 @@ export default async function dealsRoutes(app: FastifyInstance, dependencies: {
     // и очередь Эдвина досоздаём (если первый прогон упал до enqueue).
     if (reserved.duplicate) {
       await taskFlow.onDealStage(reserved.deal, who).catch(() => {});
-      await sale.enqueueEdwin(reserved.deal).catch(() => {});
-      return reserved.deal;
+      return sale.synchronizeFinancialDeal(reserved.deal, who);
     }
     const deal = reserved.deal;
     // Возврат: total ≤ 0; обмен: доплата (total>0) или возврат клиенту (total≤0).
@@ -217,9 +226,10 @@ export default async function dealsRoutes(app: FastifyInstance, dependencies: {
       return synced;
     } catch (error) {
       const message = (error as Error).message;
-      await deals.markSync(deal, "failed", message).catch(() => {});
+      await deals.markSync((await deals.getByNumber(deal.number)) ?? deal, "failed", message).catch(() => {});
       return reply.code(502).send({ message, number: deal.number, syncStatus: "failed" });
     }
+    });
   });
 
   app.patch("/deals/:ref", { preHandler: [app.authenticate] }, async (req, reply) => {
@@ -228,16 +238,33 @@ export default async function dealsRoutes(app: FastifyInstance, dependencies: {
     if (!parsed.success) return reply.code(400).send({ message: parsed.error.issues[0]?.message ?? "Некорректные данные" });
     const existing = await resolveDeal(ref);
     if (!existing) return reply.code(404).send({ message: "Заявка не найдена" });
+    const editError = completedDealEditError(existing.stage, req.user.role, parsed.data.reason);
+    if (editError) return reply.code(editError.status).send({ message: editError.message });
+    if (existing.msOrderId || existing.msDemandId) {
+      const financialFields = ["items", "checkDiscount", "saryBonus", "atelierAmount", "deliveryAmount", "tips", "tipsPayouts", "changePayouts", "returnPayouts", "linkedDealNumber"] as const;
+      if (financialFields.some(key => key in parsed.data && JSON.stringify((parsed.data as Partial<Deal>)[key]) !== JSON.stringify(existing[key]))) {
+        return reply.code(409).send({ message: "Товары, скидки и выплаты уже проведены в МойСклад. Для изменения нужна отдельная корректировка или возврат." });
+      }
+    }
     Object.assign(parsed.data, recalculateDealTotals(existing, parsed.data));
     const merged = { ...existing, ...parsed.data };
+    if (parsed.data.payments) {
+      for (const payment of existing.payments) {
+        const next = parsed.data.payments.find(p => p.id === payment.id);
+        if (!next || next.amount !== payment.amount || next.methodId !== payment.methodId || next.certificateNumber !== payment.certificateNumber) {
+          return reply.code(409).send({ message: "Сохранённые оплаты нельзя удалять или менять. Добавьте доплату или оформите возврат." });
+        }
+      }
+    }
+
+    const financialError = financialDealError(merged);
+    if (financialError) return reply.code(400).send({ message: financialError });
     const holdError = holdStageError(merged);
     if (holdError) return reply.code(400).send({ message: holdError });
     const dateError = stageDateError(merged);
     if (dateError) return reply.code(400).send({ message: dateError });
     if (parsed.data.stage && parsed.data.stage !== existing.stage && HOLD_DEAL_KINDS.includes(existing.kind) && AUTOMATIC_HOLD_STAGES.includes(parsed.data.stage)) return reply.code(400).send({ message: "Этот этап устанавливается после выполнения задачи" });
 
-    const editError = completedDealEditError(existing.stage, req.user.role, parsed.data.reason);
-    if (editError) return reply.code(editError.status).send({ message: editError.message });
     if (
       (existing.kind === "deferred" || existing.kind === "promise") &&
       parsed.data.stage === "Успех" &&
@@ -265,6 +292,9 @@ export default async function dealsRoutes(app: FastifyInstance, dependencies: {
     }
     const updated = await deals.updateDealFields(ref, parsed.data, req.user.name);
     if (!updated) return reply.code(404).send({ message: "Заявка не найдена" });
+    if (parsed.data.payments || updated.stage !== existing.stage) {
+      Object.assign(updated, await sale.synchronizeFinancialDeal(updated, req.user.name));
+    }
     if (updated.stage !== existing.stage) {
       await taskFlow.onDealStage(updated, req.user.name).catch(() => {});
       if (updated.stage === "Успех") {
@@ -351,12 +381,14 @@ export default async function dealsRoutes(app: FastifyInstance, dependencies: {
     if (!parsed.success) return reply.code(400).send({ message: parsed.error.issues[0]?.message ?? "Некорректный этап" });
     const existing = await resolveDeal(ref);
     if (!existing) return reply.code(404).send({ message: "Заявка не найдена" });
+    const editError = completedDealEditError(existing.stage, req.user.role, parsed.data.reason);
+    if (editError) return reply.code(editError.status).send({ message: editError.message });
+    const financialError = financialDealError({ ...existing, ...parsed.data });
+    if (financialError) return reply.code(400).send({ message: financialError });
     const holdError = holdStageError({ ...existing, ...parsed.data });
     if (holdError) return reply.code(400).send({ message: holdError });
     if (parsed.data.stage !== existing.stage && HOLD_DEAL_KINDS.includes(existing.kind) && AUTOMATIC_HOLD_STAGES.includes(parsed.data.stage)) return reply.code(400).send({ message: "Этот этап устанавливается после выполнения задачи" });
 
-    const editError = completedDealEditError(existing.stage, req.user.role, parsed.data.reason);
-    if (editError) return reply.code(editError.status).send({ message: editError.message });
     if (
       (existing.kind === "deferred" || existing.kind === "promise") &&
       parsed.data.stage === "Успех" &&
@@ -371,6 +403,7 @@ export default async function dealsRoutes(app: FastifyInstance, dependencies: {
     }
     const updated = await deals.updateStage(ref, parsed.data.stage, req.user.name, parsed.data);
     if (!updated) return reply.code(404).send({ message: "Заявка не найдена" });
+    Object.assign(updated, await sale.synchronizeFinancialDeal(updated, req.user.name));
     if (updated.kind === "deferred" && parsed.data.stage === "Провал") {
       await taskService.createTask({
         kind: "unreserve",
@@ -419,6 +452,7 @@ export default async function dealsRoutes(app: FastifyInstance, dependencies: {
       }
       const updated = await deals.updateCompanyStatus(ref, parsed.data, req.user.name);
       if (!updated) return reply.code(404).send({ message: "Заявка не найдена" });
+    Object.assign(updated, await sale.synchronizeFinancialDeal(updated, req.user.name));
       await appendAudit({
         actor: { id: req.user.sub, name: req.user.name, role: req.user.role },
         action: "deal.company_updated",
@@ -459,6 +493,7 @@ export default async function dealsRoutes(app: FastifyInstance, dependencies: {
     }
     const updated = await deals.handoverCompany(ref, parsed.data, req.user.name);
     if (!updated) return reply.code(404).send({ message: "Заявка не найдена" });
+    Object.assign(updated, await sale.synchronizeFinancialDeal(updated, req.user.name));
     if (parsed.data.documentsHanded) {
       await queueService.closeQueueByDeal(updated.number, "documents", req.user.name);
       await queueService.closeQueueByDeal(updated.number, "documents_hand", req.user.name);
@@ -520,7 +555,7 @@ export default async function dealsRoutes(app: FastifyInstance, dependencies: {
         return synced;
       } catch (error) {
         const message = (error as Error).message;
-        await deals.markSync(deal, "failed", message).catch(() => {});
+        await deals.markSync((await deals.getByNumber(deal.number)) ?? deal, "failed", message).catch(() => {});
         return reply.code(502).send({ message, syncStatus: "failed" });
       }
     }

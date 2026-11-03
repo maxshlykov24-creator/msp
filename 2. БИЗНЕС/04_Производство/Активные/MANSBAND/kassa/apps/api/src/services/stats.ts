@@ -1,7 +1,7 @@
 import { and, gte, lte } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { deals as dealsTable, expenses as expensesTable, products } from "../db/schema.js";
-import { countSuitsInLines } from "@kassa/shared";
+import { countSuitsInLines, isTestDeal, isSalesVisit, dealAccountingDay, cartLineTotal, settledItems } from "@kassa/shared";
 import type { Deal, SuitPart } from "@kassa/shared";
 import { suitPartsByMsIds } from "./catalog.js";
 
@@ -47,6 +47,8 @@ export interface StatsSummary {
   totals: StatsRow;
   consultants: StatsRow[];
   stores: StatsRow[];
+  channels: StatsRow[];
+  callManagers: StatsRow[];
   purchasing: PurchasingStats;
 }
 
@@ -68,10 +70,11 @@ function buildRow(
   suitInfo: SuitInfo
 ): StatsRow {
   const all = bucket.deals;
-  const success = all.filter((d) => d.stage === "Успех");
+  const visits = all.filter(isSalesVisit);
+  const success = visits.filter((d) => d.stage === "Успех");
   const slivDeals = all.filter((d) => d.kind === "sliv");
   const noSlivs = all.filter((d) => d.kind === "no_sliv").length;
-  const revenue = success.reduce((acc, d) => acc + (d.total ?? 0), 0);
+  const revenue = all.filter(d => d.stage === "Успех" && (isSalesVisit(d) || ["refund", "exchange"].includes(d.kind))).reduce((acc, d) => acc + (d.total ?? 0), 0);
 
   // Слив «добит» в другом магазине: телефон слива встречается в успешной
   // заявке другого магазина. Такие сливы не считаются недоработкой — вычитаем.
@@ -83,7 +86,7 @@ function buildRow(
     if (stores && [...stores].some((store) => store !== s.store)) rescued += 1;
   }
 
-  const denominator = all.length - noSlivs - rescued;
+  const denominator = visits.length - noSlivs - rescued;
   // UPT: костюм — одна единица, а не три (решение владельца 07.09). Иначе
   // пороги премий и штрафов по UPT берутся сами собой на любой продаже костюма.
   const itemsCount = success.reduce(
@@ -101,10 +104,10 @@ function buildRow(
 
   return {
     name: bucket.name,
-    clients: all.length,
+    clients: visits.length,
     success: success.length,
     revenue,
-    avgCheck: all.length ? Math.round(revenue / all.length) : 0,
+    avgCheck: visits.length ? Math.round(revenue / visits.length) : 0,
     conversion: denominator > 0 ? success.length / denominator : null,
     upt: success.length ? itemsCount / success.length : null,
     slivs: slivDeals.length,
@@ -137,12 +140,17 @@ export async function summary(
   viewer?: StatsViewer
 ): Promise<StatsSummary> {
   const rows = await db.select().from(dealsTable);
-  const everything = rows.map((r) => r.data as Deal);
+  const originals = rows.map((r) => r.data as Deal);
+  const everything = originals.filter(d => !isTestDeal(d)).map(d => {
+    if (!["refund", "exchange"].includes(d.kind) || !d.linkedDealNumber) return d;
+    const original = originals.find(s => s.number === d.linkedDealNumber || s.amoLeadId === d.linkedDealNumber);
+    return original ? { ...d, consultant: original.consultant, callManager: original.callManager, funnel: original.funnel } : d;
+  });
   // Консультанту — только его строка: и в плитках, и в разрезах.
   const ownOnly = viewer?.role === "consultant";
   const viewerName = viewer?.name?.trim() ?? "";
   const all = everything.filter((d) => {
-    const day = (d.createdAt ?? "").slice(0, 10);
+    const day = dealAccountingDay(d);
     if (period?.from && day < period.from) return false;
     if (period?.to && day > period.to) return false;
     if (ownOnly && (d.consultant?.trim() ?? "") !== viewerName) return false;
@@ -153,7 +161,7 @@ export async function summary(
   // добит другим магазином позже границы периода.
   const rescuedPhones = new Map<string, Set<string>>();
   for (const d of everything) {
-    if (d.stage !== "Успех") continue;
+    if (d.stage !== "Успех" || !isSalesVisit(d)) continue;
     const key = phoneKey(d.clientPhone);
     if (!key) continue;
     const set = rescuedPhones.get(key) ?? new Set<string>();
@@ -184,7 +192,10 @@ export async function summary(
   // Закуп и расходы Эдвина — не зона консультанта.
   const purchasing = ownOnly ? EMPTY_PURCHASING : await purchasingStats(all, period);
 
-  return { from: period?.from, to: period?.to, totals, consultants, stores, purchasing };
+  const channels = ["offline", "online"].map(funnel => buildRow({ name: funnel === "online" ? "Онлайн" : "Магазины", deals: all.filter(d => d.funnel === funnel) }, rescuedPhones, suitInfo));
+  const names = [...new Set(all.filter(d => d.funnel === "online").map(d => d.callManager || "Не назначен"))];
+  const callManagers = names.map(name => buildRow({ name, deals: all.filter(d => d.funnel === "online" && (d.callManager || "Не назначен") === name) }, rescuedPhones, suitInfo));
+  return { from: period?.from, to: period?.to, totals, consultants, stores, purchasing, channels, callManagers };
 }
 
 /** Блок для закупа и планирования: «сколько костюмов продано» без ручного счёта. */
@@ -192,7 +203,7 @@ async function purchasingStats(
   all: Deal[],
   period?: { from?: string; to?: string }
 ): Promise<PurchasingStats> {
-  const success = all.filter((d) => d.stage === "Успех");
+  const success = all.filter((d) => d.stage === "Успех" && (isSalesVisit(d) || ["refund", "exchange"].includes(d.kind)));
   const revenue = success.reduce((acc, d) => acc + (d.total ?? 0), 0);
 
   // Категория позиции — из кэша каталога МойСклад по productId (ms id).
@@ -203,12 +214,14 @@ async function purchasingStats(
 
   const groups = new Map<string, { qty: number; revenue: number }>();
   for (const d of success) {
-    for (const item of d.items) {
-      if (!item.productId || item.isReturn) continue;
+    const positions = d.kind === "refund" || d.kind === "exchange" ? d.items : settledItems(d);
+    for (const item of positions) {
+      if (!item.productId) continue;
+      const sign = d.kind === "refund" || item.isReturn ? -1 : 1;
       const group = categoryByMsId.get(item.productId)?.trim() || "Без группы";
       const g = groups.get(group) ?? { qty: 0, revenue: 0 };
-      g.qty += Math.max(0, item.qty || 0);
-      g.revenue += Math.max(0, (item.price || 0) * (item.qty || 0));
+      g.qty += sign * Math.max(0, item.qty || 0);
+      g.revenue += sign * cartLineTotal(item);
       groups.set(group, g);
     }
   }
@@ -218,7 +231,7 @@ async function purchasingStats(
 
   const byChannel: Record<string, number> = {};
   const byPurpose: Record<string, number> = {};
-  for (const d of success) {
+  for (const d of success.filter(isSalesVisit)) {
     if (d.channel) byChannel[d.channel] = (byChannel[d.channel] ?? 0) + 1;
     if (d.purpose) byPurpose[d.purpose] = (byPurpose[d.purpose] ?? 0) + 1;
   }

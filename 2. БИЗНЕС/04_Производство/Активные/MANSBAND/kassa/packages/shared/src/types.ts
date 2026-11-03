@@ -131,6 +131,9 @@ export interface Deal {
   id: string;
   number: number;
   createdAt: string;
+  completedAt?: string;
+  financialSyncRequired?: boolean;
+  isTest?: boolean;
   funnel: FunnelType;
   kind: DealKind;
   consultant: string;

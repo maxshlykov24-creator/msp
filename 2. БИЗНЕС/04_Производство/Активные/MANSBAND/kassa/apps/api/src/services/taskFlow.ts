@@ -337,7 +337,10 @@ export async function onTaskCompleted(task: Task, who: string, depth = 0): Promi
   // локацию двигают сами задачи (правки владельца 10.08.2026, п.10).
   // Единый статус «СДЭК» — созвон 20.08; у клиента посылка или вернулась к нам,
   // видно по этапу заявки (Отправлен / Не выкуплен).
-  if (task.kind === "take_to_cdek" || task.kind === "pickup_from_cdek") {
+  if (task.kind === "pickup_from_cdek") {
+    await setDealItemsLocation(task.dealNumber, storeLocation(task.store), who, { state: "in_store" });
+  }
+  if (task.kind === "take_to_cdek") {
     await setDealItemsLocation(task.dealNumber, CDEK_LOCATION, who, {
       state: task.kind === "take_to_cdek" ? "in_transit" : "in_store",
     }).catch(() => {});

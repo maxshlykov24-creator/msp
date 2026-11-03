@@ -283,21 +283,8 @@ export async function reopenQueue(id: string, by: string): Promise<QueueItem | n
     }
 
     const payouts = await tx.select().from(queuePayouts).where(eq(queuePayouts.queueId, id));
-    for (const p of payouts) {
-      await tx
-        .insert(accountBalances)
-        .values({ account: p.methodId, balance: p.amount, updatedBy: by })
-        .onConflictDoUpdate({
-          target: accountBalances.account,
-          set: {
-            balance: sql`${accountBalances.balance} + ${p.amount}`,
-            updatedAt: new Date(),
-            updatedBy: by,
-          },
-        });
-    }
-    if (payouts.length > 0) {
-      await tx.delete(queuePayouts).where(eq(queuePayouts.queueId, id));
+    if (payouts.length || current.issuedAmount > 0) {
+      throw Object.assign(new Error("Выплата уже записана. Нужна отдельная корректировка, история выплат сохраняется."), { statusCode: 409 });
     }
 
     const [updated] = await tx

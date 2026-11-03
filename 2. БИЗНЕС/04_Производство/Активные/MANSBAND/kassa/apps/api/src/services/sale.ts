@@ -13,6 +13,7 @@ import { withIdempotency, withOperationLock } from "../lib/idempotency.js";
 import { toKopecks } from "../lib/money.js";
 import {
   settledItems,
+  financialDealError,
   cartLineTotal,
   AMO_LEAD_FIELDS,
   AMO_CERTIFICATE_NOMINAL_FIELD_ID,
@@ -81,8 +82,11 @@ export async function processSale(
 ): Promise<Deal> {
   return withOperationLock(`sale:${deal.id}`, async () => {
     const enriched = { ...deal };
+    const validation = financialDealError(enriched, opts.photos?.length ?? 0);
+    if (validation) throw new Error(validation);
     await redeemCertificatesFromPayments(enriched);
     enriched.paymentStatus = paymentStatusLabel(enriched);
+    if (enriched.stage === "Успех") enriched.completedAt ??= new Date().toISOString();
 
     // 1. amoCRM: контакт + сделка
     const amoLeadId = await ensureAmoLead(enriched);
@@ -104,8 +108,12 @@ export async function processSale(
       } else {
         await fulfillMoysklad(enriched, opts.photos ?? [], opts.who);
       }
-    } else if (amoLeadId && opts.photos?.length) {
-      await attachPhotosToLead(amoLeadId, opts.photos);
+    } else {
+      if (enriched.payments.some(p => p.amount > 0 && paymentKind(p.methodId) !== "certificate")) {
+        const { org, agent } = await resolveMsParty(enriched);
+        await processPayments(enriched, org.meta, agent.meta, undefined, opts.who);
+      }
+      if (amoLeadId && opts.photos?.length) await attachPhotosToLead(amoLeadId, opts.photos);
     }
 
     // 3. writeback статуса оплаты + ссылок в amo
@@ -735,7 +743,7 @@ async function buildMsPositions(
   const stockDeltas: { productMsId: string; qty: number }[] = [];
   for (const item of items) {
     const a = await resolveAssortment(item.productId);
-    if (!a) continue;
+    if (!a) throw new Error(`Товар ${item.productId} отсутствует в каталоге МойСклад. Проведение остановлено.`);
     positions.push({
       assortmentHref: a.href,
       assortmentType: a.type,
@@ -987,10 +995,16 @@ async function processCashOuts(
   });
   if (cashOutRub <= 0) return;
 
-  const sum = toKopecks(cashOutRub);
+  const target = toKopecks(cashOutRub);
+  const previous = await db.select().from(ledger).where(and(eq(ledger.dealNumber, deal.number), eq(ledger.kind, "cash_out")));
+  if (previous.some(row => !row.msPaymentId)) throw new Error("У прежней выплаты нет документа МойСклад. Сначала нужна сверка.");
+  const recorded = previous.reduce((sum, row) => sum - row.amount, 0);
+  if (recorded > target) throw new Error("Нельзя уменьшить уже проведённую выплату без корректировки");
+  const sum = target - recorded;
+  if (sum === 0) return;
   let msPaymentId: string | undefined;
   try {
-    const doc = (await withIdempotency(`ms:${deal.id}:cashout:${sum}`, "ms", () => ms.createCashOut({
+    const doc = (await withIdempotency(`ms:${deal.id}:cashout:${target}`, "ms", () => ms.createCashOut({
       organization: org,
       agent,
       sum,
@@ -1087,7 +1101,24 @@ async function writeback(amoLeadId: number, deal: Deal): Promise<void> {
     const customFields = await buildLeadCustomFields(deal);
     if (customFields.length) await amo.updateLead(amoLeadId, { customFields });
     await writeKassaLink(amoLeadId, deal.number);
-  } catch {
-    // writeback не критичен для проведения; повторим при следующей синхронизации
+  } catch (error) {
+    throw error;
+  }
+}
+
+/** Финансовый переход и доплата используют тот же возобновляемый процесс, что создание. */
+export async function synchronizeFinancialDeal(deal: Deal, who: string): Promise<Deal> {
+  deal.financialSyncRequired = true;
+  await deals.persist(deal);
+  const fulfill = ["sale", "company", "delivery", "exchange", "refund"].includes(deal.kind)
+    && (deal.stage === "Успех" || (deal.kind === "company" && deal.stage === "Товар выдан" && deal.issued === true))
+    && (deal.total <= 0 || deal.paid >= deal.total) && (deal.kind !== "company" || deal.issued === true);
+  try {
+    const saved = await processSale(deal, { fulfill, who });
+    saved.financialSyncRequired = false;
+    return await deals.markSync(saved, "synced");
+  } catch (error) {
+    await deals.markSync((await deals.getByNumber(deal.number)) ?? deal, "failed", (error as Error).message);
+    throw error;
   }
 }
