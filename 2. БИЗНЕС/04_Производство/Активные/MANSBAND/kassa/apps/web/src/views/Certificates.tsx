@@ -43,6 +43,7 @@ export function Certificates() {
   const [cancelling,setCancelling]=useState(false);
   const { certificates, redeemCertificate } = useStore();
   const [redeemError, setRedeemError] = useState("");
+  const [redeemBusy, setRedeemBusy] = useState(false);
   const [redeem, setRedeem] = useState<Certificate | null>(null);
   const [usageCert, setUsageCert] = useState<Certificate | null>(null);
   const [usages, setUsages] = useState<CertificateUsage[]>([]);
@@ -404,8 +405,10 @@ export function Certificates() {
               </Button>
               <div className="flex-1" />
               <Button
-                disabled={!amount || Number(amount) <= 0 || Number(amount) > redeem.balance}
+                disabled={redeemBusy || !amount || Number(amount) <= 0 || Number(amount) > redeem.balance}
                 onClick={async () => {
+                  if (redeemBusy) return;
+                  setRedeemBusy(true);setRedeemError("");
                   try {
                   await redeemCertificate(redeem.number, Number(amount));
                   setList((prev) =>
@@ -422,6 +425,7 @@ export function Certificates() {
                   );
                   setRedeem(null);
                   } catch (error) { setRedeemError(error instanceof Error ? error.message : "Списание не подтверждено"); }
+                  finally {setRedeemBusy(false);}
                 }}
               >
                 Списать {amount ? money(Number(amount)) : ""}

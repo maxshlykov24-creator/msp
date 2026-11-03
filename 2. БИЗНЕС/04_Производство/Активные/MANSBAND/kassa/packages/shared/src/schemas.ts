@@ -397,6 +397,7 @@ export const createDealSchema = z
     id: z.string().min(8).max(128).optional(),
     idempotencyKey: z.string().min(8).max(128).optional(),
     number: z.number().int().nonnegative().optional(),
+    linkedDealNumber: z.number().int().positive().optional(),
     createdAt: z.string().datetime().optional(),
     funnel: z.enum(["offline", "online", "defects", "return"]),
     kind: dealKindSchema,
@@ -418,6 +419,12 @@ export const createDealSchema = z
     items: z.array(cartItemSchema).max(500),
     payments: z.array(paymentSchema).max(50),
     stage: z.string().min(1),
+    tips: z.number().nonnegative().optional(),
+    tipsPayouts: z.array(payoutRowSchema).max(20).optional(),
+    changePayouts: z.array(payoutRowSchema).max(20).optional(),
+    returnPayouts: z.array(payoutRowSchema).max(20).optional(),
+    returnStatus: z.enum(["issued", "pending"]).optional(),
+    changeStatus: z.enum(["issued", "pending"]).optional(),
     total: z.number(),
     paid: z.number(),
     subtotal: z.number().nonnegative().optional(),
@@ -432,7 +439,7 @@ export const createDealSchema = z
   })
   .passthrough()
   .superRefine((v, ctx) => {
-    const error = financialDealError(v as unknown as Deal, v.photos?.length ?? 0);
+    const error = financialDealError({ ...v, photoAttached: false } as unknown as Deal, v.photos?.length ?? 0);
     if (error) ctx.addIssue({ code: z.ZodIssueCode.custom, message: error });
     if (v.kind === "no_sliv") {
       if (!v.clientName.trim()) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["clientName"], message: "Укажите имя клиента" });
@@ -681,6 +688,11 @@ export function financialDealError(deal: Deal, photoCount = 0): string | null {
     if (!deal.items.length || !deal.comment?.trim()) return "Для дефекта нужны товары и комментарий";
     if (["defect", "drycleaning"].includes(deal.kind) && !photoCount && !deal.photoAttached) return "Прикрепите фото дефекта";
   }
+  const overpaid = Math.max(0, deal.paid - Math.max(0, deal.total));
+  if ((deal.tips ?? 0) > overpaid) return "Чаевые превышают внесённую сверх чека сумму";
+  const refund = ["refund", "exchange"].includes(deal.kind) ? Math.max(0, -deal.total) : 0;
+  const allocations = [[deal.returnPayouts,refund], [deal.changePayouts,overpaid-(deal.tips??0)], [deal.tipsPayouts,deal.tips??0]] as const;
+  for (const [rows,expected] of allocations) if (rows?.length && rows.reduce((sum,row)=>sum+Math.round(row.amount*100),0)!==Math.round(expected*100)) return "Разбивка выплаты не совпадает с суммой сдачи, чаевых или возврата";
   if (["refund", "exchange"].includes(deal.kind)) {
     const total = deal.items.reduce((sum, item) => sum + Math.round(cartLineTotal(item) * 100) * (deal.kind === "refund" || item.isReturn ? -1 : 1), 0);
     if (total !== Math.round(deal.total * 100)) return "Сумма возврата или обмена не совпадает с выбранными товарами";

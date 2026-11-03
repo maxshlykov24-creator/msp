@@ -1,5 +1,6 @@
+import { z } from "zod";
 import type { FastifyInstance } from "fastify";
-import { appSettingsSchema, payrollQuerySchema, payrollSettingsSchema } from "@kassa/shared";
+import { dealStoreSchema, appSettingsSchema, payrollQuerySchema, payrollSettingsSchema } from "@kassa/shared";
 import * as settings from "../services/settings.js";
 import * as payroll from "../services/payroll.js";
 
@@ -19,6 +20,17 @@ export default async function settingsRoutes(app: FastifyInstance) {
       name: req.user.name,
       role: req.user.role,
     });
+  });
+
+  app.get("/payroll/workdays", {preHandler:[app.requireRoles(["rop","admin","finance"])]}, async(req,reply)=>{
+    const period=payrollQuerySchema.safeParse(req.query);
+    if(!period.success)return reply.code(400).send({message:"Укажите период"});
+    return payroll.listWorkdays(period.data.from,period.data.to);
+  });
+  app.put("/payroll/workdays", {preHandler:[app.requireRoles(["rop","admin"])]}, async(req,reply)=>{
+    const parsed=z.object({consultant:z.string().trim().min(1).max(100),date:z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(v=>Number.isFinite(new Date(v).valueOf()) && new Date(v).toISOString().slice(0,10)===v),store:dealStoreSchema,active:z.boolean(),reason:z.string().trim().min(3).max(500)}).safeParse(req.body);
+    if(!parsed.success)return reply.code(400).send({message:"Укажите сотрудника, дату, магазин и причину"});
+    return payroll.confirmWorkday(parsed.data,{id:req.user.sub,name:req.user.name,role:req.user.role});
   });
 
   app.get(

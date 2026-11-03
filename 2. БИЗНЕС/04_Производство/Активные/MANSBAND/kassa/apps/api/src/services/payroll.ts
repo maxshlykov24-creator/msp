@@ -1,6 +1,7 @@
-import { desc } from "drizzle-orm";
+import { withOperationLock } from "../lib/idempotency.js";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
-import { deals as dealsTable, payrollSettings } from "../db/schema.js";
+import { deals as dealsTable, payrollSettings, shifts, queue } from "../db/schema.js";
 import { DEFAULT_PAYROLL_SETTINGS, isTestDeal, isSalesVisit, dealAccountingDay } from "@kassa/shared";
 import type {
   Deal,
@@ -21,8 +22,8 @@ import { appendAudit, appendSystemAudit, type AuditActor } from "./audit.js";
  *   включительно, to исключительно — «87 ровно» и «87,001» попадают в разные разделы);
  * — условия единые для всех консультантов.
  *
- * Рабочий день — день, когда у консультанта есть хотя бы одна заявка в кассе
- * (графика смен в системе нет). День без заявок в расчёт не попадает.
+ * Рабочие дни подтверждает руководитель. Заявки дают предварительные дни;
+ * выплата до подтверждения блокируется. Подтверждённые дни без заявок учитываются.
  */
 
 export async function getPayrollSettings(): Promise<PayrollSettings> {
@@ -120,7 +121,7 @@ export async function payrollReport(from: string, to: string): Promise<PayrollRe
       return day >= from && day <= to;
     });
 
-  // Выручка по дням: успешные заявки консультанта, день = дата создания заявки.
+  // Выручка по дням завершения; старые записи без истории используют дату создания.
   const revenueByConsultantDay = new Map<string, Map<string, number>>();
   const workDays = new Map<string, Set<string>>();
   for (const d of all) {
@@ -135,6 +136,18 @@ export async function payrollReport(from: string, to: string): Promise<PayrollRe
     const byDay = revenueByConsultantDay.get(consultant) ?? new Map<string, number>();
     byDay.set(day, (byDay.get(day) ?? 0) + (d.total ?? 0));
     revenueByConsultantDay.set(consultant, byDay);
+  }
+
+  const confirmed = await listWorkdays(from, to);
+  const warnings: string[] = [];
+  for (const [name, days] of workDays) {
+    for (const date of days) if (!confirmed.some(row => row.consultant === name && row.date === date)) warnings.push(`${name}: не подтверждён рабочий день ${date}`);
+  }
+  for (const row of confirmed) {
+    const days = workDays.get(row.consultant) ?? new Set<string>();
+    if (row.active) days.add(row.date);
+    else days.delete(row.date);
+    workDays.set(row.consultant, days);
   }
 
   // Конверсия и UPT за период — те же формулы, что в статистике (stats.summary).
@@ -191,7 +204,7 @@ export async function payrollReport(from: string, to: string): Promise<PayrollRe
     });
   }
 
-  return { from, to, settings, rows: reportRows };
+  return { from, to, settings, rows: reportRows, warnings };
 }
 
 // ── Еженедельная задача Эдвину «Выдать зарплату» ─────────────────────
@@ -227,14 +240,15 @@ export function lastWeekRange(): { from: string; to: string } {
  * destination = период. Владелец 04.09 попросил ручной расчёт за любой период,
  * поэтому один и тот же код обслуживает и вторничную автоматику, и кнопку РОПа.
  */
-export async function enqueueSalaryForPeriod(
+async function enqueueSalaryForPeriodUnlocked(
   from: string,
   to: string,
   who = "Касса (авто)"
 ): Promise<{ created: boolean; total: number; consultants: number }> {
   const report = await payrollReport(from, to);
+  if (report.warnings?.length) throw Object.assign(new Error("Перед выплатой подтвердите рабочие дни в настройках: " + report.warnings.join("; ")), { statusCode: 409 });
   const total = report.rows.reduce((s, r) => s + r.total, 0);
-  if (report.rows.length === 0) return { created: false, total: 0, consultants: 0 };
+  if (report.rows.length === 0 || total <= 0) return { created: false, total: 0, consultants: report.rows.length };
 
   const created = await financeQueue.addQueue({
     kind: "salary",
@@ -286,4 +300,37 @@ export async function enqueueWeeklySalary(): Promise<boolean> {
   const { from, to } = lastWeekRange();
   const res = await enqueueSalaryForPeriod(from, to);
   return res.created;
+}
+
+
+export interface Workday { consultant: string; date: string; store: string; active: boolean; confirmedBy: string }
+export async function listWorkdays(from: string, to: string): Promise<Workday[]> {
+  const rows = await db.select().from(shifts).where(sql`${shifts.payload}->>'kind' = 'workday' and ${shifts.payload}->>'date' >= ${from} and ${shifts.payload}->>'date' <= ${to}`);
+  return rows.map(row => {
+    const value = row.payload as { date: string; active: boolean; confirmedBy: string };
+    return { consultant: row.openedBy, store: row.store, date: value.date, active: value.active, confirmedBy: value.confirmedBy };
+  }).sort((a,b) => a.date.localeCompare(b.date) || a.consultant.localeCompare(b.consultant, "ru"));
+}
+export async function confirmWorkday(input: Omit<Workday, "confirmedBy"> & { reason: string }, actor: AuditActor): Promise<Workday> {
+  const updated = await db.transaction(async tx => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`workday:${input.consultant}:${input.date}`}, 716))`);
+    const [paid] = await tx.select({id:queue.id}).from(queue).where(and(eq(queue.kind,"salary"),sql`${queue.issuedAmount} > 0 and ${queue.metadata}->>'from' <= ${input.date} and ${queue.metadata}->>'to' >= ${input.date}`)).limit(1);
+    if(paid)throw Object.assign(new Error("За этот период зарплата уже выплачивалась. Нужна отдельная корректировка."),{statusCode:409});
+    const [existing] = await tx.select().from(shifts).where(and(eq(shifts.openedBy, input.consultant), sql`${shifts.payload}->>'kind' = 'workday' and ${shifts.payload}->>'date' = ${input.date}`));
+    const values = { store: input.store, openedBy: input.consultant, payload: {kind:"workday",date:input.date,active:input.active,confirmedBy:actor.name,reason:input.reason}, reconciled:true };
+    if (existing) await tx.update(shifts).set(values).where(eq(shifts.id, existing.id));
+    else await tx.insert(shifts).values(values);
+    return { ...input, confirmedBy: actor.name };
+  });
+  await appendAudit({actor,action:"payroll.workday_confirmed",entityType:"shift",entityId:`${input.consultant}:${input.date}`,after:updated,metadata:{reason:input.reason}});
+  return updated;
+}
+
+
+export async function enqueueSalaryForPeriod(from:string,to:string,who="Касса (авто)") {
+  return withOperationLock("salary-period",async()=>{
+    const [overlap]=await db.select({id:queue.id}).from(queue).where(and(eq(queue.kind,"salary"),sql`${queue.metadata}->>'from' <= ${to} and ${queue.metadata}->>'to' >= ${from} and not (${queue.metadata}->>'from' = ${from} and ${queue.metadata}->>'to' = ${to})`)).limit(1);
+    if(overlap)throw Object.assign(new Error("Часть периода уже включена в другую зарплатную ведомость. Нужна сверка, повторная выплата не создана."),{statusCode:409});
+    return enqueueSalaryForPeriodUnlocked(from,to,who);
+  });
 }

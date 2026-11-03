@@ -539,6 +539,8 @@ test("server rejects unpaid success, forged totals, duplicate payments and missi
   const {financialDealError} = await import('../dist/index.js');
   const complete={...baseDeal,stage:'Успех',clientPhone:'+79990000000',channel:'Сайт',purpose:'Работа',items:[{productId:'a',name:'A',price:100,qty:1}],total:100,paid:100,payments:[{id:'p',methodId:'cash',amount:100}]};
   assert.equal(financialDealError(complete),null);
+  assert(financialDealError({...complete,tips:50}));
+  assert(financialDealError({...complete,changePayouts:[{methodId:"cash",amount:100}]}));
   for (const patch of [{items:[]},{paid:0,payments:[]},{paid:200,payments:[...complete.payments,...complete.payments]}]) assert(financialDealError({...complete,...patch}));
   assert(financialDealError({...complete,kind:'refund',total:-1000}));
   assert.equal(financialDealError({...complete,kind:'refund',total:-100,paid:0,payments:[]}),null);

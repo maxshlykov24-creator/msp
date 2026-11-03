@@ -47,7 +47,7 @@ export async function validateReturnItems(deal: Deal): Promise<string | null> {
   if (deal.kind !== "refund" && deal.kind !== "exchange") return null;
   const selected = deal.kind === "refund" ? deal.items : deal.items.filter((item) => item.isReturn);
   if (!selected.length) return "Не выбраны позиции возврата";
-  if (!deal.linkedDealNumber) return "Выберите исходную заявку для проверки суммы и количества возврата";
+  if (!deal.linkedDealNumber) return null; // Ручной возврат без найденной продажи проходит отдельную проверку товаров.
   const source =
     (await deals.getByNumber(deal.linkedDealNumber)) ??
     (await deals.getByAmoLeadId(deal.linkedDealNumber));
@@ -173,6 +173,8 @@ export default async function dealsRoutes(app: FastifyInstance, dependencies: {
     const idempotencyKey = raw.idempotencyKey ?? raw.id!;
     const requested = raw as unknown as Omit<Deal, "number" | "createdAt">;
     requested.id = raw.id ?? idempotencyKey;
+    for (const field of ["amoLeadId", "msOrderId", "msDemandId", "paymentStatus", "syncStatus", "syncError", "history", "completedAt", "financialSyncRequired", "photoAttached"] as const) delete requested[field];
+    if (req.user.role !== "admin") delete requested.isTest;
     requested.subtotal = requested.items.reduce((sum, i) => sum + i.price * i.qty, 0);
     requested.discountTotal = Math.max(0, requested.subtotal - requested.total);
     if (RESERVE_UNTIL_KINDS.includes(requested.kind)) {
@@ -193,7 +195,7 @@ export default async function dealsRoutes(app: FastifyInstance, dependencies: {
     // и очередь Эдвина досоздаём (если первый прогон упал до enqueue).
     if (reserved.duplicate) {
       await taskFlow.onDealStage(reserved.deal, who).catch(() => {});
-      return sale.synchronizeFinancialDeal(reserved.deal, who);
+      return sale.synchronizeFinancialDeal(reserved.deal, who, photos as PhotoInput[] | undefined);
     }
     const deal = reserved.deal;
     // Возврат: total ≤ 0; обмен: доплата (total>0) или возврат клиенту (total≤0).

@@ -464,7 +464,7 @@ export function returnableItems(source: Deal, returns: Deal[]): Deal["items"] {
       }
     }
   }
-  return available.filter(item => item.qty > 0);
+  return available.filter(item => item.qty > 0).map(item => ({ ...item, price: item.settledUnitPrice ?? item.price, discountPct: undefined, discountRub: undefined }));
 }
 
 

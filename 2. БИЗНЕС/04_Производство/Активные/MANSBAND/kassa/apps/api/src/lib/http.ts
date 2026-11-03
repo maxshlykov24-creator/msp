@@ -1,4 +1,4 @@
-// HTTP с ограничением частоты (rate-limit) и ретраями на 429/5xx.
+// HTTP с ограничением частоты: повтор 429, повтор сетевых ошибок/5xx только для GET.
 // Используется amoClient и msClient. Один лимитер на каждый внешний API.
 
 interface RateLimiterOptions {

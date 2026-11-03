@@ -1,91 +1,37 @@
-import { useState } from "react";
-import { Wallet, CheckCircle2, AlertTriangle } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { Wallet, CheckCircle2 } from "lucide-react";
 import { Card, Button } from "../components/ui";
 import { money } from "../lib/format";
-import { Hint } from "../lib/hints";
+import { api, USE_MOCK } from "../api/client";
+import { useStore } from "../store";
+import { useAuth } from "../auth/AuthContext";
 
-const EXPECTED = [
-  { method: "Наличные", system: 41800 },
-  { method: "Сбер Женя", system: 73600 },
-  { method: "Альфа Эдвин", system: 28900 },
-  { method: "РС", system: 30000 },
-];
-
-export function ShiftClose() {
-  const [fact, setFact] = useState<Record<string, string>>({});
-  const [closed, setClosed] = useState(false);
-
-  const rows = EXPECTED.map((e) => {
-    const f = Number(fact[e.method] ?? "");
-    const diff = (fact[e.method] === undefined || fact[e.method] === "") ? null : f - e.system;
-    return { ...e, fact: f, diff };
-  });
-  const allFilled = rows.every((r) => r.diff !== null);
-  const totalDiff = rows.reduce((s, r) => s + (r.diff ?? 0), 0);
-
-  return (
-    <div className="max-w-2xl mx-auto">
-      <div className="flex items-center gap-2 mb-1">
-        <Wallet className="text-gold" size={22} />
-        <h1 className="text-2xl font-extrabold text-white">Закрытие смены</h1>
-      </div>
-      <Hint>
-        Сверка факта с системой по способам оплаты. Без сверки смена не закрывается. Расхождение —
-        разница между введённым фактом и суммой в системе.
-      </Hint>
-
-      <Card className="p-0 overflow-hidden">
-        <table className="w-full text-left">
-          <thead className="text-[12px] uppercase tracking-wider text-mute border-b border-ink-700">
-            <tr>
-              <th className="px-4 py-3">Способ</th>
-              <th className="px-4 py-3">В системе</th>
-              <th className="px-4 py-3">Факт</th>
-              <th className="px-4 py-3">Расхождение</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-ink-800">
-            {rows.map((r) => (
-              <tr key={r.method}>
-                <td className="px-4 py-3 text-white">{r.method}</td>
-                <td className="px-4 py-3 text-mute-soft">{money(r.system)}</td>
-                <td className="px-4 py-3">
-                  <input
-                    className="input py-1.5 w-32"
-                    inputMode="numeric"
-                    placeholder="0"
-                    value={fact[r.method] ?? ""}
-                    onChange={(e) => setFact({ ...fact, [r.method]: e.target.value.replace(/[^\d]/g, "") })}
-                  />
-                </td>
-                <td className="px-4 py-3 font-semibold">
-                  {r.diff === null ? <span className="text-mute">—</span> :
-                    r.diff === 0 ? <span className="text-white/60">точно</span> :
-                    <span className="text-white underline decoration-white/30 underline-offset-4">{r.diff > 0 ? "+" : ""}{money(r.diff)}</span>}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </Card>
-
-      <div className="mt-5">
-        {closed ? (
-          <div className="flex items-center gap-2 rounded-xl bg-white/10 border border-white/30 text-white px-4 py-3 font-semibold">
-            <CheckCircle2 size={18} /> Смена закрыта. Можно выходить из аккаунта.
-          </div>
-        ) : (
-          <div className="flex items-center gap-3">
-            {allFilled && totalDiff !== 0 && (
-              <span className="inline-flex items-center gap-1.5 text-mute-soft text-sm">
-                <AlertTriangle size={15} /> Общее расхождение {money(totalDiff)} — проверьте кассу
-              </span>
-            )}
-            <div className="flex-1" />
-            <Button disabled={!allFilled} onClick={() => setClosed(true)}>Закрыть смену</Button>
-          </div>
-        )}
-      </div>
-    </div>
-  );
+type Snapshot={store:string;from:string;cutoff:string;previousId:string|null;openingCash:number|null;movement:number;operations:number};
+export function ShiftClose(){
+  const {activeStore}=useStore();const {user}=useAuth();
+  const [snapshot,setSnapshot]=useState<Snapshot|null>(null);
+  const [opening,setOpening]=useState("");const [counted,setCounted]=useState("");const [adjustment,setAdjustment]=useState("0");const [reason,setReason]=useState("");
+  const [error,setError]=useState("");const [busy,setBusy]=useState(false);const [closed,setClosed]=useState(false);
+  const manager=["admin","rop"].includes(user?.role??"");
+  const refresh=useCallback(async()=>{setError("");setSnapshot(null);setClosed(false);if(USE_MOCK){setError("Сверка доступна только с подключённой рабочей базой");return;}try{const row=await api.getQuery<Snapshot>("/shifts/current",{store:activeStore});setSnapshot(row);setOpening(row.openingCash==null?"":String(row.openingCash));}catch(e){setError(e instanceof Error?e.message:"Не удалось загрузить движения");}},[activeStore]);
+  useEffect(()=>{void refresh();},[refresh]);
+  const expected=(Number(opening)||0)+(snapshot?.movement??0)+(Number(adjustment)||0);
+  const diff=counted.trim()&&Number.isFinite(Number(counted))?Math.round((Number(counted)-expected)*100)/100:null;
+  async function close(){if(!snapshot||busy)return;setBusy(true);setError("");try{await api.post("/shifts/close",{store:activeStore,cutoff:snapshot.cutoff,previousId:snapshot.previousId,openingCash:Number(opening),countedCash:Number(counted),adjustment:Number(adjustment),reason});setClosed(true);}catch(e){setError(e instanceof Error?e.message:"Не удалось сохранить сверку");}finally{setBusy(false);}}
+  return <div className="max-w-2xl mx-auto space-y-4"><h1 className="text-2xl font-extrabold text-white flex gap-2"><Wallet/>Закрытие смены</h1>
+    <p className="text-mute">Сверка наличных: {activeStore}. Безналичные оплаты не входят в физический остаток кассы.</p>
+    {error&&<p role="alert" className="text-red-400">{error}</p>}
+    {snapshot&&<Card className="p-4 space-y-4">
+      <p className="text-sm text-mute">Движения до {new Date(snapshot.cutoff).toLocaleString("ru-RU",{timeZone:"Europe/Moscow"})}. Более поздние операции попадут в следующую сверку.</p>
+      <label className="block">Остаток после предыдущей сверки<input type="number" min="0" step="0.01" className="input" value={opening} disabled={snapshot.openingCash!==null||!manager||closed} onChange={e=>setOpening(e.target.value)}/></label>
+      {snapshot.openingCash===null&&<p className="text-sm text-mute">Первый начальный остаток подтверждает руководитель.</p>}
+      <div>Проведённые наличные оплаты и выплаты: <strong>{money(snapshot.movement)}</strong> · {snapshot.operations} операций</div>
+      <label className="block">Прочие движения наличных: внесение со знаком плюс, расход или инкассация со знаком минус<input type="number" step="0.01" className="input" value={adjustment} disabled={closed} onChange={e=>setAdjustment(e.target.value)}/></label>
+      <input className="input" aria-label="Основание движений" placeholder="Основание начального остатка или прочих движений" value={reason} disabled={closed} onChange={e=>setReason(e.target.value)}/>
+      <div>Расчётный остаток: <strong>{money(expected)}</strong></div>
+      <label className="block">Фактически наличных в кассе<input type="number" min="0" step="0.01" className="input" value={counted} disabled={closed} onChange={e=>setCounted(e.target.value)}/></label>
+      {diff!==null&&<p>Расхождение: {money(diff)}</p>}
+      {closed?<p className="text-white flex gap-2"><CheckCircle2/>Сверка сохранена. Смена закрыта.</p>:<div className="flex gap-3"><Button disabled={busy} onClick={()=>void refresh()}>Обновить</Button><Button disabled={busy||opening===""||diff!==0||Number(counted)<0||(snapshot.openingCash===null&&!manager)} onClick={()=>void close()}>Подтвердить и закрыть смену</Button></div>}
+    </Card>}
+  </div>;
 }

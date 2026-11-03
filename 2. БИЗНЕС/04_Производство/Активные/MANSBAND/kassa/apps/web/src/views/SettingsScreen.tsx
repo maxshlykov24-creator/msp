@@ -1,11 +1,39 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { SlidersHorizontal, Plus, Trash2, Check } from "lucide-react";
 import { api, USE_MOCK } from "../api/client";
 import { Button } from "../components/ui";
+import { useStore } from "../store";
 import { useAuth } from "../auth/AuthContext";
 import { invalidateAppSettings } from "../lib/appSettings";
 import { Hint } from "../lib/hints";
 import { SUIT_PRICE_RULES_DEFAULT } from "@kassa/shared";
+
+
+function Workdays() {
+  const {activeStore}=useStore();
+  const [date,setDate]=useState(new Intl.DateTimeFormat("en-CA",{timeZone:"Europe/Moscow"}).format(new Date()));
+  const [consultant,setConsultant]=useState("");
+  const [reason,setReason]=useState("");
+  const [rows,setRows]=useState<Array<{consultant:string;date:string;active:boolean;store:string}>>([]);
+  const [error,setError]=useState("");
+  const [busy,setBusy]=useState(false);
+  const refresh=useCallback(async()=>{if(!USE_MOCK&&date)setRows(await api.getQuery<typeof rows>("/payroll/workdays",{from:date.slice(0,7)+"-01",to:date.slice(0,7)+"-31"}));},[date]);
+  useEffect(()=>{void refresh().catch(e=>setError(e.message));},[refresh]);
+  async function save(active=true){
+    setBusy(true);setError("");
+    try{await api.put("/payroll/workdays",{consultant,date,store:activeStore,active,reason});await refresh();}
+    catch(e){setError(e instanceof Error?e.message:"Не удалось сохранить рабочий день");}
+    finally{setBusy(false);}
+  }
+  return <div className="card p-4 space-y-3"><div className="text-white font-semibold">Рабочие дни для зарплаты</div>
+    <p className="text-sm text-mute">Подтверди фактические рабочие дни, включая дни без продаж. Магазин: {activeStore}. Без подтверждения зарплата не ставится к выплате.</p>
+    <div className="grid sm:grid-cols-2 gap-3"><label>Имя сотрудника<input className="input" value={consultant} onChange={e=>setConsultant(e.target.value)}/></label><label>Дата<input className="input" type="date" value={date} onChange={e=>setDate(e.target.value)}/></label></div>
+    <input className="input" aria-label="Основание подтверждения" placeholder="Основание подтверждения или исправления" value={reason} onChange={e=>setReason(e.target.value)}/>
+    <div className="flex gap-2"><Button disabled={busy||!consultant.trim()||reason.trim().length<3||USE_MOCK} onClick={()=>void save(true)}>Подтвердить рабочий день</Button><Button disabled={busy||!consultant.trim()||reason.trim().length<3||USE_MOCK} onClick={()=>void save(false)}>Отметить ошибочную запись</Button></div>
+    {error&&<p role="alert" className="text-red-400">{error}</p>}
+    {rows.map(row=><div key={row.consultant+row.date} className="text-sm text-mute">{row.date} · {row.consultant} · {row.store} · {row.active?"подтверждён":"снят с расчёта"}</div>)}
+  </div>;
+}
 
 interface PriceAudit {
   total: number;
@@ -555,6 +583,7 @@ export function SettingsScreen() {
             </label>
           </div>
 
+          <Workdays />
           <div className="card p-4 space-y-4">
             <div className="text-white font-semibold">Зарплата за день</div>
             <div className="grid sm:grid-cols-2 gap-3">
@@ -578,8 +607,8 @@ export function SettingsScreen() {
               </label>
             </div>
             <div className="hint-only text-[12px] text-mute">
-              За день платится максимум из «% от выручки» и ставки. Рабочий день — день, когда у
-              консультанта есть хотя бы одна заявка.
+              За день платится максимум из «% от выручки» и ставки. Рабочие дни подтверждает руководитель в табеле,
+              включая дни без продаж.
             </div>
           </div>
 

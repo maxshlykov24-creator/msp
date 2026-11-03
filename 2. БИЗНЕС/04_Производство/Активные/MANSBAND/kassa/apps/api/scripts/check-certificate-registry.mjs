@@ -64,6 +64,82 @@ for (const data of fixtures) await db.insert(dealTable).values({number:data.numb
 const {summary}=await import('../dist/services/stats.js');
 const report=await summary({from:'2098-12-25',to:'2098-12-25'},{name:sample.consultant,role:'consultant'});
 assert.equal(report.totals.clients,1);assert.equal(report.totals.success,1);assert.equal(report.totals.revenue,0);assert.equal(report.totals.upt,1);
+
+const payroll=await import('../dist/services/payroll.js');
+const actor={id:crypto.randomUUID(),name:'Руководитель проверки',role:'admin'};
+await payroll.confirmWorkday({consultant:sample.consultant,date:'2098-12-26',store:sample.store,active:true,reason:'Подтверждён день без продаж'},actor);
+const wages=await payroll.payrollReport('2098-12-26','2098-12-26');
+assert.equal(wages.rows.find(row=>row.consultant===sample.consultant).basePay,wages.settings.dailyFloor,'day without sales receives floor');
+assert.equal(wages.warnings.length,0);
+const unconfirmed=await payroll.payrollReport('2098-12-25','2098-12-25');assert(unconfirmed.warnings.length>0);
+await assert.rejects(()=>payroll.enqueueSalaryForPeriod('2098-12-25','2098-12-25','Проверка'),'unconfirmed payroll not queued');
+const cash=await import('../dist/services/stats.js');
+const store='isolated-cash:'+fixture;
+const cashDeal={...sample,id:crypto.randomUUID(),number:fixture+20,store};
+await db.insert(dealTable).values({number:cashDeal.number,data:cashDeal});
+const {ledger:ledgerTable}=await import('../dist/db/schema.js');
+await db.insert(ledgerTable).values({dealNumber:cashDeal.number,methodId:'cash',kind:'cash',amount:5000,idempotencyKey:'test:'+fixture,createdBy:'Проверка'});
+const snapshot=await cash.cashShift(store);
+assert.equal(snapshot.movement,50);assert.equal(snapshot.openingCash,null);
+const closeInput={store,cutoff:snapshot.cutoff,previousId:null,openingCash:100,countedCash:140,adjustment:0,reason:'Начальный остаток подтверждён'};
+await assert.rejects(()=>cash.closeCashShift(closeInput,actor),'mismatch cannot close shift');
+const closed=await cash.closeCashShift({...closeInput,countedCash:150},actor);assert.equal(closed.countedCash,150);
+await assert.rejects(()=>cash.closeCashShift({...closeInput,countedCash:150},actor),'stale close cannot create another shift');
+const cashAfter=await cash.cashShift(store);assert.equal(cashAfter.openingCash,150);assert.equal(cashAfter.movement,0);
+await assert.rejects(()=>q.addQueue({...payload,amount:110}),'paid obligation cannot be recreated with another amount');
+
+// Полный процесс на настоящей изолированной БД и подменённых CRM/МС.
+const {msRefs,amoMeta,products}=await import('../dist/db/schema.js');
+const {STORE_TO_WAREHOUSE,AMO_LEAD_FIELDS}=await import('@kassa/shared');
+const meta=(type,id)=>({href:`https://example.test/entity/${type}/${id}`,type,mediaType:'application/json'});
+for(const [kind,key,type] of [['organization','default','organization'],['counterparty','retail','counterparty'],['store',STORE_TO_WAREHOUSE[sample.store],'store']]){
+ const id=crypto.randomUUID();const row={id,name:key,meta:meta(type,id)};
+ await db.insert(msRefs).values({kind,key,msId:id,metaHref:row.meta.href,name:key,payload:row});
+}
+await db.insert(amoMeta).values({kind:'field',amoId:991122,name:AMO_LEAD_FIELDS.kassaLink,payload:{type:'text'}}).onConflictDoNothing();
+const productId=crypto.randomUUID();await db.insert(products).values({msId:productId,msMetaHref:meta('product',productId).href,msType:'product',name:'Проверочная позиция',price:1000000});
+const createdDocs=[];const externalDocs=new Map();const crmLeads=new Map();let rejectSecondCash=true;let failedCash=0;let newLeadCalls=0;
+const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'content-type':'application/json'}});
+globalThis.fetch=async(url,options={})=>{
+ const u=new URL(String(url));const path=u.pathname;const method=options.method??'GET';const body=options.body?JSON.parse(options.body):{};
+ if(path.startsWith('/api/v4/')){
+  if(path.endsWith('/contacts')&&method==='GET')return json({_embedded:{contacts:[{id:fixture+40,name:'Проверка'}]}});
+  if(path.endsWith('/contacts')&&method==='POST')return json({_embedded:{contacts:[{id:fixture+40}]}});
+  if(/\/leads\/\d+$/.test(path)){const id=Number(path.split('/').at(-1));const old=crmLeads.get(id)??{id};if(method==='PATCH')crmLeads.set(id,{...old,...body});return json(crmLeads.get(id)??old);}
+  if(path.endsWith('/leads')&&method==='POST'){newLeadCalls++;return json({_embedded:{leads:[{id:fixture+41+newLeadCalls}]}});}
+  throw Error('Unexpected CRM test request '+method+' '+path);
+ }
+ if(path==='/entity/counterparty'&&method==='GET'){const id='00000000-0000-4000-8000-000000000055';return json({rows:[{id,name:'Проверка',phone:'+79990000000',meta:meta('counterparty',id)}]});}
+ const match=path.match(/^\/entity\/(customerorder|demand|cashin|salesreturn|paymentin)(?:\/([0-9a-f-]+))?$/);
+ if(match){const [,type,id]=match;
+  if(method==='GET'&&id)return json(externalDocs.get(id));
+  if(method==='PUT'&&id){const updated={...externalDocs.get(id),...body};externalDocs.set(id,updated);return json(updated);}
+  if(method==='POST'){
+   if(type==='cashin'&&body.sum===600000&&rejectSecondCash){failedCash++;rejectSecondCash=false;return json({errors:[{error:'isolated rejection'}]},400);}
+   const newId=crypto.randomUUID();const doc={...body,id:newId,meta:meta(type,newId)};createdDocs.push({type,...doc});externalDocs.set(newId,doc);return json(doc);
+  }
+ }
+ throw Error('Unexpected MS test request '+method+' '+path);
+};
+const saleService=await import('../dist/services/sale.js');const dealService=await import('../dist/services/deals.js');
+let saleDeal={...sample,id:crypto.randomUUID(),number:fixture+30,amoLeadId:fixture+42,clientPhone:'+79990000000',channel:'Сайт',purpose:'Работа',stage:'Новая заявка',paid:3000,payments:[{id:'deposit',methodId:'cash',amount:3000}],items:[{productId,name:'Проверочная позиция',price:10000,qty:1,barcode:'test'}]};
+await dealService.persist(saleDeal);
+saleDeal=await saleService.processSale(saleDeal,{fulfill:false,who:'Проверка'});
+assert.equal(createdDocs.filter(d=>d.type==='cashin').length,1);assert.equal(createdDocs.filter(d=>d.type==='demand').length,0);
+saleDeal={...saleDeal,stage:'Успех',paid:9000,payments:[...saleDeal.payments,{id:'balance',methodId:'cash',amount:6000}]};await dealService.persist(saleDeal);
+await assert.rejects(()=>saleService.processSale(saleDeal,{fulfill:true,who:'Проверка'}));assert.equal(failedCash,1);
+saleDeal=await dealService.getByNumber(saleDeal.number);assert(saleDeal.msOrderId&&saleDeal.msDemandId,'checkpoints survive payment rejection');
+saleDeal=await saleService.processSale(saleDeal,{fulfill:true,who:'Проверка'});
+await saleService.processSale(saleDeal,{fulfill:true,who:'Проверка'});
+assert.equal(createdDocs.filter(d=>d.type==='customerorder').length,1);assert.equal(createdDocs.filter(d=>d.type==='demand').length,1);assert.equal(createdDocs.filter(d=>d.type==='cashin').length,2);
+const order=createdDocs.find(d=>d.type==='customerorder');assert.equal(order.positions.reduce((sum,p)=>sum+p.quantity*p.price,0),900000);
+const depositDoc=createdDocs.find(d=>d.type==='cashin'&&d.sum===300000);assert.equal(externalDocs.get(depositDoc.id).operations[0].meta.href,order.meta.href,'deposit linked without new payment');
+assert.equal(newLeadCalls,0,'existing CRM binding retained');
+const refundDeal={...saleDeal,id:crypto.randomUUID(),number:fixture+31,kind:'refund',funnel:'return',amoLeadId:fixture+43,msOrderId:undefined,msDemandId:undefined,paid:0,payments:[],total:-9000,linkedDealNumber:saleDeal.number,items:[{...saleDeal.items[0],price:-9000,settledUnitPrice:9000,isReturn:true}]};
+await dealService.persist(refundDeal);const returned=await saleService.processSale(refundDeal,{fulfill:true,who:'Проверка'});await saleService.processSale(returned,{fulfill:true,who:'Проверка'});
+assert.equal(createdDocs.filter(d=>d.type==='salesreturn').length,1);assert.equal(newLeadCalls,0,'return retry does not create a new CRM lead');
+console.log(JSON.stringify({saleProcess:['deposit before fulfillment','net discounted positions','payment rejection visible','checkpoint resume','documents and payments not duplicated','deposit linked','return CRM binding retained'],result:'passed'}));
+console.log(JSON.stringify({workdaysAndShifts:['zero-sales day','unconfirmed payroll blocked','cash movement from ledger','mismatch blocked','closure persists','repeat blocked','balance carried forward'],result:'passed'}));
 console.log(JSON.stringify({statistics:['refund attributed to original consultant','refund and defect not new clients','test deal excluded','net revenue'],result:'passed'}));
 console.log(JSON.stringify({finance:['queue concurrency','partial payout retries','no paid reopen','closed queue dedup','certificate payment replay','external unknown outcome','salary concurrency'],result:'passed'}));
 console.log(JSON.stringify({checks:['legacy reservations and zeros','canonical format','concurrent issuance','reserved conflict','atomic spending','repeat issuance keeps balance','future date blocks both spending paths','batch rollback'],result:'passed'}));

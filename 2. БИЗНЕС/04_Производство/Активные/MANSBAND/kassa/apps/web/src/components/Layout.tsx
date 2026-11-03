@@ -29,8 +29,8 @@ import { HintsToggle } from "../lib/hints";
 import { ThemeToggle } from "../lib/theme";
 import { BrandLogo } from "./BrandLogo";
 
-/** Экран готов не до конца. Вернуть true, когда закрытие смены снова включаем в работу. */
-export const SHOW_SHIFT_CLOSE = false;
+/** Серверная сверка физической наличности с сохранением факта и начального остатка. */
+export const SHOW_SHIFT_CLOSE = true;
 
 export type Route =
   | "board"

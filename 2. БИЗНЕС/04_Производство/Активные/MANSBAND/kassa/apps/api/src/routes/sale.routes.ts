@@ -78,7 +78,7 @@ export default async function saleRoutes(app: FastifyInstance) {
     if (returnError) return reply.code(400).send({ message: returnError });
     const { number: _number, createdAt, ...requested } = deal;
     const reserved = await deals.reserveServerDeal({ ...requested, createdAt }, input.idempotencyKey);
-    if (reserved.duplicate) return sale.synchronizeFinancialDeal(reserved.deal, req.user.name);
+    if (reserved.duplicate) return sale.synchronizeFinancialDeal(reserved.deal, req.user.name, input.photos);
     try {
       const saved = await sale.processSale(reserved.deal, {
         fulfill: input.fulfill,

@@ -104,5 +104,16 @@ const batchHooks=Fastify();await batchHooks.register(webhooks,{handleAmoWebhook:
 assert((await batchHooks.inject({method:'POST',url:'/webhooks/amo?secret=change-me',payload:{leads:{status:[{id:11}]}}})).statusCode===503,'real event handler failures propagate to HTTP 503');checks++;
 await batchHooks.close();console.log(JSON.stringify({checks,result:'passed',scope:'including amo binding and partial webhook failures'}));
 
+const financeApi=Fastify();await financeApi.register(auth);
+await financeApi.register((await import('../src/routes/settings.routes.ts')).default);
+await financeApi.register((await import('../src/routes/stats.routes.ts')).default);
+assert((await financeApi.inject({method:'GET',url:'/shifts/current?store='+encodeURIComponent('На Бауманской')})).statusCode===401,'anonymous shift read');checks++;
+const sellerHeaders={authorization:'Bearer '+financeApi.jwt.sign({sub:'test',name:'Продавец',role:'consultant',store:'На Бауманской'})};
+assert((await financeApi.inject({method:'PUT',url:'/payroll/workdays',headers:sellerHeaders,payload:{}})).statusCode===403,'consultant cannot confirm payroll');checks++;
+assert((await financeApi.inject({method:'GET',url:'/shifts/current?store='+encodeURIComponent('На Пятницкой'),headers:sellerHeaders})).statusCode===403,'consultant cannot read another cashbox');checks++;
+const managerHeaders={authorization:'Bearer '+financeApi.jwt.sign({sub:'test',name:'Руководитель',role:'admin'})};
+assert((await financeApi.inject({method:'PUT',url:'/payroll/workdays',headers:managerHeaders,payload:{consultant:'A',date:'2026-99-99',store:'На Бауманской',active:true,reason:'Проверка'}})).statusCode===400,'invalid date returns 400, not server failure');checks++;
+assert((await financeApi.inject({method:'POST',url:'/shifts/close',headers:managerHeaders,payload:{store:'На Бауманской',cutoff:'2099-01-01T00:00:00Z',previousId:null,openingCash:0,countedCash:0,adjustment:0,reason:'Проверка'}})).statusCode===409,'future cash cutoff rejected');checks++;
+await financeApi.close();console.log(JSON.stringify({checks,result:'passed',scope:'including workday roles and shift boundaries'}));
 const {sql: testPool} = await import("../src/db/index.ts");
 await testPool.end();

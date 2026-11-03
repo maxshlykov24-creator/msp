@@ -1,3 +1,5 @@
+import { HttpError } from "../lib/http.js";
+import { createHash } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { ledger, stock } from "../db/schema.js";
@@ -116,6 +118,8 @@ export async function processSale(
       if (amoLeadId && opts.photos?.length) await attachPhotosToLead(amoLeadId, opts.photos);
     }
 
+    if (opts.photos?.length) { enriched.photoAttached = true; await deals.persist(enriched); }
+
     // 3. writeback статуса оплаты + ссылок в amo
     if (amoLeadId) await writeback(amoLeadId, enriched);
 
@@ -155,7 +159,7 @@ export async function enqueueEdwin(deal: Deal): Promise<void> {
   };
   // В очередь Эдвина уходит только та часть выплаты, где выбрана строка
   // «Переведёт Mansband». Остальное консультант выдал сам из кассы.
-  const change = Math.max(0, deal.paid - deal.total - (deal.tips ?? 0));
+  const change = Math.max(0, deal.paid - Math.max(0, deal.total) - (deal.tips ?? 0));
   const changeViaMansband = deal.changePayouts
     ? mansbandPayoutAmount(deal.changePayouts)
     : deal.changeStatus === "pending"
@@ -543,7 +547,7 @@ async function createLeadResilient(input: amo.CreateLeadInput): Promise<amo.AmoL
   try {
     return await amo.createLead(input);
   } catch (err) {
-    if (!input.customFields?.length) throw err;
+    if (!input.customFields?.length || !(err instanceof HttpError) || err.status !== 400) throw err;
     console.warn(`[amo] createLead без кастом-полей после отказа: ${(err as Error).message}`);
     return amo.createLead({ ...input, customFields: [] });
   }
@@ -567,10 +571,10 @@ async function ensureAmoLead(deal: Deal): Promise<number | null> {
     let contactId: number | undefined;
     if (deal.clientPhone) {
       const existing = await amo.findContactByPhone(deal.clientPhone);
-      const contact = existing ?? (await amo.createContact(deal.clientName, deal.clientPhone, deal.email));
+      const contact = existing ?? (await withIdempotency(`amo:${deal.id}:contact`, "amo", () => amo.createContact(deal.clientName, deal.clientPhone, deal.email))).result;
       contactId = contact.id;
     } else if (deal.clientName && deal.clientName !== "—") {
-      const contact = await amo.createContact(deal.clientName);
+      const contact = (await withIdempotency(`amo:${deal.id}:contact`, "amo", () => amo.createContact(deal.clientName))).result;
       contactId = contact.id;
     }
 
@@ -584,7 +588,11 @@ async function ensureAmoLead(deal: Deal): Promise<number | null> {
 
     // Жалобы / возвраты / обмены — всегда новая сделка.
     if (pipelineId === AMO_PIPELINE_COMPLAINTS) {
-      const lead = await createLeadResilient({
+      if (deal.amoLeadId) {
+        await updateLeadResilient(deal.amoLeadId, {statusId, price:Math.abs(deal.total), customFields});
+        return deal.amoLeadId;
+      }
+      const lead = (await withIdempotency(`amo:${deal.id}:lead`, "amo", () => createLeadResilient({
         name: leadName,
         price: Math.abs(deal.total),
         pipelineId,
@@ -592,7 +600,7 @@ async function ensureAmoLead(deal: Deal): Promise<number | null> {
         contactId,
         companyId,
         customFields,
-      });
+      }))).result;
       await writeKassaLink(lead.id, deal.number).catch((err: Error) => {
         console.warn(`[amo] ссылка на кассу, сделка #${lead.id}: ${err.message}`);
       });
@@ -624,7 +632,7 @@ async function ensureAmoLead(deal: Deal): Promise<number | null> {
       }
     }
 
-    const lead = await createLeadResilient({
+    const lead = (await withIdempotency(`amo:${deal.id}:lead`, "amo", () => createLeadResilient({
       name: leadName,
       price: deal.total,
       pipelineId: AMO_PIPELINE_SALES,
@@ -632,7 +640,7 @@ async function ensureAmoLead(deal: Deal): Promise<number | null> {
       contactId,
       companyId,
       customFields,
-    });
+    }))).result;
     await writeKassaLink(lead.id, deal.number).catch((err: Error) => {
       console.warn(`[amo] ссылка на кассу, сделка #${lead.id}: ${err.message}`);
     });
@@ -642,8 +650,7 @@ async function ensureAmoLead(deal: Deal): Promise<number | null> {
     // amo недоступен — не блокируем продажу (локально сохраним, синхронизируем позже),
     // но причину пишем в лог: молчаливый null раньше маскировал отказы синка.
     console.error(
-      `[ensureAmoLead] заявка #${deal.number}: ${(err as Error).message}`,
-      (err as { body?: unknown }).body ?? ""
+      `[ensureAmoLead] заявка #${deal.number}: ${(err as Error).message}`
     );
     return null;
   }
@@ -702,8 +709,10 @@ export async function resyncToAmo(number: number, who: string): Promise<Deal | n
 
 async function attachPhotosToLead(amoLeadId: number, photos: PhotoInput[]): Promise<void> {
   for (const p of photos) {
-    await amo.attachPhotoToLead(amoLeadId, p.filename, p.contentBase64).catch(() => {
-      // сеть/лимиты amo — фото не критично для проведения заявки
+    const hash = createHash("sha256").update(p.contentBase64).digest("hex");
+    await withIdempotency(`amo-photo:${amoLeadId}:${hash}`, "amo", async () => {
+      await amo.attachPhotoToLead(amoLeadId, p.filename, p.contentBase64);
+      return {attached:true};
     });
   }
 }
@@ -719,14 +728,8 @@ async function resolveMsParty(deal: Deal): Promise<{
   const agentRef = await getMsRef("counterparty", "retail");
   let agent = agentRef;
   if (deal.clientPhone) {
-    const found = await ms.findCounterpartyByName(deal.clientName).catch((error) => {
-      if (ms.isMoySkladAuthError(error)) throw error;
-      return null;
-    });
-    agent = found ?? (await ms.createCounterparty(deal.clientName, deal.clientPhone).catch((error) => {
-      if (ms.isMoySkladAuthError(error)) throw error;
-      return agentRef;
-    }));
+    const found = await ms.findCounterpartyByNameAndPhone(deal.clientName, deal.clientPhone);
+    agent = found ?? (await withIdempotency(`ms:${deal.id}:counterparty`, "ms", () => ms.createCounterparty(deal.clientName, deal.clientPhone))).result;
   }
   if (!agent) throw new Error("МойСклад: не резолвлен контрагент");
 
@@ -759,7 +762,18 @@ async function buildMsPositions(
 async function fulfillMoysklad(deal: Deal, photos: PhotoInput[], who: string): Promise<void> {
   const { org, agent, warehouse } = await resolveMsParty(deal);
 
-  const { positions, stockDeltas } = await buildMsPositions(dealItemsToPositions(deal));
+  const { positions } = await buildMsPositions(dealItemsToPositions(deal));
+  const fees = [["Ателье", deal.atelierAmount ?? 0], ["Доставка", deal.deliveryAmount ?? 0]] as const;
+  let feeBudget = Math.min(Math.max(0, toKopecks(deal.total)), toKopecks((deal.atelierAmount ?? 0) + (deal.deliveryAmount ?? 0)));
+  for (const [name, amount] of fees) {
+    const net = Math.min(feeBudget, toKopecks(amount));
+    feeBudget -= net;
+    if (net <= 0) continue;
+    const service = await ms.findServiceByName(name);
+    if (!service) throw new Error(`В МойСклад отсутствует услуга «${name}». Добавьте её в справочник услуг перед проведением заявки с этой доплатой.`);
+    positions.push({assortmentHref:service.meta.href,assortmentType:"service",quantity:1,price:net});
+  }
+  if (positions.reduce((sum, row) => sum + row.price * row.quantity, 0) !== toKopecks(deal.total)) throw new Error("Сумма позиций МойСклад не совпадает с суммой чека. Проверьте скидки и услуги.");
 
   const order = deal.msOrderId ? await ms.getDocument("customerorder", deal.msOrderId) : (await withIdempotency(`ms:${deal.id}:order`, "ms", () => ms.createCustomerOrder({
     organization: org.meta,
@@ -902,6 +916,7 @@ async function processPayments(
     if (recorded) {
       if (recorded.amount !== sum || recorded.methodId !== p.methodId) throw new Error("Проведённый платёж нельзя менять. Оформите корректировку.");
       if (kind !== "certificate" && !recorded.msPaymentId) throw new Error("Прежний платёж без документа МойСклад требует сверки");
+      if (kind !== "certificate" && recorded.msPaymentId && linkMeta) await ms.ensurePaymentOperation(kind === "cash" ? "cashin" : "paymentin", recorded.msPaymentId, linkMeta);
       continue;
     }
     let msPaymentId: string | undefined;
@@ -948,7 +963,7 @@ async function processCashOuts(
   agent: ms.MsMeta,
   who: string
 ): Promise<void> {
-  const change = Math.max(0, (deal.paid ?? 0) - (deal.total ?? 0));
+  const change = Math.max(0, (deal.paid ?? 0) - Math.max(0, deal.total ?? 0));
   const tips = deal.tips ?? 0;
   const toClient = Math.max(0, change - tips);
 
@@ -1107,14 +1122,14 @@ async function writeback(amoLeadId: number, deal: Deal): Promise<void> {
 }
 
 /** Финансовый переход и доплата используют тот же возобновляемый процесс, что создание. */
-export async function synchronizeFinancialDeal(deal: Deal, who: string): Promise<Deal> {
+export async function synchronizeFinancialDeal(deal: Deal, who: string, photos?: PhotoInput[]): Promise<Deal> {
   deal.financialSyncRequired = true;
   await deals.persist(deal);
   const fulfill = ["sale", "company", "delivery", "exchange", "refund"].includes(deal.kind)
     && (deal.stage === "Успех" || (deal.kind === "company" && deal.stage === "Товар выдан" && deal.issued === true))
     && (deal.total <= 0 || deal.paid >= deal.total) && (deal.kind !== "company" || deal.issued === true);
   try {
-    const saved = await processSale(deal, { fulfill, who });
+    const saved = await processSale(deal, { fulfill, who, photos });
     saved.financialSyncRequired = false;
     return await deals.markSync(saved, "synced");
   } catch (error) {

@@ -63,6 +63,14 @@ export async function findCounterpartyByName(name: string): Promise<MsRow | null
   return res.rows[0] ?? null;
 }
 
+export async function findCounterpartyByNameAndPhone(name: string, phone: string): Promise<MsRow | null> {
+  const normalize = (value: string) => { const digits=value.replace(/\D/g, ""); return digits.length===11 && digits.startsWith("8") ? "7"+digits.slice(1) : digits; };
+  const expected=normalize(phone);
+  if (!expected) return null;
+  const response=await http.get<MsList<MsRow & {phone?:string}>>(`/entity/counterparty?filter=${encodeURIComponent(`name=${name}`)}`);
+  return response.rows.find(row => normalize(row.phone ?? "") === expected) ?? null;
+}
+
 export async function createCounterparty(name: string, phone?: string): Promise<MsRow> {
   return http.post<MsRow>("/entity/counterparty", { name, phone });
 }
@@ -479,4 +487,23 @@ export async function listFiles(entityType: string, entityId: string): Promise<M
 export async function getDocument(type: "customerorder" | "demand" | "salesreturn", id: string): Promise<MsRow> {
   if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Error("Некорректный ID документа МойСклад");
   return http.get<MsRow>(`/entity/${type}/${id}`);
+}
+
+
+/** Доплата могла прийти до выдачи: привязываем существующий платёж, не создавая новый. */
+export async function ensurePaymentOperation(type: "cashin" | "paymentin", id: string, operation: MsMeta): Promise<void> {
+  if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Error("Некорректный ID платежа МойСклад");
+  const path = `/entity/${type}/${id}`;
+  const current = await http.get<{operations?: Array<{meta:MsMeta}>}>(path);
+  if (current.operations?.some(row => row.meta.href === operation.href)) return;
+  if (current.operations?.length) throw new Error("Платёж уже связан с другим документом МойСклад. Нужна сверка.");
+  await http.put(path, {operations:[metaRef(operation)]});
+}
+
+
+export async function findServiceByName(name: string): Promise<MsRow | null> {
+  const result = await http.get<MsList<MsRow & {archived?:boolean}>>(`/entity/service?filter=${encodeURIComponent(`name=${name}`)}`);
+  const matching = result.rows.filter(row => !row.archived && row.name === name);
+  if (matching.length > 1) throw new Error(`В МойСклад несколько услуг «${name}». Требуется сверка справочника.`);
+  return matching[0] ?? null;
 }

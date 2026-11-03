@@ -673,6 +673,7 @@ export interface PayrollRow {
 }
 
 export interface PayrollReport {
+  warnings?: string[];
   from: string;
   to: string;
   settings: PayrollSettings;

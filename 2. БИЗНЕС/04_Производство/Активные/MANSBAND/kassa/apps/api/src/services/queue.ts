@@ -57,14 +57,19 @@ export async function addQueue(
   const amount = Math.round(item.amount * 100);
   if (!Number.isSafeInteger(amount) || amount < 0) throw new Error("Некорректная сумма задачи");
   const row = await db.transaction(async tx => {
-    const key = JSON.stringify([item.kind, item.dealNumber, amount, item.destination]);
+    const key = JSON.stringify([item.kind, item.dealNumber, item.dealNumber > 0 ? "" : item.destination]);
     await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${key}, 713))`);
     // Выполненная обязанность тоже является дублем. Повтор события не создаёт выплату заново.
     const [existing] = await tx.select().from(queue).where(and(
       eq(queue.kind, item.kind), eq(queue.dealNumber, item.dealNumber),
-      eq(queue.amount, amount), eq(queue.destination, item.destination)
+      item.dealNumber > 0 ? undefined : eq(queue.destination, item.destination)
     )).limit(1);
-    if (existing) return existing;
+    if (existing) {
+      if (existing.amount === amount && existing.destination === item.destination) return existing;
+      if (existing.issuedAmount > 0 || existing.status === "issued") throw Object.assign(new Error("Обязательство уже оплачено. Нельзя создавать повторную выплату при изменении суммы или реквизитов."), {statusCode:409});
+      const [updated] = await tx.update(queue).set({amount,destination:item.destination,metadata:item.metadata,client:item.client}).where(eq(queue.id,existing.id)).returning();
+      return updated;
+    }
     const [created] = await tx.insert(queue).values({
       kind: item.kind, dealNumber: item.dealNumber, client: item.client,
       amount, destination: item.destination, status: item.status ?? "pending", metadata: item.metadata,
@@ -271,7 +276,7 @@ export async function closeQueueByDeal(dealNumber: number, kind: string, by: str
 }
 
 /**
- * Вернуть закрытую позицию в «к выдаче»: откатывает частичные выплаты и балансы.
+ * Вернуть неденежную закрытую позицию в работу. Выплаты и балансы не откатываются.
  * Статусы заявки компании (документы/счёт) откатывает вызывающий слой.
  */
 export async function reopenQueue(id: string, by: string): Promise<QueueItem | null> {

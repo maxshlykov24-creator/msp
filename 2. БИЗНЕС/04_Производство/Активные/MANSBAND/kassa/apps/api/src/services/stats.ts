@@ -1,6 +1,6 @@
-import { and, gte, lte } from "drizzle-orm";
+import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
-import { deals as dealsTable, expenses as expensesTable, products } from "../db/schema.js";
+import { deals as dealsTable, expenses as expensesTable, products, shifts, ledger } from "../db/schema.js";
 import { countSuitsInLines, isTestDeal, isSalesVisit, dealAccountingDay, cartLineTotal, settledItems } from "@kassa/shared";
 import type { Deal, SuitPart } from "@kassa/shared";
 import { suitPartsByMsIds } from "./catalog.js";
@@ -254,4 +254,30 @@ async function purchasingStats(
   }
 
   return { revenue, expensesTotal, expensesByCategory, positionsByGroup, byChannel, byPurpose };
+}
+
+
+/** Сверка физической наличности магазина. Остаток переносится только из подтверждённой сверки. */
+export async function cashShift(store: string, cutoff = new Date().toISOString()) {
+  const [previous] = await db.select().from(shifts).where(and(eq(shifts.store,store),sql`${shifts.payload}->>'kind' = 'cash_close'`)).orderBy(desc(shifts.closedAt)).limit(1);
+  const from = previous?.closedAt?.toISOString() ?? `${new Intl.DateTimeFormat("en-CA",{timeZone:"Europe/Moscow"}).format(new Date(cutoff))}T00:00:00+03:00`;
+  const [movement] = await db.select({amount:sql<number>`coalesce(sum(${ledger.amount}),0)::bigint`,count:sql<number>`count(*)::int`}).from(ledger).innerJoin(dealsTable,eq(dealsTable.number,ledger.dealNumber))
+    .where(and(sql`${dealsTable.data}->>'store' = ${store}`,sql`${ledger.kind} in ('cash','cash_out')`,sql`${ledger.createdAt} > ${from}::timestamptz and ${ledger.createdAt} <= ${cutoff}::timestamptz`));
+  return {store,from,cutoff,previousId:previous?.id??null,openingCash:previous?.countedCash==null?null:previous.countedCash/100,movement:Number(movement?.amount??0)/100,operations:movement?.count??0};
+}
+export async function closeCashShift(input: {store:string;cutoff:string;previousId:string|null;openingCash:number;countedCash:number;adjustment:number;reason:string}, actor: {name:string;role:string}) {
+  return db.transaction(async tx=>{
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${"cash-close:"+input.store},717))`);
+    const current=await cashShift(input.store,input.cutoff);
+    if(new Date(input.cutoff).valueOf()<=new Date(current.from).valueOf())throw Object.assign(new Error("Период сверки уже закрыт"),{statusCode:409});
+    if(current.previousId!==input.previousId)throw Object.assign(new Error("Смена уже сверена другим сотрудником. Обновите данные."),{statusCode:409});
+    if(current.openingCash===null && !["admin","rop"].includes(actor.role))throw Object.assign(new Error("Первый остаток наличных подтверждает руководитель"),{statusCode:403});
+    const opening=current.openingCash??input.openingCash;
+    const expected=Math.round((opening+current.movement+input.adjustment)*100);
+    const counted=Math.round(input.countedCash*100);
+    if(expected!==counted)throw Object.assign(new Error("Фактическая наличность не совпадает с расчётной. Проверьте суммы и движения."),{statusCode:409});
+    if((input.adjustment!==0||current.openingCash===null)&&input.reason.trim().length<3)throw Object.assign(new Error("Укажите основание начального остатка или прочих движений"),{statusCode:400});
+    const [row]=await tx.insert(shifts).values({store:input.store,openedBy:actor.name,openedAt:new Date(current.from),closedAt:new Date(input.cutoff),expectedCash:expected,countedCash:counted,reconciled:true,payload:{kind:"cash_close",openingCash:opening,movement:current.movement,operations:current.operations,adjustment:input.adjustment,reason:input.reason,confirmedBy:actor.name}}).returning();
+    return {id:row!.id,closedAt:input.cutoff,expectedCash:expected/100,countedCash:counted/100,reconciled:true};
+  });
 }

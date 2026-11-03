@@ -134,6 +134,7 @@ export function EdwinQueue() {
   const [dateTo, setDateTo] = useState("");
   const [reopening, setReopening] = useState<string | null>(null);
   const [issueError, setIssueError] = useState("");
+  const [issueBusy, setIssueBusy] = useState(false);
   const [issuing, setIssuing] = useState<ExtendedQueueItem | null>(null);
   const [issueMethod, setIssueMethod] = useState(DEFAULT_PAYOUT_METHOD_ID);
   const [issueAmount, setIssueAmount] = useState("");
@@ -291,11 +292,13 @@ export function EdwinQueue() {
   }
 
   async function confirmIssue() {
-    if (!issuing) return;
+    if (!issuing || issueBusy) return;
+    setIssueBusy(true); setIssueError("");
     const requested = Number(issueAmount) || issuingRemainder;
     const amount = Math.min(Math.max(1, requested), issuingRemainder);
     try { await issueQueueItem(issuing.id, issueMethod, amount); }
     catch (error) { setIssueError(error instanceof Error ? error.message : "Не удалось записать выплату"); return; }
+    finally { setIssueBusy(false); }
     setIssuing(null);
     window.setTimeout(loadBalances, 300);
   }
@@ -675,7 +678,7 @@ export function EdwinQueue() {
             </div>
           </div>
           <div className="flex justify-end">
-            <Button disabled={!Number(issueAmount)} onClick={confirmIssue}>
+            <Button disabled={issueBusy || !Number(issueAmount)} onClick={confirmIssue}>
               <Check size={15} /> Подтвердить выдачу
             </Button>
           </div>
