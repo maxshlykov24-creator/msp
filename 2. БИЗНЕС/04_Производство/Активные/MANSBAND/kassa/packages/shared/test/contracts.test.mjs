@@ -554,3 +554,12 @@ test("report dates use Moscow completion, and returns/defects are not new client
   assert(!isTestDeal({...baseDeal,clientName:'Клиент'}));
   for (const kind of ['refund','exchange','defect','drycleaning']) assert.equal(isSalesVisit({...baseDeal,kind}),false);
 });
+
+
+test("test returns do not consume real stock return allowance, but still count within test sales", () => {
+  const source = {...baseDeal,number:100,stage:'Успех',total:100,items:[{productId:'a',name:'A',price:100,qty:1}]};
+  const returned = {...source,number:101,kind:'refund',linkedDealNumber:100,isTest:true};
+  assert.equal(returnableItems(source,[returned])[0].qty,1);
+  assert.equal(returnableItems({...source,isTest:true},[returned]).length,0);
+  assert.equal(returnableItems(source,[{...returned,isTest:false}]).length,0);
+});

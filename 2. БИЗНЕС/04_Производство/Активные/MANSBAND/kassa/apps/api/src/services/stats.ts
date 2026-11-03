@@ -261,9 +261,9 @@ async function purchasingStats(
 export async function cashShift(store: string, cutoff = new Date().toISOString()) {
   const [previous] = await db.select().from(shifts).where(and(eq(shifts.store,store),sql`${shifts.payload}->>'kind' = 'cash_close'`)).orderBy(desc(shifts.closedAt)).limit(1);
   const from = previous?.closedAt?.toISOString() ?? `${new Intl.DateTimeFormat("en-CA",{timeZone:"Europe/Moscow"}).format(new Date(cutoff))}T00:00:00+03:00`;
-  const [movement] = await db.select({amount:sql<number>`coalesce(sum(${ledger.amount}),0)::bigint`,count:sql<number>`count(*)::int`}).from(ledger).innerJoin(dealsTable,eq(dealsTable.number,ledger.dealNumber))
+  const movements = await db.select({amount:ledger.amount,deal:dealsTable.data}).from(ledger).innerJoin(dealsTable,eq(dealsTable.number,ledger.dealNumber))
     .where(and(sql`${dealsTable.data}->>'store' = ${store}`,sql`${ledger.kind} in ('cash','cash_out')`,sql`${ledger.createdAt} > ${from}::timestamptz and ${ledger.createdAt} <= ${cutoff}::timestamptz`));
-  return {store,from,cutoff,previousId:previous?.id??null,openingCash:previous?.countedCash==null?null:previous.countedCash/100,movement:Number(movement?.amount??0)/100,operations:movement?.count??0};
+  return {store,from,cutoff,previousId:previous?.id??null,openingCash:previous?.countedCash==null?null:previous.countedCash/100,movement:movements.filter(row=>!isTestDeal(row.deal as Deal)).reduce((sum,row)=>sum+row.amount,0)/100,operations:movements.filter(row=>!isTestDeal(row.deal as Deal)).length};
 }
 export async function closeCashShift(input: {store:string;cutoff:string;previousId:string|null;openingCash:number;countedCash:number;adjustment:number;reason:string}, actor: {name:string;role:string}) {
   return db.transaction(async tx=>{

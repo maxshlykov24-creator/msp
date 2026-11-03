@@ -1,4 +1,4 @@
-import { settledItems, cartLineTotal } from "./pricing.js";
+import { settledItems, cartLineTotal, isTestDeal } from "./pricing.js";
 import type { Deal, DealKind, Task, TaskAssigneeRole, TaskKind, User } from "./types.js";
 
 /** Продажа сохраняет вид на этапах обещания, доставки в магазин и резерва. */
@@ -448,6 +448,7 @@ export function isReturnSource(deal: Pick<Deal, "stage" | "kind">): boolean {
 export function returnableItems(source: Deal, returns: Deal[]): Deal["items"] {
   const available = settledItems(source).map(item => ({ ...item }));
   for (const prior of returns) {
+    if (isTestDeal(prior) !== isTestDeal(source)) continue;
     if (prior.stage !== "Успех" || !["refund", "exchange"].includes(prior.kind)) continue;
     if (prior.linkedDealNumber !== source.number && (!source.amoLeadId || prior.linkedDealNumber !== source.amoLeadId)) continue;
     for (const item of prior.items) {
