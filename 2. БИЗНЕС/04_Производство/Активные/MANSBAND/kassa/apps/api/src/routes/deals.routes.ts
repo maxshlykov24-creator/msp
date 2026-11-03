@@ -412,8 +412,8 @@ export default async function dealsRoutes(app: FastifyInstance, dependencies: {
       if (!parsed.success) return reply.code(400).send({ message: parsed.error.issues[0]?.message });
       const existing = await resolveDeal(ref);
       if (!existing) return reply.code(404).send({ message: "Заявка не найдена" });
-    const editError = completedDealEditError(existing.stage, req.user.role, parsed.data.reason);
-    if (editError) return reply.code(editError.status).send({ message: editError.message });
+      const editError = completedDealEditError(existing.stage, req.user.role, parsed.data.reason);
+      if (editError) return reply.code(editError.status).send({ message: editError.message });
       if (existing.kind !== "company") {
         return reply.code(400).send({ message: "Конвейер доступен только для продажи компании" });
       }
@@ -422,6 +422,7 @@ export default async function dealsRoutes(app: FastifyInstance, dependencies: {
       await appendAudit({
         actor: { id: req.user.sub, name: req.user.name, role: req.user.role },
         action: "deal.company_updated",
+        metadata: parsed.data.reason ? { reason: parsed.data.reason } : undefined,
         entityType: "deal",
         entityId: String(updated.number),
         before: {
@@ -465,6 +466,7 @@ export default async function dealsRoutes(app: FastifyInstance, dependencies: {
     await appendAudit({
       actor: { id: req.user.sub, name: req.user.name, role: req.user.role },
       action: "deal.handover",
+      metadata: parsed.data.reason ? { reason: parsed.data.reason } : undefined,
       entityType: "deal",
       entityId: String(updated.number),
       before: { issued: existing.issued, documentsStatus: existing.documentsStatus },

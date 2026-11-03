@@ -732,17 +732,22 @@ def sync_open(cabinet_id=None, client_id=None, author="площадка", min_ga
 
 
 def _sync_supply_cabinet(cab, author):
+    from db import EFF_GROUP
     # Список уже содержит закрытые карточки: не спрашиваем их ещё раз по одной.
     cards = {str(x["id"]): x for x in wb_supply.list_supplies(cab, only_open=False) if x.get("id")}
     known = {r["ext_id"]: r for r in list_wb_supplies(client_id=cab["client_id"], limit=100000) if r["cabinet_id"] == cab["id"]}
     conn = connect()
     relevant = {r["supply_ext"] for r in conn.execute(
-        "SELECT DISTINCT supply_ext FROM shipments WHERE cabinet_id=? AND COALESCE(supply_ext,'')<>''",
+        "SELECT DISTINCT supply_ext FROM shipments WHERE cabinet_id=? AND COALESCE(supply_ext,'')<>'' "
+        "AND (%s) IN ('new','assembling','ready')" % EFF_GROUP,
         (cab["id"],))}
     conn.close()
     fresh_since = (datetime.now(MSK) - timedelta(days=2)).isoformat()
     found, notes = 0, []
     for ext, card in cards.items():
+        missing_key = 'supply-missing:%s:%s' % (cab['id'], ext)
+        if get_setting(missing_key):
+            set_setting(missing_key, '')
         mine = known.get(ext)
         if not mine:
             # Старые пустые поставки не забивают опрос. При появлении заказа
@@ -785,6 +790,12 @@ def _sync_supply_cabinet(cab, author):
     for ext, mine in known.items():
         if ext in cards or mine["state"] not in ("open", "ready"):
             continue
+        missing_key = 'supply-missing:%s:%s' % (cab['id'], ext)
+        missing = float(get_setting(missing_key) or 0)
+        if time.time() - missing < (3600 if ext in relevant else 86400):
+            if ext in relevant:
+                notes.append('%s: WB не находит поставку, проверь её в ЛК' % ext)
+            continue
         check_key = "supply-empty-check:%s:%s" % (cab["id"], ext)
         if ext not in relevant:
             checked = float(get_setting(check_key) or 0)
@@ -793,7 +804,13 @@ def _sync_supply_cabinet(cab, author):
             empty_checked += 1
             set_setting(check_key, str(time.time()))
         time.sleep(1.1)
-        card = wb_supply.info(cab, ext)
+        try:
+            card = wb_supply.info(cab, ext, strict=True)
+        except wb_supply.SupplyNotFound:
+            set_setting(missing_key, str(time.time()))
+            if ext in relevant:
+                notes.append('%s: WB не находит поставку, проверь её в ЛК' % ext)
+            continue
         if not card:
             notes.append("%s: WB не подтвердил состояние" % ext)
         elif card.get("done"):

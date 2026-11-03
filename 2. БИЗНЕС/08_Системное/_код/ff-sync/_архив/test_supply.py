@@ -435,7 +435,7 @@ pre = supply_flow.preflight(sup["id"])
 assert pre == {
     "ext_id": "WB-GI-777", "client": "Тест ООО", "orders": 4, "boxes": 2,
     "loose": 2, "empty_boxes": ["WB-TRBX-2"], "state": "open",
-    "office": statuses.PVZ, "pickup": True, "warn": "",
+    "office": statuses.PVZ, "pickup": True, "warn": "", "kiz": "",
 }, pre
 
 # без confirm не передаём
