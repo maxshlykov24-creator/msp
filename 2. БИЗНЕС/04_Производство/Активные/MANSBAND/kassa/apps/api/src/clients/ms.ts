@@ -222,7 +222,7 @@ export async function getStockForProduct(
   const filterKey = type === "variant" ? "variant" : "product";
   const href = `${env.MOYSKLAD_API_BASE}/entity/${type}/${productMsId}`;
   const res = await http.get<MsList<MsStockRow>>(
-    `/report/stock/bystore?filter=${encodeURIComponent(`${filterKey}=${href}`)}`
+    `/report/stock/bystore?filter=${encodeURIComponent(`${filterKey}=${href};stockMode=all`)}`
   );
   return res.rows;
 }

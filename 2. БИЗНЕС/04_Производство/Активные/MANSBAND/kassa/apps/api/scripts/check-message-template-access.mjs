@@ -127,7 +127,7 @@ await cancelApi.close();console.log(JSON.stringify({checks,result:'passed',scope
 // Контракт МС: product=entity/variant возвращает 400 (живой ответ 03.11.2026).
 const msClient=await import('../src/clients/ms.ts');
 globalThis.fetch=async(url)=>{
- const u=new URL(String(url));const [key,href]=u.searchParams.get('filter').split('=');const type=new URL(href).pathname.split('/').at(-2);
+ const u=new URL(String(url));const filter=u.searchParams.get('filter');assert(filter.includes(';stockMode=all'),'zero stock included');const [key,href]=filter.split(';')[0].split('=');const type=new URL(href).pathname.split('/').at(-2);
  const valid=type==='variant'?key==='variant':key==='product';
  return new Response(JSON.stringify(valid?{rows:[{meta:{href,type},stockByStore:[{stock:3,reserve:1}]}]}:{errors:[{code:2024}]}),{status:valid?200:400,headers:{'content-type':'application/json'}});
 };
