@@ -35,7 +35,7 @@ LABEL_W_MM = 58.0
 LABEL_H_MM = 40.0
 MM = 72.0 / 25.4  # мм в типографские пункты
 
-OZON_CHUNK = 20   # жёсткий предел метода
+OZON_CHUNK = 20   # Небольшие партии; новый метод допускает до 1000 отправлений.
 WB_CHUNK = 100    # жёсткий предел метода
 OZON_PDF_CACHE_SECONDS = 300
 OZON_LABEL_TASK_SECONDS = 7 * 86400  # Повторная печать после передачи в доставку.
@@ -153,9 +153,13 @@ def _ozon_label_response(cab, postings):
                 return response
             try:
                 tasks = response.json()["tasks"]
-                selected = [t for t in tasks if t.get("task_type") == "small_label"]
-                if not selected or any(not t.get("task_id") for t in selected):
-                    raise ValueError("No small label task")
+                # Ozon разделяет старые и новые этикетки по big_label/small_label.
+                # Оба типа могут относиться к разным отправлениям одной выборки.
+                selected = list(tasks)
+                if (not selected or any(t.get("task_type") not in ("small_label", "big_label")
+                                        or not t.get("task_id") for t in selected)
+                        or len({t["task_id"] for t in selected}) != len(selected)):
+                    raise ValueError("Unknown label tasks")
                 state = {"created_at": time.time(), "tasks": selected}
             except (ValueError, KeyError, TypeError) as exc:
                 raise LabelError("Ozon не подтвердил задание на этикетки нужного формата. Повтори печать.") from exc
@@ -170,6 +174,8 @@ def _ozon_label_response(cab, postings):
                     continue
                 response = call("/v2/posting/fbs/package-label/get", {"task_id": task_id})
                 if response.status_code != 200:
+                    if response.status_code in (400, 404):
+                        save(state_path, b"{}")  # Просроченное задание не зацикливает повтор печати.
                     return response
                 try:
                     data = response.json()

@@ -95,6 +95,21 @@ class AsyncLabels(unittest.TestCase):
         tasks=[{'task_id':1,'task_type':'small_label'},{'task_id':2,'task_type':'small_label'}]
         with patch.object(labels,'req',side_effect=[created(tasks),ready(),Reply(blob=pdf()),ready(url='https://ir.ozone.ru/second.pdf'),Reply(blob=pdf())]):
             self.assertEqual(len(PdfReader(io.BytesIO(self.run_pdf(['A','B']))).pages),2)
+
+    def test_old_format_big_label_is_supported(self):
+        with patch.object(labels,'req',side_effect=[created([{'task_id':1,'task_type':'big_label'}]),ready(),Reply(blob=pdf())]):
+            self.assertEqual(len(PdfReader(io.BytesIO(self.run_pdf())).pages),1)
+
+    def test_mixed_new_and_old_formats_are_not_dropped(self):
+        tasks=[{'task_id':1,'task_type':'small_label'},{'task_id':2,'task_type':'big_label'}]
+        with patch.object(labels,'req',side_effect=[created(tasks),ready(),Reply(blob=pdf()),ready(),Reply(blob=pdf())]):
+            self.assertEqual(len(PdfReader(io.BytesIO(self.run_pdf(['A','B']))).pages),2)
+
+    def test_missing_task_can_be_recreated(self):
+        with patch.object(labels,'req',side_effect=[created(),Reply(404)]):
+            self.assertEqual(labels._ozon_label_response(self.cab,['A']).status_code,404)
+        with patch.object(labels,'req',side_effect=[created(),ready(),Reply(blob=pdf())]) as call:
+            self.run_pdf();self.assertTrue(call.call_args_list[0].args[1].endswith('/create'))
     def test_corrupt_cache_is_refetched(self):
         with patch.object(labels,'req',side_effect=[created(),ready(),Reply(blob=pdf())]):self.run_pdf()
         next(Path(self.tmp.name).rglob('*.pdf')).write_bytes(b'corrupt')
