@@ -46,7 +46,7 @@ await Promise.all(Array.from({length:8},()=>c.redeemDealPayments(paymentDeal)));
 assert.equal((await c.list()).find(x=>x.number===cert.number).balance,70,'replayed certificate payment spent once');
 await assert.rejects(()=>c.redeemDealPayments({...paymentDeal,payments:[{...paymentDeal.payments[0],amount:40}]}));
 assert.equal((await c.list()).find(x=>x.number===cert.number).balance,70);
-const idem=await import('../dist/lib/idempotency.js');let invoked=0;const operation='test:'+crypto.randomUUID();
+const idem=await import('../dist/lib/idempotency.js');await Promise.all(Array.from({length:24},(_,n)=>idem.withOperationLock('outer:'+fixture+':'+n,()=>idem.withOperationLock('inner:'+fixture+':'+n,async()=>{await pg`select 1`;}))));let invoked=0;const operation='test:'+crypto.randomUUID();
 const external=()=>{invoked++;return Promise.resolve({id:'external-id'})};
 await idem.withIdempotency(operation,'test',external);await idem.withIdempotency(operation,'test',external);assert.equal(invoked,1);
 const uncertain='test:'+crypto.randomUUID();await assert.rejects(()=>idem.withIdempotency(uncertain,'test',async()=>{throw Error('connection lost after commit')}));
@@ -143,4 +143,4 @@ console.log(JSON.stringify({workdaysAndShifts:['zero-sales day','unconfirmed pay
 console.log(JSON.stringify({statistics:['refund attributed to original consultant','refund and defect not new clients','test deal excluded','net revenue'],result:'passed'}));
 console.log(JSON.stringify({finance:['queue concurrency','partial payout retries','no paid reopen','closed queue dedup','certificate payment replay','external unknown outcome','salary concurrency'],result:'passed'}));
 console.log(JSON.stringify({checks:['legacy reservations and zeros','canonical format','concurrent issuance','reserved conflict','atomic spending','repeat issuance keeps balance','future date blocks both spending paths','batch rollback'],result:'passed'}));
-}finally{await pg.end();}
+}finally{await (await import("../dist/lib/idempotency.js")).closeOperationLocks();await pg.end();}
