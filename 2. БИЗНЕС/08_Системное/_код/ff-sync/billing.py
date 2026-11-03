@@ -30,7 +30,6 @@ MSK = timezone(timedelta(hours=3))
 def collect(lot_ids, date_to=""):
     """Партии одного клиента и суммы, которые ещё не выставлялись."""
     from account import require_current_ledger
-    require_current_ledger()
     end = calculation_end(date_to)
     lots = []
     client = None
@@ -53,6 +52,7 @@ def collect(lot_ids, date_to=""):
         raise ValueError("позиции ещё не приняты на склад: их %s. Убери их из выбора." % waiting)
     if not lots:
         raise ValueError("не выбрано ни одной позиции")
+    require_current_ledger(client['id'])
     moves = moves_by_day()
     detail = []
     storage = 0.0

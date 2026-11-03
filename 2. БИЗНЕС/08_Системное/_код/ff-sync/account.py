@@ -485,13 +485,27 @@ def calendar(*args, **kwargs):
         return _calendar(*args, **kwargs)
 
 
-def require_current_ledger():
+def ledger_status(client_id=None):
+    import json
+    from db import get_setting
+    error = get_setting('ledger:last_error') or ''
+    last = get_setting('ledger:last_success') or ''
+    if error and client_id:
+        proof = json.loads(get_setting('ledger:scope:%s' % int(client_id)) or '{}')
+        if (proof.get('attempt') == get_setting('ledger:last_attempt')
+                and proof.get('global_error') == error and proof.get('last_success')):
+            last, error = proof['last_success'], ''
+    return {'last_sync': last, 'sync_error': error}
+
+
+def require_current_ledger(client_id=None):
     from db import get_setting
     if get_setting('ledger:enabled') != '1':
         return
-    if get_setting('ledger:last_error'):
+    status = ledger_status(client_id)
+    if status['sync_error']:
         raise ValueError('Последняя синхронизация учёта не завершена. Обнови учёт перед счётом или клиентским отчётом.')
-    raw = get_setting('ledger:last_success')
+    raw = status['last_sync']
     if not raw or (datetime.now(MSK) - datetime.fromisoformat(raw)).total_seconds() > 1800:
         raise ValueError('Данные учёта требуют обновления. Нажми «Обновить учёт».')
 

@@ -592,7 +592,6 @@ CLIENT_STOCK_COLUMNS = [
 
 def build_client_stock(ids, date_to=None):
     from account import require_current_ledger
-    require_current_ledger()
     wanted = [int(x) for x in ids]
     order = {lid: i for i, lid in enumerate(wanted)}
     rows = [r for r in lot_rows(only_open=False, date_to=date_to) if r["id"] in order]
@@ -603,6 +602,7 @@ def build_client_stock(ids, date_to=None):
         raise ValueError("часть выбранных партий не найдена")
     if len({r["client_id"] for r in rows}) != 1:
         raise ValueError("в отчёте для клиента должны быть позиции одного контрагента")
+    require_current_ledger(rows[0]['client_id'])
     rows.sort(key=lambda r: order.get(r["id"], 0))
     rows = group_rows(rows)
     wb, ws = _new_sheet("Остаток", CLIENT_STOCK_COLUMNS)

@@ -549,8 +549,8 @@ def lots(client_id: int = 0, q: str = "", marked: str = "", date_to: str = "", f
         marked=marked_flag(marked),
         date_to=checked_day(date_to),
     ))
-    from db import get_setting
-    return {"rows": rows, "totals": totals(rows), "last_sync": get_setting("ledger:last_success") or "", "sync_error": get_setting("ledger:last_error") or ""}
+    from account import ledger_status
+    return {"rows": rows, "totals": totals(rows), **ledger_status(client_id)}
 
 
 @app.get("/api/ledger/sync-status")
