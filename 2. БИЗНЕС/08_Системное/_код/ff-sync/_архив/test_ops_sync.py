@@ -23,6 +23,10 @@ class Sync(unittest.TestCase):
  def test_existing_work_and_marks_preserved(self):
   ships.stage_wb_new(self.client,self.cab,[self.order()]);r=db.get_shipments_by_ext(1,'fbs',['123'])[0];db.set_work_state([r['id']],'ready');db.replace_shipment_marks(r['id'],[{'code':'existing-mark','article':'ART','gtin':'1'}])
   self.assertEqual(ships.stage_wb_new(self.client,self.cab,[self.order()]),0);self.assertEqual(db.get_shipments_by_ext(1,'fbs',['123'])[0]['work_state'],'ready');self.assertEqual(len(db.list_shipment_marks([r['id']])),1)
+ def test_empty_remote_meta_cannot_erase_saved_marks(self):
+  ships.stage_wb_new(self.client,self.cab,[self.order()]);r=db.get_shipments_by_ext(1,'fbs',['123'])[0];db.replace_shipment_marks(r['id'],[{'code':'existing-mark','article':'ART','gtin':'1'}])
+  with patch.object(ships,'wb_statuses',return_value={'123':{'supplier':'new','wb':'waiting'}}),patch.object(ships,'wb_meta',return_value={'123':[]}):ships.handle_wb_fbs(self.client,self.cab,[self.order()])
+  self.assertEqual(len(db.list_shipment_marks([r['id']])),1)
  def test_new_response_requires_order_list(self):
   with patch.object(orders,'wb_read',return_value=Response(data={})):
    with self.assertRaises(RuntimeError):orders.pull_wb_new('test',strict=True)

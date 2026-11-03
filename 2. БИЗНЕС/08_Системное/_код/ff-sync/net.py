@@ -180,14 +180,14 @@ def req(method, url, headers=None, retry_safe=True, **kw):
     return last
 
 
-def wb_read(method, url, **kwargs):
+def wb_read(method, url, request_fn=None, **kwargs):
     """Bounded 429 retry for explicitly read-only WB methods, never mutations."""
     import math
     allowed_post = ('/api/v3/orders/status', '/api/marketplace/v3/orders/meta')
     if not url.startswith(WB_BASE + '/') or method not in ('GET', 'POST') or (method == 'POST' and not url.endswith(allowed_post)):
         raise ValueError('WB retry is restricted to read-only methods')
     for attempt in range(4):
-        response = req(method, url, **kwargs)
+        response = (request_fn or req)(method, url, **kwargs)
         if response.status_code != 429 or attempt == 3:
             return response
         values = [response.headers.get(k) for k in ('Retry-After', 'X-Ratelimit-Retry', 'X-Ratelimit-Reset')]

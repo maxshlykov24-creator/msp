@@ -236,6 +236,7 @@ def wb_statuses(token, order_ids, strict=False):
             r = wb_read(
                 "POST",
                 WB_BASE + "/api/v3/orders/status",
+                request_fn=req,
                 headers=wb_headers(token),
                 json={"orders": ids[i : i + 1000]},
             )
@@ -274,6 +275,7 @@ def wb_meta(token, order_ids):
             r = wb_read(
                 "POST",
                 WB_BASE + "/api/marketplace/v3/orders/meta",
+                request_fn=req,
                 headers=wb_headers(token),
                 json={"orders": chunk},
             )
@@ -408,7 +410,7 @@ def handle_wb_fbs(client, cab, orders, status_cache=None):
             cat["name"] or article,
             1,
             # коды не спрашивали — те, что есть, не трогаем
-            meta.get(ext_id) if ext_id in fresh else None,
+            (meta.get(ext_id) or None) if ext_id in fresh else None,
             known=row,
             extra={
                 "status_group": group,

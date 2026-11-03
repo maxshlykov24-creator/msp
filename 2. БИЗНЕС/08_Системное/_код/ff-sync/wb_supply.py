@@ -37,7 +37,7 @@ import base64
 
 import requests
 
-from net import WB_BASE, req, wb_headers, wb_read
+from net import WB_BASE, req, wb_headers
 
 ORDERS_CHUNK = 100   # предел батча добавления заданий в поставку
 TRBX_CHUNK = 1000    # предел создания грузомест за запрос
@@ -313,7 +313,7 @@ class SupplyNotFound(SupplyError):
 
 def info(cab, supply_ext, strict=False):
     """Карточка поставки у площадки: пригодится, чтобы сверить состояние."""
-    r = wb_read("GET", "%s/api/v3/supplies/%s" % (WB_BASE, supply_ext), headers=wb_headers(cab["token"]))
+    r = req("GET", "%s/api/v3/supplies/%s" % (WB_BASE, supply_ext), headers=wb_headers(cab["token"]))
     if strict and r.status_code == 404:
         raise SupplyNotFound('WB не находит поставку %s' % supply_ext)
     if strict and r.status_code != 200:

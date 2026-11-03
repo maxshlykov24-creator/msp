@@ -283,9 +283,11 @@ def fake_req(method, url, headers=None, **kw):
         return Fake(200, {"posting_number": (kw.get("json") or {}).get("posting_number"), "status": "ship_available"})
     if url.endswith("/api/marketplace/v3/orders/meta"):
         ids = (kw.get("json") or {}).get("orders") or []
+        # Ordinary logistics fixtures have no marking requirement. Only the
+        # explicit marking scenarios below request/submit sgtin.
         return Fake(200, {"orders": [{"id": i, "metaDetails": [
             {"key": "sgtin", "value": WB_SENT.get(str(i)), "decision": "filled" if WB_SENT.get(str(i)) else "required"}
-        ]} for i in ids]})
+        ] if int(i) in (777, 778) else []} for i in ids]})
     if "/orders/stickers" in url:
         ids = (kw.get("json") or {}).get("orders") or []
         return Fake(200, {"stickers": [{"orderId": i, "file": base64.b64encode(PNG).decode(), "partA": "A", "partB": "B"} for i in ids]})

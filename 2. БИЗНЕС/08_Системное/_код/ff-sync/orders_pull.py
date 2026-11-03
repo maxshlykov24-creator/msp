@@ -140,7 +140,7 @@ def pull_wb_new(token, strict=False):
     свежие задания от сборщика.
     """
     try:
-        r = wb_read("GET", WB_BASE + "/api/v3/orders/new", headers=wb_headers(token))
+        r = wb_read("GET", WB_BASE + "/api/v3/orders/new", request_fn=req, headers=wb_headers(token))
     except Exception as exc:
         if strict:
             raise RuntimeError("WB новые: ошибка соединения") from exc
@@ -176,6 +176,7 @@ def pull_wb_fbs(token, date_from, strict=False, on_new=None):
             r = wb_read(
                 "GET",
                 WB_BASE + "/api/v3/orders",
+                request_fn=req,
                 headers=wb_headers(token),
                 params={"limit": 1000, "next": nxt, "dateFrom": ts},
             )
