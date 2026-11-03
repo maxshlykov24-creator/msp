@@ -1907,6 +1907,16 @@ def shipped_by_day(client_id, day_from, day_to):
     return sorted(grouped.values(), key=lambda r: (r['article'], r['day']))
 
 
+def scanit_query(raw):
+    """Recognize the label's QR prefix without rewriting ordinary product search."""
+    text = str(raw or '').strip().casefold()
+    if text.startswith((']q1', ']q2', ']q3', ']d1', ']d2')):
+        text = text[3:]
+    if len(text) == 13 and text[:2] in ('ii', 'шш') and text[2:].isascii() and text[2:].isdigit():
+        return 'ii' + text[2:]
+    return ''
+
+
 def list_shipments(client_id=None, marketplace="", kind="", marked=None, day_from="", day_to="", query=""):
     conn = connect()
     sql = (
@@ -1942,13 +1952,14 @@ def list_shipments(client_id=None, marketplace="", kind="", marked=None, day_fro
     if not text:
         return rows
     out = []
+    qr = scanit_query(text)
     for row in rows:
         hay = " ".join(
             str(row[k] or "").lower()
             for k in ("ext_id", "article", "barcode", "name", "status", "client_name", "track", "scanit")
         )
         hay += " " + status_label(row["status"]).lower()
-        if text in hay:
+        if text in hay or (qr and qr == str(row['scanit'] or '').casefold()):
             out.append(row)
     return out
 
@@ -2031,12 +2042,14 @@ def _assembly_filters(
     text = (query or "").strip().lower()
     if text:
         sql += (
-            " AND casefold(ifnull(shipments.ext_id,'') || ' ' || ifnull(shipments.article,'') || ' ' || "
+            " AND (casefold(ifnull(shipments.ext_id,'') || ' ' || ifnull(shipments.article,'') || ' ' || "
             "ifnull(shipments.barcode,'') || ' ' || ifnull(shipments.name,'') || ' ' || "
             "ifnull(shipments.status,'') || ' ' || ifnull(clients.name,'') || ' ' || "
-            "ifnull(shipments.track,'') || ' ' || ifnull(shipments.scanit,'') || ' ' || ifnull(shipments.warehouse,'') || ' ' || ifnull(shipments.items_json,'')) LIKE ?"
+            "ifnull(shipments.track,'') || ' ' || ifnull(shipments.scanit,'') || ' ' || ifnull(shipments.warehouse,'') || ' ' || ifnull(shipments.items_json,'')) LIKE ? "
+            "OR (?<>'' AND casefold(ifnull(shipments.scanit,''))=?))"
         )
-        args.append("%" + text + "%")
+        qr = scanit_query(text)
+        args.extend(["%" + text + "%", qr, qr])
     return sql, args
 
 

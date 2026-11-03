@@ -42,6 +42,7 @@ export function Certificates() {
   const [cancelError,setCancelError]=useState("");
   const [cancelling,setCancelling]=useState(false);
   const { certificates, redeemCertificate } = useStore();
+  const [redeemError, setRedeemError] = useState("");
   const [redeem, setRedeem] = useState<Certificate | null>(null);
   const [usageCert, setUsageCert] = useState<Certificate | null>(null);
   const [usages, setUsages] = useState<CertificateUsage[]>([]);
@@ -382,6 +383,7 @@ export function Certificates() {
                 <div className="text-mute text-sm">Гость: {redeem.guestName || "—"}</div>
               </div>
             </div>
+            {redeemError && <p role="alert" className="text-red-400">{redeemError}</p>}
             <Field label="Сумма списания">
               <input
                 className="input"
@@ -403,8 +405,9 @@ export function Certificates() {
               <div className="flex-1" />
               <Button
                 disabled={!amount || Number(amount) <= 0 || Number(amount) > redeem.balance}
-                onClick={() => {
-                  redeemCertificate(redeem.number, Number(amount));
+                onClick={async () => {
+                  try {
+                  await redeemCertificate(redeem.number, Number(amount));
                   setList((prev) =>
                     prev.map((c) =>
                       c.number === redeem.number
@@ -418,6 +421,7 @@ export function Certificates() {
                     )
                   );
                   setRedeem(null);
+                  } catch (error) { setRedeemError(error instanceof Error ? error.message : "Списание не подтверждено"); }
                 }}
               >
                 Списать {amount ? money(Number(amount)) : ""}

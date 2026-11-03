@@ -133,6 +133,7 @@ export function EdwinQueue() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [reopening, setReopening] = useState<string | null>(null);
+  const [issueError, setIssueError] = useState("");
   const [issuing, setIssuing] = useState<ExtendedQueueItem | null>(null);
   const [issueMethod, setIssueMethod] = useState(DEFAULT_PAYOUT_METHOD_ID);
   const [issueAmount, setIssueAmount] = useState("");
@@ -289,11 +290,12 @@ export function EdwinQueue() {
     return { invoiceNoMeta, company, buyer };
   }
 
-  function confirmIssue() {
+  async function confirmIssue() {
     if (!issuing) return;
     const requested = Number(issueAmount) || issuingRemainder;
     const amount = Math.min(Math.max(1, requested), issuingRemainder);
-    issueQueueItem(issuing.id, issueMethod, amount);
+    try { await issueQueueItem(issuing.id, issueMethod, amount); }
+    catch (error) { setIssueError(error instanceof Error ? error.message : "Не удалось записать выплату"); return; }
     setIssuing(null);
     window.setTimeout(loadBalances, 300);
   }
@@ -668,6 +670,7 @@ export function EdwinQueue() {
               onChange={(e) => setIssueAmount(e.target.value.replace(/\D/g, ""))}
             />
             <div className="text-[12px] text-mute mt-1">
+              {issueError && <span role="alert" className="text-red-400">{issueError}</span>}
               Можно выдать частями: остаток {money(Math.max(0, issuingRemainder - (Number(issueAmount) || 0)))} останется в очереди.
             </div>
           </div>

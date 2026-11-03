@@ -474,3 +474,9 @@ export async function listFiles(entityType: string, entityId: string): Promise<M
   const res = await http.get<MsList<MsRow>>(`/entity/${entityType}/${entityId}/files`);
   return res.rows;
 }
+
+/** Чтение уже созданного документа: повторное проведение не создаёт копию. */
+export async function getDocument(type: "customerorder" | "demand" | "salesreturn", id: string): Promise<MsRow> {
+  if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Error("Некорректный ID документа МойСклад");
+  return http.get<MsRow>(`/entity/${type}/${id}`);
+}

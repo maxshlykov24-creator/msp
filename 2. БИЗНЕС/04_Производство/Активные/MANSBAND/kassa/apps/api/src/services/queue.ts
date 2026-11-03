@@ -55,26 +55,22 @@ export async function addQueue(
   }
 ) {
   const amount = Math.round(item.amount * 100);
-  const existing = await db.select().from(queue).where(and(
-    eq(queue.kind, item.kind),
-    eq(queue.dealNumber, item.dealNumber),
-    eq(queue.amount, amount),
-    eq(queue.destination, item.destination),
-    eq(queue.status, item.status ?? "pending")
-  )).limit(1);
-  if (existing[0]) return toQueueItem(existing[0]);
-  const [row] = await db
-    .insert(queue)
-    .values({
-      kind: item.kind,
-      dealNumber: item.dealNumber,
-      client: item.client,
-      amount,
-      destination: item.destination,
-      status: item.status ?? "pending",
-      metadata: item.metadata,
-    })
-    .returning();
+  if (!Number.isSafeInteger(amount) || amount < 0) throw new Error("Некорректная сумма задачи");
+  const row = await db.transaction(async tx => {
+    const key = JSON.stringify([item.kind, item.dealNumber, amount, item.destination]);
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${key}, 713))`);
+    // Выполненная обязанность тоже является дублем. Повтор события не создаёт выплату заново.
+    const [existing] = await tx.select().from(queue).where(and(
+      eq(queue.kind, item.kind), eq(queue.dealNumber, item.dealNumber),
+      eq(queue.amount, amount), eq(queue.destination, item.destination)
+    )).limit(1);
+    if (existing) return existing;
+    const [created] = await tx.insert(queue).values({
+      kind: item.kind, dealNumber: item.dealNumber, client: item.client,
+      amount, destination: item.destination, status: item.status ?? "pending", metadata: item.metadata,
+    }).returning();
+    return created;
+  });
   broadcast("queue.updated", {});
   return row ? toQueueItem(row) : null;
 }
@@ -88,23 +84,33 @@ export async function issueQueue(
   input: {
     by: string;
     methodId: string;
+    expectedIssuedAmount?: number;
     amountRub?: number;
     note?: string;
     metadata?: Record<string, unknown>;
   }
 ) {
   const result = await db.transaction(async (tx) => {
-    const [current] = await tx.select().from(queue).where(eq(queue.id, id)).limit(1);
+    const [current] = await tx.select().from(queue).where(eq(queue.id, id)).limit(1).for("update");
     if (!current) return null;
 
+    if (["invoice", "invoice_check", "documents", "documents_hand"].includes(current.kind)) {
+      throw new Error("Документ не является денежной выплатой");
+    }
     const remaining = current.amount - current.issuedAmount;
     if (current.status === "issued" || remaining <= 0) {
       const rows = await tx.select().from(queuePayouts).where(eq(queuePayouts.queueId, id));
       return { row: current, payouts: rows };
     }
 
+    if (input.expectedIssuedAmount != null && Math.round(input.expectedIssuedAmount * 100) !== current.issuedAmount) {
+      throw Object.assign(new Error("Остаток выплаты изменился. Обновите очередь перед новой выплатой."), { statusCode: 409 });
+    }
     const requested = input.amountRub == null ? remaining : Math.round(input.amountRub * 100);
-    const amount = Math.min(Math.max(1, requested), remaining);
+    if (!Number.isSafeInteger(requested) || requested <= 0 || requested > remaining) {
+      throw new Error("Сумма выплаты должна быть положительной и не превышать остаток");
+    }
+    const amount = requested;
     const issuedTotal = current.issuedAmount + amount;
     const closed = issuedTotal >= current.amount;
 
@@ -157,20 +163,29 @@ export async function issueQueue(
  */
 export async function issueSalary(
   id: string,
-  input: { by: string; methodId: string; amountRub?: number; note?: string }
+  input: { by: string; methodId: string; amountRub?: number; expectedIssuedAmount?: number; note?: string }
 ): Promise<QueueItem | null> {
   const result = await db.transaction(async (tx) => {
-    const [current] = await tx.select().from(queue).where(eq(queue.id, id)).limit(1);
+    const [current] = await tx.select().from(queue).where(eq(queue.id, id)).limit(1).for("update");
     if (!current || current.kind !== "salary") return null;
 
+    if (["invoice", "invoice_check", "documents", "documents_hand"].includes(current.kind)) {
+      throw new Error("Документ не является денежной выплатой");
+    }
     const remaining = current.amount - current.issuedAmount;
     if (current.status === "issued" || remaining <= 0) {
       const rows = await tx.select().from(queuePayouts).where(eq(queuePayouts.queueId, id));
       return { row: current, payouts: rows };
     }
 
+    if (input.expectedIssuedAmount != null && Math.round(input.expectedIssuedAmount * 100) !== current.issuedAmount) {
+      throw Object.assign(new Error("Остаток выплаты изменился. Обновите очередь перед новой выплатой."), { statusCode: 409 });
+    }
     const requested = input.amountRub == null ? remaining : Math.round(input.amountRub * 100);
-    const amount = Math.min(Math.max(1, requested), remaining);
+    if (!Number.isSafeInteger(requested) || requested <= 0 || requested > remaining) {
+      throw new Error("Сумма выплаты должна быть положительной и не превышать остаток");
+    }
+    const amount = requested;
     const issuedTotal = current.issuedAmount + amount;
     const closed = issuedTotal >= current.amount;
 
@@ -237,7 +252,7 @@ export async function closeQueue(id: string, by: string): Promise<QueueItem | nu
   const [updated] = await db
     .update(queue)
     .set({ status: "issued", issuedAt: new Date(), issuedBy: by })
-    .where(eq(queue.id, id))
+    .where(and(eq(queue.id, id), inArray(queue.kind, ["invoice", "invoice_check", "documents", "documents_hand"])))
     .returning();
   if (!updated) return null;
   broadcast("queue.updated", {});
@@ -246,6 +261,7 @@ export async function closeQueue(id: string, by: string): Promise<QueueItem | nu
 
 /** Документы передал консультант из карточки — закрываем задачу в очереди Миши. */
 export async function closeQueueByDeal(dealNumber: number, kind: string, by: string): Promise<void> {
+  if (!["invoice", "invoice_check", "documents", "documents_hand"].includes(kind)) throw new Error("Денежная задача закрывается только выплатой");
   const updated = await db
     .update(queue)
     .set({ status: "issued", issuedAt: new Date(), issuedBy: by })
@@ -260,7 +276,7 @@ export async function closeQueueByDeal(dealNumber: number, kind: string, by: str
  */
 export async function reopenQueue(id: string, by: string): Promise<QueueItem | null> {
   const result = await db.transaction(async (tx) => {
-    const [current] = await tx.select().from(queue).where(eq(queue.id, id)).limit(1);
+    const [current] = await tx.select().from(queue).where(eq(queue.id, id)).limit(1).for("update");
     if (!current) return null;
     if (current.status !== "issued" && current.issuedAmount <= 0) {
       return { row: current, payouts: [] as Array<typeof queuePayouts.$inferSelect> };
@@ -483,7 +499,8 @@ export async function markSaryBatchSent(
   if (ids.length === 0) return { updated: 0, screenshotFile: "" };
   const screenshotFile = await saveSaryScreenshot(screenshot);
   const sentAt = new Date();
-  const rows = await db
+  const updatedCount = await db.transaction(async tx => {
+  const rows = await tx
     .update(sary)
     .set({ status: "sent", screenshotAttached: true, sentAt })
     .where(and(inArray(sary.id, ids), eq(sary.status, "pending")))
@@ -497,14 +514,12 @@ export async function markSaryBatchSent(
   // Расход по каждой строке: САР со статусом in_check расходом не является
   // (скидка в чеке), сюда попадают только реально отправленные переводы.
   for (const row of rows) {
-    await addExpense({
+    await insertExpense(tx, {
       category: "Программа лояльности",
       account: opts.methodId,
       amount: row.amount / 100,
       description: `САР · ${row.client} ${row.phone}${row.refDealNumber ? ` · заявка #${row.refDealNumber}` : ""}`,
       createdBy: opts.by,
-    }).catch((err) => {
-      console.warn(`[sary] расход по САР ${row.id} не записан: ${(err as Error).message}`);
     });
   }
   // Пачку отправили из экрана сар — одноимённые задачи колл-менеджера закрываем,
@@ -513,7 +528,7 @@ export async function markSaryBatchSent(
     .map((row) => row.refDealNumber)
     .filter((n): n is number => typeof n === "number");
   if (dealNumbers.length > 0) {
-    await db
+    await tx
       .update(tasks)
       .set({ status: "done", completedAt: new Date() })
       .where(
@@ -524,9 +539,11 @@ export async function markSaryBatchSent(
         )
       );
   }
+    return rows.length;
+  });
   broadcast("sary.updated", {});
   broadcast("queue.updated", { source: "sary" });
-  return { updated: rows.length, screenshotFile };
+  return { updated: updatedCount, screenshotFile };
 }
 
 function toExpense(r: typeof expenses.$inferSelect): Expense {
@@ -548,7 +565,7 @@ export async function listExpenses(): Promise<Expense[]> {
   return rows.map(toExpense);
 }
 
-export async function addExpense(input: {
+type ExpenseInput = {
   category: string;
   account: string;
   amount: number;
@@ -556,8 +573,11 @@ export async function addExpense(input: {
   description?: string;
   spentAt?: string;
   createdBy: string;
-}): Promise<Expense> {
-  return db.transaction(async (tx) => {
+};
+export async function addExpense(input: ExpenseInput): Promise<Expense> {
+  return db.transaction(tx => insertExpense(tx, input));
+}
+async function insertExpense(tx: Parameters<Parameters<typeof db.transaction>[0]>[0], input: ExpenseInput): Promise<Expense> {
     const amount = Math.round(input.amount * 100);
     // Без разбивки расход целиком списывается со счёта из поля «откуда оплатил».
     const parts: ExpenseSplit[] = input.splits?.length
@@ -590,7 +610,6 @@ export async function addExpense(input: {
     }
     if (!row) throw new Error("Не удалось записать расход");
     return toExpense(row);
-  });
 }
 
 export async function listBalances(): Promise<AccountBalance[]> {

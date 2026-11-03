@@ -14,6 +14,10 @@ class Scanit(unittest.TestCase):
   return db.upsert_shipment(1,1,'ozon','fbs','POST-1',statuses.ru('awaiting_packaging'),'2026-11-03','ART','PRODUCT','Name',1,None,0,'now',extra=values)
  def test_search_both_sections(self):
   sid=self.row(scanit='ii123456');self.assertEqual([r['id'] for r in db.list_assembly(client_id=1,query='  II123456  ')],[sid]);self.assertEqual([r['id'] for r in db.list_shipments(client_id=1,query='ii123456')],[sid]);self.assertEqual(db.list_assembly(client_id=2,query='ii123456'),[])
+ def test_russian_keyboard_prefix_search(self):
+  sid=self.row(scanit='ii50192077424');self.assertEqual([r['id'] for r in db.list_assembly(client_id=1,query='ШШ50192077424')],[sid]);self.assertEqual([r['id'] for r in db.list_shipments(client_id=1,query='шш50192077424')],[sid]);self.assertEqual(db.list_assembly(client_id=2,query='шш50192077424'),[])
+ def test_aim_prefix_and_literal_product_search(self):
+  sid=self.row(scanit='ii50192077424');self.assertEqual([r['id'] for r in db.list_assembly(query=']Q3ii50192077424')],[sid]);self.assertEqual([r['id'] for r in db.list_assembly(query='Name')],[sid]);self.assertEqual(db.scanit_query('МЕШХРАНС10'),'')
  def test_missing_qr_preserves_existing(self):
   self.row(scanit='ii123');self.row();self.assertEqual(db.get_shipments_by_ext(1,'fbs',['POST-1'])[0]['scanit'],'ii123')
  def test_helper_changes_only_qr(self):

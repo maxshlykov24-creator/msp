@@ -9,9 +9,11 @@ import * as catalog from "./catalog.js";
 import { resolveAssortment } from "./catalog.js";
 import { getMsRef, getWarehouseForStore, getStatusId, extractIdFromHref, getFieldIdByName } from "./bootstrap.js";
 import { buildLeadCustomFields, ensureLeadCompany, invalidateLeadFieldCache, paymentStatusLabel, writeKassaLink } from "./amoMapping.js";
-import { withIdempotency } from "../lib/idempotency.js";
+import { withIdempotency, withOperationLock } from "../lib/idempotency.js";
 import { toKopecks } from "../lib/money.js";
 import {
+  settledItems,
+  cartLineTotal,
   AMO_LEAD_FIELDS,
   AMO_CERTIFICATE_NOMINAL_FIELD_ID,
   AMO_PIPELINE_COMPLAINTS,
@@ -56,9 +58,8 @@ const COMPLAINTS_KINDS = new Set<DealKind>([
 const CLOSED_OR_JUNK_STATUS_IDS = new Set([142, 143]);
 
 function dealItemsToPositions(deal: Deal) {
-  return deal.items
-    .filter((i) => i.qty > 0)
-    .map((i) => ({ productId: i.productId, qty: i.qty, price: toKopecks(Math.abs(i.price)) }));
+  return settledItems(deal)
+    .map(i => ({ productId: i.productId, qty: i.qty, price: toKopecks(cartLineTotal(i) / i.qty) }));
 }
 
 function returnLineItems(deal: Deal) {
@@ -78,13 +79,16 @@ export async function processSale(
   deal: Deal,
   opts: { fulfill: boolean; photos?: PhotoInput[]; who: string }
 ): Promise<Deal> {
-  const { result } = await withIdempotency(`sale:${deal.id}`, "sale", async () => {
+  return withOperationLock(`sale:${deal.id}`, async () => {
     const enriched = { ...deal };
+    await redeemCertificatesFromPayments(enriched);
     enriched.paymentStatus = paymentStatusLabel(enriched);
 
     // 1. amoCRM: контакт + сделка
     const amoLeadId = await ensureAmoLead(enriched);
     enriched.amoLeadId = amoLeadId ?? undefined;
+    if (!amoLeadId) throw new Error("amoCRM: не удалось создать или связать сделку");
+    await deals.persist(enriched);
     await issueCertificateIfNeeded(enriched);
     await enqueueManualChecks(enriched, opts.who);
     await enqueueOperationalTasks(enriched, opts.who);
@@ -119,7 +123,7 @@ export async function processSale(
     // Certificate issuance is completed before the CRM writeback.
 
     // 4c. Оплата сертификатом → списание баланса
-    await redeemCertificatesFromPayments(enriched);
+    // Сертификаты списаны атомарно до внешних документов.
 
     // 4d. Полупарк от этой продажи — в журнал разбитых костюмов.
     await noteSuitBreaks(enriched).catch(() => {});
@@ -132,7 +136,6 @@ export async function processSale(
     broadcast("deal.created", { number: enriched.number });
     return enriched;
   });
-  return result;
 }
 
 /** Сдача / чаевые / возврат / счёт — в очередь Эдвина. Идемпотентно (можно звать повторно). */
@@ -490,7 +493,14 @@ async function redeemCertificatesFromPayments(deal: Deal): Promise<void> {
   if (redemptions.some((row) => !row.number || row.amountRub <= 0)) {
     throw new Error("Для оплаты сертификатом нужны номер и положительная сумма");
   }
-  if (redemptions.length > 0) await certs.redeemMany(redemptions);
+  if (redemptions.length > 0) {
+    const used = await certs.redeemDealPayments({ ...deal, payments: deal.payments.filter(p => paymentKind(p.methodId) === "certificate") });
+    for (const certificate of used) {
+      if (certificate.balance === 0 && certificate.buyerDealNumber) {
+        await deals.updateStage(String(certificate.buyerDealNumber), "Успех", "Касса: сертификат использован");
+      }
+    }
+  }
 }
 
 function addYearFromToday(): string {
@@ -582,20 +592,20 @@ async function ensureAmoLead(deal: Deal): Promise<number | null> {
     }
 
     return await deals.bindAmoLead(deal, contactId, async claimed => {
-    // Сохранённая привязка своей заявки имеет приоритет; чужую не присваиваем.
-    if (deal.amoLeadId && !claimed.has(deal.amoLeadId)) {
-      await updateLeadResilient(deal.amoLeadId, { statusId, price: deal.total, customFields });
-      return deal.amoLeadId;
-    }
-    if (contactId && deal.clientPhone) {
-      const certStatusIds = (await Promise.all([
-        getStatusId(AMO_PIPELINE_SALES, "Сертификат оплачен"),
-        getStatusId(AMO_PIPELINE_SALES, "Сертификат продан"),
-      ])).filter((id): id is number => Boolean(id));
-      const linked = await amo.getLeadsByIds(await amo.listLeadIdsByContact(contactId));
-      const open = amo.pickOpenSalesLead(linked, AMO_PIPELINE_SALES, {
-        excludeStatusIds: certStatusIds, closedOrJunkIds: CLOSED_OR_JUNK_STATUS_IDS,
-        claimedLeadIds: claimed,
+      // Сохранённая привязка своей заявки имеет приоритет; чужую не присваиваем.
+      if (deal.amoLeadId && !claimed.has(deal.amoLeadId)) {
+        await updateLeadResilient(deal.amoLeadId, { statusId, price: deal.total, customFields });
+        return deal.amoLeadId;
+      }
+      if (contactId && deal.clientPhone) {
+        const certStatusIds = (await Promise.all([
+          getStatusId(AMO_PIPELINE_SALES, "Сертификат оплачен"),
+          getStatusId(AMO_PIPELINE_SALES, "Сертификат продан"),
+        ])).filter((id): id is number => Boolean(id));
+        const linked = await amo.getLeadsByIds(await amo.listLeadIdsByContact(contactId));
+        const open = amo.pickOpenSalesLead(linked, AMO_PIPELINE_SALES, {
+          excludeStatusIds: certStatusIds, closedOrJunkIds: CLOSED_OR_JUNK_STATUS_IDS,
+          claimedLeadIds: claimed,
       });
       if (open) {
         await updateLeadResilient(open.id, { statusId, price: deal.total, customFields });
@@ -743,27 +753,29 @@ async function fulfillMoysklad(deal: Deal, photos: PhotoInput[], who: string): P
 
   const { positions, stockDeltas } = await buildMsPositions(dealItemsToPositions(deal));
 
-  const order = await ms.createCustomerOrder({
+  const order = deal.msOrderId ? await ms.getDocument("customerorder", deal.msOrderId) : (await withIdempotency(`ms:${deal.id}:order`, "ms", () => ms.createCustomerOrder({
     organization: org.meta,
     agent: agent.meta,
     store: warehouse.meta,
     name: `Касса #${deal.number}`,
     description: `Продажа из кассы MANSBAND, шоурум ${deal.store}`,
     positions,
-  });
+  }))).result;
   deal.msOrderId = order.id;
+  await deals.persist(deal);
 
-  const demand = await ms.createDemand({
+  const demand = deal.msDemandId ? await ms.getDocument("demand", deal.msDemandId) : (await withIdempotency(`ms:${deal.id}:demand`, "ms", () => ms.createDemand({
     organization: org.meta,
     agent: agent.meta,
     store: warehouse.meta,
     orderMeta: order.meta,
     positions,
     description: `Отгрузка по заказу #${deal.number}`,
-  });
+  }))).result;
   deal.msDemandId = demand.id;
+  await deals.persist(deal);
 
-  await decrementLocalStock(warehouse.meta.href, stockDeltas).catch(() => {});
+  // Остатки обновляет синхронизация МойСклад; повтор проведения не списывает кэш повторно.
   await processPayments(deal, org.meta, agent.meta, order.meta, who);
   await processCashOuts(deal, org.meta, agent.meta, who);
 
@@ -781,37 +793,37 @@ async function fulfillReturnOrExchange(deal: Deal, photos: PhotoInput[], who: st
   const { org, agent, warehouse } = await resolveMsParty(deal);
 
   const toPos = (items: Deal["items"]) =>
-    items.map((i) => ({ productId: i.productId, qty: i.qty, price: toKopecks(Math.abs(i.price)) }));
+    items.map((i) => ({ productId: i.productId, qty: i.qty, price: toKopecks(cartLineTotal(i) / i.qty) }));
 
   const ret = await buildMsPositions(toPos(returnLineItems(deal)));
   let returnId: string | undefined;
 
   if (ret.positions.length > 0) {
-    const doc = await ms.createSalesReturn({
+    const doc = deal.msOrderId ? await ms.getDocument("salesreturn", deal.msOrderId) : (await withIdempotency(`ms:${deal.id}:return`, "ms", () => ms.createSalesReturn({
       organization: org.meta,
       agent: agent.meta,
       store: warehouse.meta,
       positions: ret.positions,
       description: `${deal.kind === "exchange" ? "Обмен" : "Возврат"} касса #${deal.number}` +
         (deal.linkedDealNumber ? ` ← заявка #${deal.linkedDealNumber}` : ""),
-    });
+    }))).result;
     returnId = doc.id;
     deal.msOrderId = doc.id; // зеркало: id возврата МС (отдельного поля нет)
-    await incrementLocalStock(warehouse.meta.href, ret.stockDeltas).catch(() => {});
+    await deals.persist(deal);
   }
 
   if (deal.kind === "exchange") {
     const sale = await buildMsPositions(toPos(saleLineItems(deal)));
     if (sale.positions.length > 0) {
-      const demand = await ms.createDemand({
+      const demand = deal.msDemandId ? await ms.getDocument("demand", deal.msDemandId) : (await withIdempotency(`ms:${deal.id}:exchange-demand`, "ms", () => ms.createDemand({
         organization: org.meta,
         agent: agent.meta,
         store: warehouse.meta,
         positions: sale.positions,
         description: `Обмен · отгрузка касса #${deal.number}`,
-      });
+      }))).result;
       deal.msDemandId = demand.id;
-      await decrementLocalStock(warehouse.meta.href, sale.stockDeltas).catch(() => {});
+      await deals.persist(deal);
       await processPayments(deal, org.meta, agent.meta, demand.meta, who);
     }
   }
@@ -878,33 +890,38 @@ async function processPayments(
     const sum = toKopecks(p.amount);
     if (sum <= 0) continue;
 
+    const [recorded] = await db.select().from(ledger).where(eq(ledger.idempotencyKey, `${deal.number}:${p.id}`)).limit(1);
+    if (recorded) {
+      if (recorded.amount !== sum || recorded.methodId !== p.methodId) throw new Error("Проведённый платёж нельзя менять. Оформите корректировку.");
+      if (kind !== "certificate" && !recorded.msPaymentId) throw new Error("Прежний платёж без документа МойСклад требует сверки");
+      continue;
+    }
     let msPaymentId: string | undefined;
     try {
       if (kind === "cash") {
-        const doc = await ms.createCashIn({
+        const doc = (await withIdempotency(`ms:${deal.id}:payment:${p.id}`, "ms", () => ms.createCashIn({
           organization: org,
           agent,
           sum,
           orderMeta: linkMeta,
           description: `Касса #${deal.number} (${paymentMethodLabel(p.methodId)})`,
-        });
+        }))).result;
         msPaymentId = doc.id;
       } else if (kind === "certificate") {
         // оплата сертификатом гасится в ledger/сертификатах, не как денежный платёж МС
       } else {
-        const doc = await ms.createPaymentIn({
+        const doc = (await withIdempotency(`ms:${deal.id}:payment:${p.id}`, "ms", () => ms.createPaymentIn({
           organization: org,
           agent,
           sum,
           organizationAccount: account?.meta,
           orderMeta: linkMeta,
           description: `Касса #${deal.number} (${paymentMethodLabel(p.methodId)})`,
-        });
+        }))).result;
         msPaymentId = doc.id;
       }
     } catch (error) {
-      if (ms.isMoySkladAuthError(error)) throw error;
-      // платёж в МС не прошёл — фиксируем в ledger, разберём при сверке
+      throw error;
     }
 
     await recordLedger(deal.number, p, kind, msPaymentId, who);
@@ -973,16 +990,15 @@ async function processCashOuts(
   const sum = toKopecks(cashOutRub);
   let msPaymentId: string | undefined;
   try {
-    const doc = await ms.createCashOut({
+    const doc = (await withIdempotency(`ms:${deal.id}:cashout:${sum}`, "ms", () => ms.createCashOut({
       organization: org,
       agent,
       sum,
       description: `Касса #${deal.number}: ${parts.join(", ")}`,
-    });
+    }))).result;
     msPaymentId = doc.id;
   } catch (error) {
-    if (ms.isMoySkladAuthError(error)) throw error;
-    // не блокируем продажу — зафиксируем в ledger без ms id
+    throw error;
   }
 
   await db

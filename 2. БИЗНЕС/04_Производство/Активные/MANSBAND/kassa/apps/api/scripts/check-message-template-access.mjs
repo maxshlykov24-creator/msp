@@ -89,3 +89,17 @@ for(const role of ['rop','admin']) {
  assert(res.statusCode===400&&res.json().message.includes('причину'),role+' must give correction reason');checks++;
 }
 await closedApi.close();console.log(JSON.stringify({checks,result:'passed',scope:'including actual completed-deal HTTP routes'}));
+
+const {pickOpenSalesLead}=await import(new URL('../src/clients/amo.ts',import.meta.url));
+const leads=[{id:11,pipeline_id:9601214,status_id:100,updated_at:10},{id:12,pipeline_id:9601214,status_id:100,updated_at:20},{id:13,pipeline_id:9601214,status_id:142,updated_at:30}];
+assert(pickOpenSalesLead(leads,9601214,{claimedLeadIds:new Set([12])})?.id===11,'claimed recent lead is not reused');checks++;
+assert(pickOpenSalesLead(leads,9601214,{claimedLeadIds:new Set([11,12])})===null,'all claimed leads require a new lead');checks++;
+const {handleAmoWebhook}=await import(new URL('../src/services/amoWebhook.ts',import.meta.url));
+const seen=[];let hookFailed=false;
+try {await handleAmoWebhook({leads:{status:[{id:11},{id:12}]}},async event=>{seen.push(event.id);if(event.id===11)throw Error('offline');return {tasks:true};});} catch {hookFailed=true;}
+assert(hookFailed&&seen.join(',')==='11,12','one failed event must reject the batch after attempting other events');checks++;
+const retry=await handleAmoWebhook({leads:{status:[{id:11}]}},async()=>({tasks:true}));
+assert(retry.ok&&retry.processed===1,'failed event can be retried');checks++;
+const batchHooks=Fastify();await batchHooks.register(webhooks,{handleAmoWebhook:body=>handleAmoWebhook(body,async()=>{throw Error('offline')})});
+assert((await batchHooks.inject({method:'POST',url:'/webhooks/amo?secret=change-me',payload:{leads:{status:[{id:11}]}}})).statusCode===503,'real event handler failures propagate to HTTP 503');checks++;
+await batchHooks.close();console.log(JSON.stringify({checks,result:'passed',scope:'including amo binding and partial webhook failures'}));

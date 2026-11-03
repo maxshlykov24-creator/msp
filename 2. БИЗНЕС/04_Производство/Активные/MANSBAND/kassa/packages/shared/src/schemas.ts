@@ -29,6 +29,7 @@ export const cartItemSchema = z.object({
   productId: z.string(),
   name: z.string(),
   price: z.number(),
+  settledUnitPrice: z.number().nonnegative().optional(),
   qty: z.number().int().positive(),
   discountPct: z.number().min(0).max(100).optional(),
   discountRub: z.number().min(0).optional(),
@@ -503,6 +504,7 @@ export type CreateDealInput = z.infer<typeof createDealSchema>;
  * частичная выдача, позиция остаётся pending до полной суммы (п.6, п.7).
  */
 export const issueQueueSchema = z.object({
+  expectedIssuedAmount: z.number().nonnegative(),
   methodId: z.string().min(1).max(100),
   amount: z.number().positive().optional(),
   note: z.string().max(500).optional(),

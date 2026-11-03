@@ -30,11 +30,7 @@ export default async function queueRoutes(app: FastifyInstance) {
     const { id } = req.params as { id: string };
     const parsed = issueQueueSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ message: parsed.error.issues[0]?.message });
-    const who = `${req.user.role} ${req.user.name}`.toLowerCase();
-    const isFinance =
-      ["finance", "rop", "admin"].includes(req.user.role) ||
-      who.includes("max") ||
-      who.includes("максим");
+    const isFinance = ["finance", "rop", "admin"].includes(req.user.role);
     const allItems = await q.listQueue();
     const item = allItems.find((row) => row.id === id);
     if (!item) return reply.code(404).send({ message: "Запись очереди не найдена" });
@@ -48,12 +44,14 @@ export default async function queueRoutes(app: FastifyInstance) {
             by: req.user.name,
             methodId: parsed.data.methodId,
             amountRub: parsed.data.amount,
+            expectedIssuedAmount: parsed.data.expectedIssuedAmount,
             note: parsed.data.note ?? item.destination,
           })
         : await q.issueQueue(id, {
             by: req.user.name,
             methodId: parsed.data.methodId,
             amountRub: parsed.data.amount,
+            expectedIssuedAmount: parsed.data.expectedIssuedAmount,
             note: parsed.data.note,
             metadata: parsed.data.metadata,
           });

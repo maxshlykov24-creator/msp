@@ -88,6 +88,8 @@ export interface CartItem {
   lineId?: string;
   name: string;
   price: number;
+  /** Цена единицы после распределения скидки чека, включая копейки. */
+  settledUnitPrice?: number;
   qty: number;
   /** Группа МойСклад: по ней форма продажи понимает, что позиция — костюм (САР). */
   category?: string;

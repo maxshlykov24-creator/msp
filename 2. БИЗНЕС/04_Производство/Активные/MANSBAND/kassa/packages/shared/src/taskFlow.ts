@@ -1,3 +1,4 @@
+import { settledItems } from "./pricing.js";
 import type { Deal, DealKind, Task, TaskAssigneeRole, TaskKind, User } from "./types.js";
 
 /** Продажа сохраняет вид на этапах обещания, доставки в магазин и резерва. */
@@ -454,7 +455,7 @@ export function returnableItems(source: Deal, returns: Deal[]): Deal["items"] {
       returned.set(item.productId, (returned.get(item.productId) ?? 0) + item.qty);
     }
   }
-  return source.items.filter(item => !item.isReturn && item.price >= 0).flatMap(item => {
+  return settledItems(source).flatMap(item => {
     const used = Math.min(item.qty, returned.get(item.productId) ?? 0);
     returned.set(item.productId, Math.max(0, (returned.get(item.productId) ?? 0) - used));
     return used < item.qty ? [{ ...item, qty: item.qty - used }] : [];
@@ -470,11 +471,16 @@ export function isObsoleteStageTask(deal: Deal, task: Pick<Task, "kind" | "idemp
     (task.kind === "reserve_call" && key.startsWith(`reserve-call:${deal.id}:`)) ||
     (task.kind === "movement" && key === `movement-setup:${deal.id}`);
   if (!automatic) return false;
+  if (task.kind === "unreserve" && task.metadata?.confirmedByRole) return false;
   if (task.kind === "movement" && !task.metadata?.needsSetup) return false;
   if (["movement_accept", "sary_send", "barcode", "manual_check"].includes(task.kind)) return false;
   if (["Успех", "Провал", "Не слив"].includes(deal.stage)) return true;
   if (task.kind === "promise_follow") return deal.stage !== "Дано обещание";
-  if (task.kind === "reserve_call" || task.kind === "unreserve") return deal.stage !== "Товар отложен";
+  if (task.kind === "reserve_call" || task.kind === "unreserve") {
+    const deadline = deal.reservedUntil ?? deal.deferredUntil;
+    const taskDeadline = task.metadata?.reservedUntil;
+    return deal.stage !== "Товар отложен" || (typeof taskDeadline === "string" && taskDeadline !== deadline);
+  }
   const flow = taskFlowOf(task.kind);
   return flow?.trigger.source === "stage" && !flowsForStage(deal.stage, deal.kind).some(rule => rule.kind === task.kind);
 }

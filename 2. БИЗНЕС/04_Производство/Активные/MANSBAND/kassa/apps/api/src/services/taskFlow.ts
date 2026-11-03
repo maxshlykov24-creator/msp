@@ -181,7 +181,7 @@ async function syncPromiseFollowUp(deal: Deal, who: string): Promise<void> {
 }
 
 /** Снимаем устаревшие автозадачи сразу при смене этапа, сохраняя историю. */
-async function cancelObsoleteStageTasks(deal: Deal, who: string): Promise<void> {
+export async function cancelObsoleteStageTasks(deal: Deal, who: string): Promise<void> {
   const pending = await db.select().from(tasks)
     .where(and(eq(tasks.dealNumber, deal.number), eq(tasks.status, "pending")));
   for (const task of pending) {
@@ -302,7 +302,8 @@ export async function onTaskCompleted(task: Task, who: string, depth = 0): Promi
   if (!rule || !task.dealNumber) return;
   const currentDeal = await deals.getByNumber(task.dealNumber);
   if (currentDeal && ["Успех", "Провал", "Не слив"].includes(currentDeal.stage) &&
-      !["sary_send", "movement", "movement_accept"].includes(task.kind)) return;
+      !["sary_send", "movement", "movement_accept"].includes(task.kind) &&
+      !(task.kind === "unreserve" && task.metadata?.confirmedByRole)) return;
 
   if (task.kind === "reserve_call") {
     await onReserveCallDone(task, who);
@@ -602,7 +603,7 @@ export async function cancelOnKindConvert(dealNumber: number): Promise<void> {
  */
 async function cancelStaleDeferredTasks(today: string): Promise<void> {
   const open = await db
-    .select({ id: tasks.id, dealNumber: tasks.dealNumber, kind: tasks.kind })
+    .select({ id: tasks.id, dealNumber: tasks.dealNumber, kind: tasks.kind, metadata: tasks.metadata })
     .from(tasks)
     .where(
       and(
@@ -612,7 +613,7 @@ async function cancelStaleDeferredTasks(today: string): Promise<void> {
     )
     .limit(300);
   for (const task of open) {
-    if (!task.dealNumber) continue;
+    if (!task.dealNumber || (task.metadata as Record<string, unknown> | null)?.confirmedByRole) continue;
     const deal = await deals.getByNumber(task.dealNumber);
     if (!deal) {
       await db.update(tasks).set({ status: "cancelled" }).where(eq(tasks.id, task.id));

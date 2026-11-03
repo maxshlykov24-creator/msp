@@ -205,7 +205,7 @@ export function MishaQueue() {
     try {
       if (!USE_MOCK) {
         if (kind === "atelier") {
-          await api.patch(`/queue/${item.id}/issue`, { methodId: "cash", amount: item.amount });
+          await api.patch(`/queue/${item.id}/issue`, { methodId: "cash", amount: item.amount - (item.issuedAmount ?? 0), expectedIssuedAmount: item.issuedAmount ?? 0 });
         }
         await api.patch(`/deals/${item.dealNumber}/company`, PATCH_BY_KIND[kind]);
       }

@@ -342,6 +342,8 @@ export async function updateDealFields(
     const {issueCertificateIfNeeded}=await import("./sale.js");await issueCertificateIfNeeded(updated);
   }
   await persist(updated);
+  const { cancelObsoleteStageTasks } = await import("./taskFlow.js");
+  await cancelObsoleteStageTasks(updated, who);
   await syncEditedDealToAmo(updated, nextStage !== deal.stage);
   broadcast("deal.updated", { number: deal.number });
   return updated;
@@ -386,6 +388,8 @@ export async function updateStage(
     const {issueCertificateIfNeeded}=await import("./sale.js");await issueCertificateIfNeeded(updated);
   }
   await persist(updated);
+  const { cancelObsoleteStageTasks } = await import("./taskFlow.js");
+  await cancelObsoleteStageTasks(updated, who);
   if (!patch?.skipAmoWriteback) await syncEditedDealToAmo(updated, true);
   broadcast("deal.stage_changed", { number: deal.number, stage });
   return updated;
@@ -399,8 +403,12 @@ async function syncEditedDealToAmo(deal: Deal, stageChanged: boolean): Promise<v
     if (stageChanged && !statusId) throw new Error("Этап не найден в amoCRM");
     const customFields = await buildLeadCustomFields(deal);
     await amo.updateLead(deal.amoLeadId, { statusId: statusId ?? undefined, price: Math.abs(deal.total), customFields });
+    // Сбой именно редактирования можно снять успешным повтором без проведения продажи.
+    if (deal.syncError?.startsWith("amo-edit:")) {
+      Object.assign(deal, await markSync(deal, "synced"));
+    }
   } catch (error) {
-    await markSync(deal, "failed", (error as Error).message);
+    await markSync(deal, "failed", `amo-edit:${(error as Error).message}`);
     throw new Error(`Заявка №${deal.number} сохранена в кассе, но не синхронизирована с amoCRM. Повторите сохранение.`);
   }
 }

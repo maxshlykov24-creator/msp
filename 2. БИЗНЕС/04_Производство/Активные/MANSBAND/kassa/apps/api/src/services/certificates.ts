@@ -2,8 +2,8 @@ import { and, eq, gte, lte, or, isNull, sql } from "drizzle-orm";
 import { canonicalNumber, newNumber } from "./certificateRegistry.js";
 import { moscowTodayYmd } from "@kassa/shared";
 import { db } from "../db/index.js";
-import { certificates } from "../db/schema.js";
-import type { Certificate } from "@kassa/shared";
+import { certificates, idempotencyKeys } from "../db/schema.js";
+import type { Certificate, Deal } from "@kassa/shared";
 import { broadcast } from "../ws/hub.js";
 
 function toCert(r: typeof certificates.$inferSelect): Certificate {
@@ -250,4 +250,43 @@ export async function importCsv(csv: string, dryRun: boolean): Promise<Certifica
 export async function cancel(number:string):Promise<Certificate|null>{
  const [row]=await db.update(certificates).set({status:"cancelled"}).where(and(eq(certificates.number,canonicalNumber(number)),eq(certificates.status,"active"),eq(certificates.balance,certificates.nominal))).returning();
  if(!row)return null;broadcast("certificate.updated",{number:row.number});return toCert(row);
+}
+
+/** Списание оплаты и квитанция выполняются одной транзакцией. Повтор не уменьшает баланс. */
+export async function redeemDealPayments(deal: Deal): Promise<Certificate[]> {
+  const payments = deal.payments.filter(p => p.certificateNumber && p.amount > 0);
+  if (!payments.length) return [];
+  return db.transaction(async tx => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${"cert:" + deal.id}, 715))`);
+    const [legacy] = await tx.select().from(idempotencyKeys).where(eq(idempotencyKeys.key, `sale:${deal.id}`)).limit(1);
+    const completed: Certificate[] = [];
+    for (const payment of [...payments].sort((a, b) => a.certificateNumber!.localeCompare(b.certificateNumber!))) {
+      const key = `cert-payment:${deal.number}:${payment.id}`;
+      const number = canonicalNumber(payment.certificateNumber!);
+      const amount = Math.round(payment.amount * 100);
+      const [receipt] = await tx.select().from(idempotencyKeys).where(eq(idempotencyKeys.key, key)).limit(1);
+      if (receipt) {
+        const value = receipt.result as { number: string; amount: number };
+        if (value.number !== number || value.amount !== amount) throw new Error("Проведённую оплату сертификатом нельзя изменить");
+        continue;
+      }
+      // Старый полностью завершённый процесс уже списал эти строки.
+      const old = legacy?.result as Deal | undefined;
+      const previous = old?.payments?.find(p => p.id === payment.id);
+      if (previous && previous.certificateNumber === payment.certificateNumber && previous.amount === payment.amount) {
+        await tx.insert(idempotencyKeys).values({ key, scope: "certificate", result: { number, amount, legacy: true } });
+        continue;
+      }
+      const [updated] = await tx.update(certificates).set({
+        balance: sql`${certificates.balance} - ${amount}`,
+        status: sql`case when ${certificates.balance} - ${amount} = 0 then 'used' else ${certificates.status} end`,
+      }).where(and(eq(certificates.number, number), eq(certificates.status, "active"),
+        gte(certificates.balance, amount), gte(certificates.validUntil, moscowTodayYmd()),
+        or(isNull(certificates.validFrom), lte(certificates.validFrom, moscowTodayYmd())))).returning();
+      if (!updated) throw new Error("Сертификат неактивен, срок не наступил или недостаточно остатка");
+      await tx.insert(idempotencyKeys).values({ key, scope: "certificate", result: { number, amount } });
+      completed.push(toCert(updated));
+    }
+    return completed;
+  });
 }

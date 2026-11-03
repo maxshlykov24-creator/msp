@@ -27,7 +27,7 @@ interface StoreState {
   handoverCompany: (id: string, patch: { issued?: boolean; documentsHanded?: boolean }) => void;
   addQueueItem: (q: QueueItem) => void;
   /** `amount` не задан — закрыть остаток целиком; задан — частичная выдача. */
-  issueQueueItem: (id: string, methodId: string, amount?: number) => void;
+  issueQueueItem: (id: string, methodId: string, amount?: number) => Promise<void>;
   /** Вернуть закрытую позицию Эдвина/Миши обратно в работу. */
   reopenQueueItem: (id: string) => Promise<void>;
   /** Новая выплата тому, кто направил клиента. */
@@ -45,7 +45,7 @@ interface StoreState {
     screenshot: { filename: string; contentBase64: string },
     methodId: string
   ) => Promise<void>;
-  redeemCertificate: (number: string, amount: number) => void;
+  redeemCertificate: (number: string, amount: number) => Promise<void>;
   nextNumber: () => number;
   findByPhone: (phone: string) => Deal | undefined;
   findSlivByPhone: (phone: string) => Deal | undefined;
@@ -405,7 +405,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setQueue((prev) => [q, ...prev]);
         if (!USE_MOCK) api.post("/queue", q).catch(() => {});
       },
-      issueQueueItem: (id, methodId, amount) => {
+      issueQueueItem: async (id, methodId, amount) => {
+        if (!USE_MOCK) {
+          const current = queue.find(q => q.id === id);
+          if (!current) throw new Error("Задача не найдена");
+          const updated = await api.patch<QueueItem>(`/queue/${id}/issue`, { methodId, amount, expectedIssuedAmount: current.issuedAmount ?? 0 });
+          setQueue(prev => prev.map(q => q.id === id ? updated : q));
+          return;
+        }
         setQueue((prev) =>
           prev.map((q) => {
             if (q.id !== id) return q;
@@ -434,7 +441,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             };
           })
         );
-        if (!USE_MOCK) api.patch(`/queue/${id}/issue`, { methodId, amount }).catch(() => {});
+
       },
       reopenQueueItem: async (id) => {
         setQueue((prev) =>
@@ -512,7 +519,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           throw err;
         }
       },
-      redeemCertificate: (number, amount) => {
+      redeemCertificate: async (number, amount) => {
+        if (!USE_MOCK) {
+          const updated = await api.post<Certificate>("/certificates/redeem", { number, amount });
+          setCertificates(prev => prev.map(c => c.number === number ? updated : c));
+          return;
+        }
         setCertificates((prev) =>
           prev.map((c) =>
             c.number === number
@@ -524,7 +536,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               : c
           )
         );
-        if (!USE_MOCK) api.post("/certificates/redeem", { number, amount }).catch(() => {});
+
       },
       nextNumber: () => {
         let max = 1072;

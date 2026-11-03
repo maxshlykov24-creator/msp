@@ -11,6 +11,7 @@ import {
   normalizePayouts,
   selfPayouts,
   isDealOverdue,
+  isObsoleteStageTask,
   isDealRelevantToUser,
   isReturnSource,
   returnableItems,
@@ -490,4 +491,28 @@ test("editing products recalculates total and payments while keeping the receipt
   assert.equal(recalculateDealTotals(original,{payments:[{id:"p",methodId:"cash",amount:1000}],paid:9999}).paid,1000);
   assert.equal(recalculateDealTotals(original,{}).total,17100);
   assert.equal(recalculateDealTotals({...original,items:[],total:17100},{items}).total,22600);
+});
+
+
+test("obsolete automatic tasks follow stages without cancelling manual or physical work", () => {
+ const deal={...baseDeal,id:"task-test",kind:"sale",stage:"Успех"};
+ const task=(kind,key,metadata)=>({kind,idempotencyKey:key,metadata});
+ for(const kind of ["reserve","unreserve","assemble_cdek","call_courier","take_to_cdek","pickup_from_cdek"])
+  assert.equal(isObsoleteStageTask(deal,task(kind,`${kind}:task-test`)),true,kind);
+ assert.equal(isObsoleteStageTask(deal,task("promise_follow","promise:task-test:2026-11-04:hash")),true);
+ assert.equal(isObsoleteStageTask(deal,task("reserve_call","reserve-call:task-test:2026-11-04")),true);
+ assert.equal(isObsoleteStageTask(deal,task("reserve",undefined)),false);
+ assert.equal(isObsoleteStageTask(deal,task("movement","movement-setup:task-test",{needsSetup:true})),true);
+ assert.equal(isObsoleteStageTask(deal,task("movement","movement:task-test")),false);
+ assert.equal(isObsoleteStageTask(deal,task("movement_accept","movement_accept:task-test")),false);
+ assert.equal(isObsoleteStageTask(deal,task("sary_send","sary_send:task-test")),false);
+ assert.equal(isObsoleteStageTask({...deal,stage:"Товар в магазине"},task("reserve","reserve:task-test")),false);
+ assert.equal(isObsoleteStageTask({...deal,stage:"Ждет товар"},task("reserve","reserve:task-test")),true);
+ assert.equal(isObsoleteStageTask({...deal,stage:"Собран",kind:"delivery"},task("assemble_cdek","assemble_cdek:task-test")),true);
+});
+
+test("explicitly confirmed removal survives a failed deal and extended deadlines cancel stale calls", () => {
+ const deal={...baseDeal,id:"task-test",kind:"deferred",stage:"Провал"};
+ assert.equal(isObsoleteStageTask(deal,{kind:"unreserve",idempotencyKey:"unreserve:task-test",metadata:{confirmedByRole:"rop"}}),false);
+ assert.equal(isObsoleteStageTask({...deal,stage:"Товар отложен",reservedUntil:"2026-11-10"},{kind:"reserve_call",idempotencyKey:"reserve-call:task-test:2026-11-02",metadata:{reservedUntil:"2026-11-02"}}),true);
 });

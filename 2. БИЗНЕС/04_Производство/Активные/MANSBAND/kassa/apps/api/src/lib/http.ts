@@ -116,7 +116,7 @@ export class HttpClient {
         clearTimeout(timer);
       }
 
-      if (res.status === 429 || res.status >= 500) {
+      if (res.status === 429 || (method === "GET" && res.status >= 500)) {
         if (attempt < this.maxRetries) {
           const retryAfter = Number(res.headers.get("Retry-After"));
           const backoff = Number.isFinite(retryAfter) && retryAfter > 0
