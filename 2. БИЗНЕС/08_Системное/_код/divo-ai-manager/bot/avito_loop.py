@@ -69,9 +69,7 @@ def load_state() -> dict:
 
 
 def save_state(data: dict) -> None:
-    _state_path().write_text(
-        json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    store.atomic_json(_state_path(), data)
 
 
 def store_id(chat_id: str) -> str:
@@ -306,9 +304,12 @@ class AvitoChannel:
 
     async def send(self, chat_id: int | str, text: str) -> None:
         sent = human.for_chat(text)
-        data = await self.api.send_text(raw_id(str(chat_id)), sent)
         from bot import crm
-
+        import time
+        doc = store.load_doc(chat_id)
+        doc.setdefault("crm", {})["sending"] = {"text": sent, "at": time.time()}
+        store.save_doc(chat_id, doc)
+        data = await self.api.send_text(raw_id(str(chat_id)), sent)
         crm.remember_out(chat_id, data)
         msg = data if isinstance(data, dict) else {}
         crm.mirror_autoru_line(chat_id, "bot", sent, msg_id=str(msg.get("id") or (msg.get("message") or {}).get("id") or ""))

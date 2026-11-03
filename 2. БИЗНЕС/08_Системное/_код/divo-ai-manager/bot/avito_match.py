@@ -400,7 +400,7 @@ def focus_from_doc(doc: dict) -> str:
     if not src:
         return ""
     if not (src.get("title") or src.get("url")):
-        return src.get("focus") or ""
+        return (src.get("focus") or "").replace("ДТП не было, кузов не чинили", "По отчёту записи о ДТП и ремонте не найдены; отсутствие окрасов не подтверждено").replace("Лизинг нашей машины: спросили «была?» — «нет, выкуплена».", "История лизинга и текущий выкуп — разные факты. Историю проверяй по отчёту.")
     channel = "Авито" if src is av else "Авто.ру"
     return focus_block(
         src.get("title") or "",

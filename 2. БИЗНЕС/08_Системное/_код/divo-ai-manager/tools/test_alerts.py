@@ -3324,7 +3324,12 @@ def test_nov02_strict_customer_identity():
     doc = {'chat_id': 'av:actual', 'crm': {'lead_id': 47056388, 'contact_id': 56702970}}
     with patch.object(a, 'all_unsorted', return_value=[]), patch.object(a, 'get_lead', return_value=lead), \
          patch.object(a, 'write', side_effect=AssertionError('unverified CRM write')):
-        crm.ensure_lead(dict(snap), doc)
+        try:
+            crm.ensure_lead(dict(snap), doc)
+        except RuntimeError as exc:
+            assert "phone evidence" in str(exc)
+        else:
+            raise AssertionError("unproven phone accepted")
         assert not doc['crm'].get('lead_id')
         crm._apply_phone_to_doc(snap, {'crm': {'lead_id': 47056388, 'contact_id': 56702970}})
     with patch.object(a, 'request', return_value=(200, {'_embedded': {'contacts': [
@@ -3368,3 +3373,149 @@ def test_nov02_unverified_button_cannot_change_crm():
     asyncio.run(run())
     assert crm._marketplace_contact_id({'_embedded': {'contacts': [{'id': 1}, {'id': 2}]}}) is None
     assert crm._marketplace_contact_id({'_embedded': {'contacts': [{'id': 1}, {'id': 2}]}, '_provider_contact_id': 2}) == 2
+
+
+def test_nov03_owned_creation_and_lost_response():
+    from unittest.mock import patch
+    from contextlib import ExitStack
+    from tools.rehearse import Sandbox
+    from bot import crm, store
+    a = crm.amo_client
+    leads = {}; contacts = []; fail = [False]; posts = []
+    def create_contact(name, phone, **kw):
+        contacts.append(kw["marker"])
+        return 100 + len(contacts)
+    def create_lead(**kw):
+        lid = 200 + len(leads)
+        row = {"id": lid, "pipeline_id": a.PIPELINE_SALES, "status_id": a.STATUS_NEW,
+               "_embedded": {"contacts": [{"id": kw["contact_id"]}], "tags": [{"name": kw["marker"]}]},
+               "custom_fields_values": [{"field_id": a.FIELD_LISTING_URL, "values": [{"value": kw["fields"][a.FIELD_LISTING_URL]}]}]}
+        leads[lid] = row; posts.append(lid)
+        if fail[0]:
+            fail[0] = False
+            raise a.AmoError(0, "response lost after commit")
+        return row
+    def prepare(cid):
+        doc = {"chat_id": cid, "messages": [{"role": "user", "content": "Мой телефон 79001112233"}],
+               "avito": {"url": "https://avito.ru/car_1234567890"}}
+        store.save_doc(cid, doc)
+        return store.load_doc(cid), {"chat_id": cid, "channel": "Авито", "name": "Дмитрий",
+                                    "phone": "79001112233", "url": doc["avito"]["url"]}
+    with Sandbox(), ExitStack() as stack:
+        stack.enter_context(patch.object(a, "find_widget_lead", return_value=None))
+        stack.enter_context(patch.object(a, "create_contact", side_effect=create_contact))
+        stack.enter_context(patch.object(a, "create_lead", side_effect=create_lead))
+        stack.enter_context(patch.object(a, "get_lead", side_effect=lambda lid: leads[lid]))
+        stack.enter_context(patch.object(a, "set_contact_phone"))
+        stack.enter_context(patch.object(a, "add_note", side_effect=AssertionError("must queue notes")))
+        stack.enter_context(patch.object(a, "owned_entity", side_effect=lambda kind, marker, since: next(
+            (r for r in leads.values() if r["_embedded"]["tags"][0]["name"] == marker), None)))
+        d, snap = prepare("av:first")
+        result = crm.ensure_lead(snap, d); store.save_doc("av:first", d)
+        assert result["lead_id"] == 200
+        crm.ensure_lead(dict(snap), store.load_doc("av:first"))
+        assert len(posts) == 1
+        # Same name AND same phone are not identity of a different provider chat.
+        d2, snap2 = prepare("av:second")
+        fail[0] = True
+        try: crm.ensure_lead(snap2, d2)
+        except a.AmoError: pass
+        else: raise AssertionError("lost-response fixture did not fire")
+        recovered = store.load_doc("av:second")
+        result2 = crm.ensure_lead(snap2, recovered)
+        assert result2["lead_id"] == 201 and len(posts) == 2 and len(contacts) == 2
+        assert contacts[0] != contacts[1]
+        d3 = {"chat_id": "av:third", "messages": []}
+        result3 = crm.ensure_lead({"chat_id": "av:third", "channel": "Авито", "phone": ""}, d3)
+        assert not result3.get("lead_id") and len(posts) == 2
+
+
+def test_nov03_history_phone_and_atomic_recovery():
+    from tools.rehearse import Sandbox
+    from bot import store, crm
+    with Sandbox():
+        cid = 'av:durable'
+        history = [{"role": "user", "content": "79001112233"}] + [
+            {"role": "assistant", "content": "Ответ %s" % i} for i in range(60)]
+        store.save_doc(cid, {"messages": history})
+        d = store.load_doc(cid)
+        assert len(d['messages']) == 61 and crm.proven_phone(d) == '79001112233'
+        d['messages'] = d['messages'][-40:]
+        store.save_doc(cid, d)
+        assert crm.proven_phone(store.load_doc(cid)) == '79001112233'
+        store._history_path(cid).write_text('{broken')
+        restored = store.load_doc(cid)
+        assert crm.proven_phone(restored) == '79001112233'
+        store._history_path('av:no-backup').write_text('{broken')
+        try: store.load_doc('av:no-backup')
+        except RuntimeError: pass
+        else: raise AssertionError('corruption silently became empty history')
+
+
+def test_nov03_nudge_preserves_sent_id():
+    import asyncio
+    from unittest.mock import patch, AsyncMock
+    from tools.rehearse import Sandbox
+    from bot import main, crm, store, nudge
+    class Channel:
+        async def send(self, cid, text):
+            crm.remember_out(cid, {'id': 'sent-nudge', 'created': 100})
+    async def run():
+        with Sandbox():
+            cid = 'av:nudge-regression'
+            store.save_doc(cid, {'messages': [{'role': 'user', 'content': 'Интересует машина'}, {'role': 'assistant', 'content': 'Машина в наличии'}],
+                                'avito': {'title': 'BMW X6'}, 'nudge': {'waiting': True}})
+            with patch.object(main, '_nudge_channel', return_value=Channel()), \
+                 patch.object(main, 'type_and_wait', AsyncMock()), \
+                 patch.object(nudge, 'ready_to_send', return_value=1), \
+                 patch.object(main.avito_match, 'match_card', return_value={'title': 'BMW X6'}):
+                await main.send_nudge(cid)
+            d = store.load_doc(cid)
+            assert 'sent-nudge' in d['crm']['out_ids']
+            assert not crm.on_foreign_out(cid, {'id': 'sent-nudge', 'direction': 'out', 'created': 100,
+                                               'content': {'text': 'Напоминание'}})
+            assert not store.is_paused(cid)
+    asyncio.run(run())
+
+
+def test_nov03_html_thanks_and_taken_status():
+    from unittest.mock import patch
+    from tools.rehearse import Sandbox
+    from bot import main, store, autoru_loop
+    from bot.alerts import format_done
+    msg = {'is_me': True, 'payload': {'content_type': 'TEXT_HTML', 'value': '<p>Уже ответил</p>'}}
+    assert autoru_loop._usable(msg)
+    assert autoru_loop.had_prior_correspondence([msg], 10)
+    assert autoru_loop.message_text(dict(msg, is_me=False)) == 'Уже ответил'
+    assert 'Взял в работу' in format_done({}, 'Взял Никита', '1 ч 10 мин', taken=True)
+    with Sandbox():
+        store.save_doc('av:thanks', {'messages': [{'role': 'user', 'content': 'Спасибо, пришлите видео'}]})
+        assert main.waiting_for_bot('av:thanks')
+
+
+def test_nov03_claim_retry():
+    import asyncio
+    from unittest.mock import patch
+    from tools.rehearse import Sandbox
+    from bot import crm, store
+    a = crm.amo_client
+    lead = {'id': 23, 'status_id': a.STATUS_NEW, 'responsible_user_id': 1}
+    async def run():
+        with Sandbox():
+            cid = 'av:claim'
+            store.save_doc(cid, {'crm': {'lead_id': 23, 'claim_pending': {'responsible': 9, 'who': 'Никита', 'at': '2026-11-03'},
+                                       'alert': {'snap': {'channel': 'Авито'}}}})
+            with patch.object(crm, '_verified_marketplace_lead', return_value=lead), \
+                 patch.object(a, 'set_lead_status', side_effect=RuntimeError('offline')):
+                await crm.flush_claim(cid)
+            assert store.load_doc(cid)['crm']['claim_pending']
+            def update(*args, **kwargs):
+                lead.update(status_id=a.STATUS_IN_WORK, responsible_user_id=9)
+                return lead
+            with patch.object(crm, '_verified_marketplace_lead', return_value=lead), \
+                 patch.object(a, 'set_lead_status', side_effect=update), \
+                 patch.object(a, 'get_lead', return_value=lead):
+                await crm.flush_claim(cid)
+            d = store.load_doc(cid)
+            assert 'claim_pending' not in d['crm'] and d['crm']['note_pending']
+    asyncio.run(run())

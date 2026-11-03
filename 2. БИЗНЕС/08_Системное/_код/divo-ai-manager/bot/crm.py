@@ -7,6 +7,7 @@ import re
 import secrets
 import hashlib
 import time
+import threading
 import sys
 from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import datetime
@@ -112,6 +113,8 @@ def _alerts_for_phone(phone: str):
 
 def _adopt_open_card(new: dict, phone: str, skip: str) -> None:
     """Один номер — одна живая карточка в группе, даже если чатов два."""
+    if str(skip).startswith(("av:", "ar:")):
+        return
     for cid, _doc, other in _alerts_for_phone(phone):
         if cid == str(skip):
             continue
@@ -686,6 +689,9 @@ def _owned_lead(snap: dict, doc: dict) -> dict:
         raise RuntimeError("No client phone evidence in this chat")
     marker = "DIVO_CHAT_" + hashlib.sha256(cid.encode()).hexdigest()[:32]
     state = doc.setdefault("crm", {})
+    saved_creation = (store.load_doc(cid).get("crm") or {}).get("creation")
+    if saved_creation:
+        state["creation"] = saved_creation
     creation = state.setdefault("creation", {"marker": marker, "since": int(time.time())})
     if creation.get("marker") != marker:
         raise RuntimeError("Chat creation identity mismatch")
@@ -812,25 +818,36 @@ async def ensure_lead_async(snap: dict, doc: dict) -> dict:
             await refresh_transcript(cid, doc)
         except Exception:
             log.warning("чат %s: история площадки ожидает повторного чтения", cid)
-    result = await asyncio.to_thread(ensure_lead, snap, doc)
-    current = store.load_doc(cid)
-    target = current.setdefault("crm", {})
-    changed = doc.get("crm") or {}
-    for key in ("creation", "verified_binding", "lead_id", "contact_id", "status_id",
-                "lead_url", "created", "phone", "transcript_synced_at"):
-        if key in changed:
-            target[key] = changed[key]
-    for row in changed.get("note_pending") or []:
-        queue_note(current, row["id"], row["text"])
-    if "transcript" in doc:
-        current["transcript"] = doc["transcript"]
-    doc.clear()
-    doc.update(current)
-    store.save_doc(cid, doc)
+    try:
+        result = await asyncio.to_thread(ensure_lead, snap, doc)
+    finally:
+        current = store.load_doc(cid)
+        target = current.setdefault("crm", {})
+        changed = doc.get("crm") or {}
+        for key in ("creation", "verified_binding", "lead_id", "contact_id", "status_id",
+                    "lead_url", "created", "phone", "transcript_synced_at"):
+            if key in changed:
+                target[key] = changed[key]
+        for row in changed.get("note_pending") or []:
+            queue_note(current, row["id"], row["text"])
+        if "transcript" in doc:
+            current["transcript"] = doc["transcript"]
+        doc.clear()
+        doc.update(current)
+        store.save_doc(cid, doc)
     return result
 
 
+_creation_locks: dict[str, Any] = {}
+
+
 def ensure_lead(snap: dict, doc: dict) -> dict:
+    lock = _creation_locks.setdefault(str(snap.get("chat_id") or ""), threading.RLock())
+    with lock:
+        return _ensure_lead_locked(snap, doc)
+
+
+def _ensure_lead_locked(snap: dict, doc: dict) -> dict:
     # Без номера чат остаётся в текущем этапе. Нельзя ни создавать сделку,
     # ни принимать Неразобранное, включая медиа и отложенные передачи.
     if not phone_key(str(snap.get("phone") or "")):
@@ -1571,6 +1588,12 @@ def on_foreign_out(chat_id: str | int, msg: dict) -> bool:
     doc = store.load_doc(chat_id)
     crm = dict(doc.get("crm") or {})
     ours = {str(x) for x in (crm.get("out_ids") or [])}
+    sending = crm.get("sending") or {}
+    from bot.avito_loop import outbound_text
+    if (mid and sending.get("text") == outbound_text(msg)
+            and abs(int(msg.get("created") or 0) - int(sending.get("at") or 0)) <= 120):
+        remember_out(chat_id, msg)
+        return False
     if mid and mid in ours:
         return False
     try:
@@ -1837,7 +1860,7 @@ async def _claim_locked(
     await _sweep_posts(alert, keep=alert.get("tg"))
     _persist_alert(chat_id, alert)
     phone = str(snap.get("phone") or "")
-    if phone:
+    if phone and not str(chat_id).startswith(("av:", "ar:")):
         for cid, _doc, _al in _alerts_for_phone(phone):
             if cid == str(chat_id):
                 continue
@@ -1941,10 +1964,19 @@ async def _tick_one(chat_id: str) -> None:
     queued = state.get("handoff_pending") or {}
     alert = state.get("alert") or {}
     if queued and not phone_key(proven_phone(doc)):
-        state.pop("handoff_pending", None)
-        doc["crm"] = state
-        store.save_doc(chat_id, doc)
-        queued = {}
+        # Recover evidence from the provider; a truncated history is not a cancellation.
+        try:
+            await refresh_transcript(chat_id, doc)
+            phone = nudge.extract_phone_from_history([
+                {"role": "user", "content": r["text"]} for r in doc.get("transcript", []) if r["who"] == "Клиент"])
+            if phone:
+                state["phone_evidence"] = {"phone": phone, "chat_id": chat_id, "source": "client_message"}
+            doc["crm"] = state
+            store.save_doc(chat_id, doc)
+        except Exception:
+            log.warning("чат %s: телефон требует подтверждения по переписке", chat_id)
+        if not phone_key(proven_phone(doc)):
+            return
     if queued and now_msk().timestamp() >= queued.get("retry_at", 0):
         queued["retry_at"] = now_msk().timestamp() + 120
         state["handoff_pending"] = queued
