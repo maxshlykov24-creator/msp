@@ -631,6 +631,9 @@ async def poll_once(api: Avito, channel: AvitoChannel, schedule, pending: dict) 
         changed = True
         if not incoming:
             continue
+        if store.defer_historical_discovery(state, cid, incoming[-1][0]):
+            cursor[cid] = max(max_at, last_at)
+            continue
         texts = [t for _, t in incoming]
         listing = listing_of(chat)
         title = listing.get("title") or "объявление"

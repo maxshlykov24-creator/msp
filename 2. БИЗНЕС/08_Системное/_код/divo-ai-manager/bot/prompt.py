@@ -128,7 +128,11 @@ def _read(rel: str) -> str:
     path: Path = settings.workspace / rel
     if not path.exists():
         return ""
-    return path.read_text(encoding="utf-8").strip()
+    text = path.read_text(encoding="utf-8").strip()
+    if rel.startswith("KB/сток/"):
+        text = text.replace("ДТП не было, кузов не чинили",
+                            "По отчёту записи о ДТП и кузовном ремонте не найдены; отсутствие окрасов не подтверждено")
+    return text
 
 
 def stock_status() -> str:

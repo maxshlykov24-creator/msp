@@ -2105,10 +2105,11 @@ def test_one_card_per_phone():
     finally:
         store.load_doc = loaded
         store.all_chat_ids = ids
-    assert new["tg"]["message_id"] == 62
-    assert new["token"] == "aa"
-    assert new["nags"] is False
-    assert new["pings"] == [0]
+    # Different provider chats must keep independent actions, even for the same phone.
+    assert not new.get("tg")
+    assert new["token"] == "bb"
+    assert new["nags"] is True
+    assert new["pings"] == []
 
     claimed = {
         "chat_id": "av:x",
@@ -3544,3 +3545,29 @@ def test_nov03_avito_same_second_cursor():
                 await loop.poll_once(API(), None, lambda *a: scheduled.append(a), pending)
             assert pending['av:same-second'] == ['Второй вопрос'] and len(scheduled) == 1
     asyncio.run(run())
+
+
+def test_nov03_stale_stock_claims_are_qualified():
+    from pathlib import Path
+    from tempfile import TemporaryDirectory
+    from unittest.mock import patch
+    from bot import prompt
+    with TemporaryDirectory() as root:
+        p = Path(root) / 'KB/сток/СТОК.md'
+        p.parent.mkdir(parents=True)
+        p.write_text('повреждения: ДТП не было, кузов не чинили')
+        with patch.object(prompt.settings, 'workspace', Path(root)):
+            text = prompt._read('KB/сток/СТОК.md')
+        assert 'ДТП не было' not in text and 'по отчёту' in text.lower()
+
+
+def test_nov03_deep_scan_does_not_contact_archive():
+    from unittest.mock import patch
+    from bot import store
+    state = {'allow': []}
+    with patch('time.time', return_value=2_000_000):
+        assert store.defer_historical_discovery(state, 'old', 1)
+        assert state['historical_review']['old'] == 1
+        assert not store.defer_historical_discovery(state, 'new', 1_999_999)
+        state['allow'] = ['old']
+        assert not store.defer_historical_discovery(state, 'old', 1)

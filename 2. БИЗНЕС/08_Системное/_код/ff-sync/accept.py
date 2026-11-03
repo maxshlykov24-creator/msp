@@ -140,11 +140,26 @@ def ref_id(value):
     return product_id_of({'assortment': value})
 
 
+def ledger_get(path, **kwargs):
+    """Bounded retries for read-only ledger requests; never repeat mutations."""
+    import time
+    for attempt in range(5):
+        response = req('GET', MS_BASE + path, headers=ms_headers(), **kwargs)
+        if response.status_code != 429 or attempt == 4:
+            return response
+        try:
+            delay = max(float(response.headers.get('Retry-After') or 0), 3 * (attempt + 1))
+        except (ValueError, TypeError):
+            delay = 3 * (attempt + 1)
+        if not math.isfinite(delay) or delay > 30:
+            return response
+        time.sleep(delay)
+
+
 def ms_pages(path, params=None):
     rows, seen, expected = [], set(), None
     while True:
-        r = req('GET', MS_BASE + path, headers=ms_headers(),
-                params=dict(params or {}, limit=1000, offset=len(rows)))
+        r = ledger_get(path, params=dict(params or {}, limit=1000, offset=len(rows)))
         if r.status_code != 200:
             raise ValueError('МойСклад: %s, HTTP %s. Учёт не изменён.' % (path, r.status_code))
         data = r.json()
@@ -165,7 +180,7 @@ def ms_pages(path, params=None):
 
 
 def ms_get(path):
-    r = req('GET', MS_BASE + path, headers=ms_headers())
+    r = ledger_get(path)
     if r.status_code != 200:
         raise ValueError('МойСклад: %s, HTTP %s' % (path, r.status_code))
     return r.json()

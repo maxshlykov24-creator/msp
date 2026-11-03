@@ -43,4 +43,21 @@ class Transfer(unittest.TestCase):
  def test_global_stock_mismatch_blocked(self):
   self.s['stock']['p']=7
   with self.assertRaises(ValueError):a.build_plan(self.s,[])
+class ReadRetry(unittest.TestCase):
+ def test_rate_limit_retry(self):
+  from unittest.mock import patch,Mock
+  limited=Mock(status_code=429,headers={'Retry-After':'4'})
+  done=Mock(status_code=200)
+  with patch.object(a,'req',side_effect=[limited,done]) as req,patch.object(a,'ms_headers',return_value={}),patch('time.sleep') as sleep:
+   self.assertIs(a.ledger_get('/x'),done);self.assertEqual(req.call_count,2);sleep.assert_called_once_with(4)
+ def test_long_cooldown_no_early_retry(self):
+  from unittest.mock import patch,Mock
+  limited=Mock(status_code=429,headers={'Retry-After':'90'})
+  with patch.object(a,'req',return_value=limited) as req,patch.object(a,'ms_headers',return_value={}),patch('time.sleep') as sleep:
+   self.assertIs(a.ledger_get('/x'),limited);self.assertEqual(req.call_count,1);sleep.assert_not_called()
+ def test_bounded_attempts(self):
+  from unittest.mock import patch,Mock
+  limited=Mock(status_code=429,headers={})
+  with patch.object(a,'req',return_value=limited) as req,patch.object(a,'ms_headers',return_value={}),patch('time.sleep'):
+   self.assertIs(a.ledger_get('/x'),limited);self.assertEqual(req.call_count,5)
 unittest.main()

@@ -223,3 +223,15 @@ def mark_silence(chat_id: str | int, messages: list[dict]) -> None:
         return
     doc.setdefault("processing", {})["silence_key"] = history_key(messages)
     save_doc(chat_id, doc)
+
+
+def defer_historical_discovery(state: dict, cid: str, newest: int) -> bool:
+    """Deep scans collect old unresolved chats for review, not unsolicited replies."""
+    import time
+    if cid in state.get("allow", []) or state.get("arm_next"):
+        return False
+    if newest and time.time() - newest > 7 * 86400:
+        state.setdefault("historical_review", {})[cid] = newest
+        return True
+    state.setdefault("historical_review", {}).pop(cid, None)
+    return False
