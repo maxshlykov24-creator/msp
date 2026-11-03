@@ -90,4 +90,32 @@ class IndependentScopes(unittest.TestCase):
   with self.assertRaises(ValueError):a.independent_scopes(s)
  def test_default_no_added_scope(self):
   self.assertEqual(a.independent_scopes({'parties':{}}),set())
+class ClosedCorrections(unittest.TestCase):
+ def setUp(self):
+  self.old=dict(id=1,client_id=11,source_key='k',ms_product_id='p',qty_in=24,accepted_at='2026-08-26',ledger_kind='receipt',storage_from=None,billed_until='2026-10-25',source_active=1)
+  self.before=[('2026-09-28','ship',17)]
+  self.after=[('2026-09-28','ship',15)]
+  self.rule=dict(mode='replace_closed_moves',lot={k:self.old.get(k) for k in a.CORRECTION_FIELDS},before=[list(x) for x in self.before],after=[list(x) for x in self.after],reason='confirmed photo',source_sha256='a'*64)
+ def check(self,**kw):
+  return a.approved_closed_correction(self.old,self.before,self.after,self.rule,**kw)
+ def test_exact_pair_allowed(self):self.assertTrue(self.check())
+ def test_wrong_after_rejected(self):
+  self.after=[('2026-09-28','ship',16)];self.assertFalse(self.check())
+ def test_already_corrected_not_permission_for_another_change(self):
+  self.before=self.after;self.after=[('2026-09-28','ship',14)];self.assertFalse(self.check())
+ def test_new_invoice_cutoff_invalidates_permission(self):
+  self.old['billed_until']='2026-11-01';self.assertFalse(self.check())
+ def test_missing_or_other_product_rejected(self):
+  self.assertFalse(a.approved_closed_correction(self.old,self.before,self.after,None))
+  self.old['ms_product_id']='other';self.assertFalse(self.check())
+ def retirement(self):
+  self.old.update(ledger_kind='assembly',qty_in=0)
+  self.after=[];self.rule.update(mode='retire_uninvoiced_assembly',lot={k:self.old.get(k) for k in a.CORRECTION_FIELDS})
+ def test_retire_uninvoiced_only(self):
+  self.retirement();self.assertTrue(self.check(retired=True));self.assertFalse(self.check(retired=True,invoiced=True))
+ def test_retirement_idempotent_but_reactivation_rejected(self):
+  self.retirement();self.old['source_active']=0;self.before=[]
+  self.assertTrue(self.check(retired=True));self.assertFalse(self.check())
+ def test_receipt_cannot_be_retired(self):
+  self.rule['mode']='retire_uninvoiced_assembly';self.after=[];self.assertFalse(self.check(retired=True))
 unittest.main()

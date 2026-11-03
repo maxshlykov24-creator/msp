@@ -423,6 +423,30 @@ def build_plan(snapshot, groups):
             'late_receipt_keys': approved}
 
 
+CORRECTION_FIELDS = ('id', 'client_id', 'source_key', 'ms_product_id', 'qty_in',
+                     'accepted_at', 'ledger_kind', 'storage_from', 'billed_until')
+
+
+def approved_closed_correction(old, before, after, rule, *, retired=False, invoiced=False):
+    """Exact, audited historical correction; never rewrites invoice snapshots.
+
+    A movement permission is consumed by applying its exact before/after pair.
+    Retired pre-invoice assembly rows remain archived and cannot reappear.
+    """
+    if not isinstance(rule, dict) or not rule.get('reason') or len(rule.get('source_sha256', '')) != 64:
+        return False
+    if rule.get('lot') != {k: old.get(k) for k in CORRECTION_FIELDS}:
+        return False
+    before, after = [list(x) for x in before], [list(x) for x in after]
+    if retired:
+        return (rule.get('mode') == 'retire_uninvoiced_assembly'
+                and old['ledger_kind'] == 'assembly' and old['qty_in'] == 0
+                and not invoiced and not after
+                and (before == rule.get('before') if old['source_active'] else not before))
+    return (rule.get('mode') == 'replace_closed_moves'
+            and before == rule.get('before') and after == rule.get('after'))
+
+
 def apply_plan(snapshot, plan, groups, scope_parties=None):
     """Атомарная замена активного представления; старые партии/счета сохраняются."""
     now = stamp()
@@ -452,16 +476,22 @@ def apply_plan(snapshot, plan, groups, scope_parties=None):
                 if any(l['party'] not in scope_parties for l in plan['lots'].values()):
                     raise ValueError('План вышел за границы отдельной сверки')
                 old_lots = {k:l for k,l in old_lots.items() if l['client_id'] in scope_ids}
+            correction_row = conn.execute("SELECT value FROM settings WHERE key='ledger:closed_corrections'").fetchone()
+            corrections = json.loads(correction_row[0]) if correction_row else {}
             for key, old in old_lots.items():
                 closed = old['billed_until']
                 if not closed:
                     continue
                 new = plan['lots'].get(key)
+                before = sorted((m['created_at'],m['kind'],m['qty']) for m in old_moves[key] if m['created_at'][:10] <= closed)
+                if not new and approved_closed_correction(
+                        old, before, [], corrections.get(key), retired=True,
+                        invoiced=bool(conn.execute('SELECT 1 FROM invoice_lots WHERE lot_id=? LIMIT 1', (old['id'],)).fetchone())):
+                    continue
                 if not new or clients.get(new['party']) != old['client_id'] or any(new.get(k) != old.get(k) for k in ('ms_product_id','qty_in','accepted_at','ledger_kind','storage_from')):
                     raise ValueError('Изменена уже выставленная партия %s. Нужна корректировка закрытого периода.' % old['id'])
-                before = sorted((m['created_at'],m['kind'],m['qty']) for m in old_moves[key] if m['created_at'][:10] <= closed)
                 after = sorted((m['created_at'],m['kind'],m['qty']) for m in plan['moves'].values() if m['lot_key']==key and m['created_at'][:10] <= closed)
-                if before != after:
+                if before != after and not approved_closed_correction(old, before, after, corrections.get(key)):
                     raise ValueError('Изменены движения закрытого периода партии %s. Нужна корректировка.' % old['id'])
             for key, new in plan['lots'].items():
                 if key not in old_lots and new['party'] in clients and new['accepted_at'][:10] <= cutoffs.get(clients[new['party']], ''):
