@@ -7,6 +7,7 @@ from sqlalchemy import select
 from .db import Entity,User,now,transaction
 from .service import entity,require,save,dispatch,DomainError,execute
 from .order_feed import PENDING
+from .corrections import correct
 
 
 def apply(s,doc,p):
@@ -14,6 +15,7 @@ def apply(s,doc,p):
     # FBO/FBW customer orders never write off our own warehouse a second time.
     if d['scheme']!='fbs':d['accounting_state']='marketplace'
     elif d['needs_mapping']:d['accounting_state']='needs_mapping'
+    elif d['status'] in PENDING and not d.get('open_verified'):d['accounting_state']='needs_review';d['accounting_note']='Нужно подтвердить актуальный статус исторического заказа'
     elif not d.get('created_at'):d['accounting_state']='needs_review';d['accounting_note']='Нет даты заказа'
     else:
         ledger=s.get(Entity,d.get('ledger_id',''));status=d['status']
@@ -52,9 +54,10 @@ def apply(s,doc,p):
             if status=='cancelled' and ld['status'] in ('reserved','shortage','shipped'):
                 dispatch(s,doc,'order.cancel',dict(id=ledger.id,version=ledger.version))
             elif status in PENDING and ld['status']=='shortage':
-                dispatch(s,doc,'order.reserve',dict(id=ledger.id,version=ledger.version))
-            elif status in ('shipping','delivered') and ld['status']=='reserved':
+                correct(s,doc,'order.reserve',dict(id=ledger.id,version=ledger.version))
+            elif status in ('shipping','delivered','returned') and ld['status']=='reserved':
                 dispatch(s,doc,'order.ship',dict(id=ledger.id,version=ledger.version))
+            if status=='returned' and ledger.data['status']=='shipped':dispatch(s,doc,'order.cancel',dict(id=ledger.id,version=ledger.version))
             ld=ledger.data;d['accounting_state']=ld['status'];d.pop('accounting_note',None)
     save(e,d)
     return {'id':e.id,'version':e.version,'accounting_state':d['accounting_state']}
@@ -69,8 +72,8 @@ def reconcile(engine,location):
         jobs=[]
         for e in s.scalars(select(Entity).where(Entity.kind=='market_order')):
             d=e.data;ledger=s.get(Entity,d.get('ledger_id',''))
-            if ledger is None and (d['scheme']!='fbs' or d['needs_mapping'] or d['status'] not in PENDING):
-                label='marketplace' if d['scheme']!='fbs' else 'needs_mapping' if d['needs_mapping'] else 'history'
+            if ledger is None and (d['scheme']!='fbs' or d['needs_mapping'] or d['status'] not in PENDING or not d.get('open_verified')):
+                label='needs_mapping' if d['needs_mapping'] else 'marketplace' if d['scheme']!='fbs' else 'needs_review' if d['status'] in PENDING and not d.get('open_verified') else 'history'
                 if d.get('accounting_state')!=label:e.data={**d,'accounting_state':label}
                 continue
             # A successful unchanged source state is not another warehouse operation.

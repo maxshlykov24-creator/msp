@@ -21,9 +21,9 @@ with (ROOT/'orders-reader.lock').open('a') as lock:
   if not watch or time.time()-last>=300 or requested:
    set_sync(engine,'cycle',state='running',started_at=now().isoformat())
    try:
-    result=run(engine,os.environ,history_steps=12 if '--backfill' in sys.argv else 1)
     with transaction(engine) as s:
      snaps=[e.data for e in s.query(Entity).filter(Entity.kind=='snapshot')];location=next((d.get('location') for d in snaps if d.get('location')),None)
+    result=run(engine,os.environ,history_steps=12 if '--backfill' in sys.argv else 1,on_current=(lambda:reconcile(engine,location)) if location else None)
     if location:accounting=reconcile(engine,location)
     else:accounting={'error':'Не задан склад нашего учёта'}
     bad=any(v.get('state') in ('error','waiting') for k,v in result.items() if k not in ('cycle','request','wb-identity'))

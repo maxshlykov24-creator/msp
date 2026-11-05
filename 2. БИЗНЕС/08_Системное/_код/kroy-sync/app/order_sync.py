@@ -13,11 +13,12 @@ from .db import Entity, now, transaction
 from .order_feed import ingest,ingest_returns,sync_state,set_sync,timestamp,PENDING
 
 ALLOWED={
- 'wb':{'/api/v3/orders/new':'GET','/api/v3/orders':'GET','/api/v3/orders/status':'POST','/api/v1/supplier/orders':'GET','/api/v1/seller-info':'GET'},
+ 'wb':{'/api/v3/orders/new':'GET','/api/v3/orders':'GET','/api/v3/orders/status':'POST','/api/v1/supplier/orders':'GET','/api/v1/supplier/sales':'GET','/api/v1/seller-info':'GET'},
  'ozon':{'/v4/posting/fbs/list':'POST','/v4/posting/fbs/unfulfilled/list':'POST','/v3/posting/fbo/list':'POST','/v3/posting/fbs/get':'POST','/v2/posting/fbo/get':'POST','/v1/returns/list':'POST'}}
 
 class FeedFailure(RuntimeError):pass
-class Paused(FeedFailure):pass
+class Paused(FeedFailure):
+    def __init__(self,message,retry_at):super().__init__(message);self.retry_at=retry_at
 
 
 def retry_seconds(headers,at=None):
@@ -44,11 +45,11 @@ class Client:
         key='limit:'+self.platform+':'+self.account+':'+path
         state=sync_state(self.engine).get(key,{})
         retry=state.get('retry_at')
-        if retry and datetime.fromisoformat(retry)>now():raise Paused('Пауза площадки до '+retry)
-        last=state.get('last_request');spacing=61 if path=='/api/v1/supplier/orders' else 3.1 if self.platform=='wb' else 2.1
+        if retry and datetime.fromisoformat(retry)>now():raise Paused('Площадка ограничила частоту запросов',retry)
+        last=state.get('last_request');spacing=61 if path in ('/api/v1/supplier/orders','/api/v1/supplier/sales') else 3.1 if self.platform=='wb' else 2.1
         delay=max(0,spacing-(now()-datetime.fromisoformat(last)).total_seconds()) if last else 0
         if delay:self.sleep(delay)
-        host='https://api-seller.ozon.ru' if self.platform=='ozon' else 'https://common-api.wildberries.ru' if path=='/api/v1/seller-info' else 'https://statistics-api.wildberries.ru' if path=='/api/v1/supplier/orders' else 'https://marketplace-api.wildberries.ru'
+        host='https://api-seller.ozon.ru' if self.platform=='ozon' else 'https://common-api.wildberries.ru' if path=='/api/v1/seller-info' else 'https://statistics-api.wildberries.ru' if path in ('/api/v1/supplier/orders','/api/v1/supplier/sales') else 'https://marketplace-api.wildberries.ru'
         req=urllib.request.Request(host+path+('?' + urlencode(params) if params else ''),data=json.dumps(body or {}).encode() if method=='POST' else None,headers={**self.headers,'Content-Type':'application/json'},method=method)
         for attempt in range(3):
             set_sync(self.engine,key,last_request=now().isoformat())
@@ -56,8 +57,13 @@ class Client:
                 with self.request(req,timeout=40) as response:return json.load(response)
             except urllib.error.HTTPError as e:
                 if e.code==429:
-                    until=(now()+timedelta(seconds=retry_seconds(e.headers))).isoformat();set_sync(self.engine,key,retry_at=until);raise Paused('Ограничение площадки; повтор после '+until) from None
-                if e.code not in (500,502,503,504) or attempt==2:raise FeedFailure('HTTP '+str(e.code)+' при чтении '+path) from None
+                    until=(now()+timedelta(seconds=retry_seconds(e.headers))).isoformat();set_sync(self.engine,key,retry_at=until);raise Paused('Площадка ограничила частоту запросов',until) from None
+                if e.code not in (500,502,503,504) or attempt==2:
+                    message=''
+                    if e.code in (400,422):
+                        try:message=': '+str(json.loads(e.read()).get('message',''))[:240]
+                        except Exception:pass
+                    raise FeedFailure('HTTP '+str(e.code)+' при чтении '+path+message) from None
             except (urllib.error.URLError,TimeoutError,OSError):
                 if attempt==2:raise FeedFailure('Нет связи с площадкой при чтении '+path) from None
             self.sleep(2**attempt)
@@ -74,6 +80,7 @@ def postings(client,scheme,start,end,open_only=False,on_page=None):
         batch=data.get('postings');more=data.get('has_next')
         if not isinstance(batch,list) or type(more) is not bool:raise FeedFailure('Неполный ответ отправлений '+scheme)
         for row in batch:
+            if open_only:row['_open_verified']=True
             key=row.get('posting_number')
             if not key or key in seen:raise FeedFailure('Повтор или отсутствие номера отправления')
             seen.add(key)
@@ -146,7 +153,7 @@ def ozon_returns(client):
     raise FeedFailure('Лимит страниц возвратов')
 
 
-def run(engine,env,history_steps=1):
+def run(engine,env,history_steps=1,on_current=None):
     at=now();state=sync_state(engine);result={}
     identity=state.get('wb-identity',{});fingerprint=hashlib_account(env['WB_TOKEN'])
     if identity.get('token_fingerprint')!=fingerprint or not identity.get('account'):
@@ -162,10 +169,12 @@ def run(engine,env,history_steps=1):
         set_sync(engine,key,state='running',attempt_at=now().isoformat())
         try:
             if key.startswith('wb-') and not accounts['wb']:raise FeedFailure('Сначала нужно подтвердить кабинет ВБ')
-            value=work();set_sync(engine,key,state='ready',success_at=now().isoformat(),error=None);return value
+            value=work();set_sync(engine,key,state='ready',success_at=now().isoformat(),error=None,retry_at=None)
+            if on_current and key in ('wb-new','wb-fbs','ozon-open','ozon-fbs'):on_current()
+            return value
         except Exception as e:
             message=str(e) if isinstance(e,FeedFailure) else 'Ошибка проверки данных; предыдущая выгрузка сохранена'
-            set_sync(engine,key,state='waiting' if isinstance(e,Paused) else 'error',error=message);return None
+            set_sync(engine,key,state='waiting' if isinstance(e,Paused) else 'error',error=message,retry_at=e.retry_at if isinstance(e,Paused) else None);return None
     wb=clients['wb'];account=accounts['wb']
     def current_wb():
         data=wb.get('/api/v3/orders/new');rows=data.get('orders')
@@ -193,8 +202,9 @@ def run(engine,env,history_steps=1):
         for scheme,warehouse in [('fbo','Склад WB'),('fbs','Склад продавца')]:ingest(engine,'wb',scheme,account,[r for r in rows if r.get('warehouseType')==warehouse],'wb-statistics')
         unknown=sum(r.get('warehouseType') not in ('Склад WB','Склад продавца') for r in rows)
         if unknown:raise FeedFailure('Не определена схема '+str(unknown)+' заказов ВБ')
-        set_sync(engine,'wb-statistics',received=len(rows),history_from=state.get('wb-statistics',{}).get('history_from') or start,history_to=at.isoformat(),window_from=start)
+        set_sync(engine,'wb-statistics',received=len(rows),history_from=(state.get('wb-statistics',{}).get('history_from') if not state.get('wb-statistics',{}).get('bootstrap_partial') else None) or start,bootstrap_partial=False,history_to=at.isoformat(),window_from=start)
     phase('wb-statistics',statistics)
+    phase('wb-sales',lambda:sync_wb_sales(engine,wb,account,state.get('wb-sales',{}),at))
     oz=clients['ozon'];account=accounts['ozon']
     phase('ozon-open',lambda:ingest(engine,'ozon','fbs',account,postings(oz,'fbs',(at-timedelta(days=90)).isoformat(),(at+timedelta(days=30)).isoformat(),True),'ozon-fbs'))
     for scheme in ('fbs','fbo'):
@@ -206,7 +216,7 @@ def run(engine,env,history_steps=1):
             while cursor<at:
                 end=min(cursor+timedelta(days=31),at)
                 rows=postings(oz,scheme,cursor.isoformat(),end.isoformat(),on_page=lambda batch:ingest(engine,'ozon',scheme,account,batch,'ozon-'+scheme,only_new=True))
-                ingest(engine,'ozon',scheme,account,rows,'ozon-'+scheme);count+=len(rows);cursor=end
+                ingest(engine,'ozon',scheme,account,[{**r,'_open_verified':True} for r in rows],'ozon-'+scheme);count+=len(rows);cursor=end
             # Independently follow older nonterminal postings by exact posting number.
             with transaction(engine) as s:
                 tracked=[copy_data(e) for e in s.scalars(select(Entity).where(Entity.kind=='market_order',Entity.data['platform'].as_string()=='ozon',Entity.data['scheme'].as_string()==scheme)) if e.data['account']==account and e.data.get('created_at') and e.data['created_at']<start.isoformat() and e.data['status'] not in ('delivered','cancelled','returned')]
@@ -214,7 +224,7 @@ def run(engine,env,history_steps=1):
                 data=oz.get('/v3/posting/fbs/get' if scheme=='fbs' else '/v2/posting/fbo/get',{'posting_number':d['external_id'],'with':{'analytics_data':False,'financial_data':False}})
                 data=data.get('result',data)
                 if data.get('posting_number')!=d['external_id']:raise FeedFailure('Не подтверждён номер старого отправления')
-                ingest(engine,'ozon',scheme,account,[data],'ozon-'+scheme)
+                ingest(engine,'ozon',scheme,account,[{**data,'_open_verified':True}],'ozon-'+scheme)
             set_sync(engine,key,received=count,window_from=start.isoformat(),history_to=at.isoformat(),tracked_old=len(tracked))
         phase('ozon-'+scheme,current)
     phase('ozon-returns',lambda:ingest_returns(engine,account,ozon_returns(oz)))
@@ -241,3 +251,40 @@ def hashlib_account(token):
     return hashlib.sha256(token.encode()).hexdigest()[:20]
 
 def copy_data(e):return dict(e.data)
+
+
+def sync_wb_sales(engine,client,account,prior,at):
+    from .sales import wb_events,store_window,mappings,MSK
+    from .order_feed import timestamp
+    from .db import Item
+    from collections import defaultdict
+    start=(at-timedelta(days=89)).date().isoformat() if not prior.get('success_at') else min(at-timedelta(days=7),datetime.fromisoformat(prior['success_at'])-timedelta(days=1)).date().isoformat()
+    raw=client.get('/api/v1/supplier/sales',params={'dateFrom':start,'flag':0})
+    if not isinstance(raw,list) or len(raw)>=80000:raise FeedFailure('Неполный список продаж ВБ для статусов заказов')
+    codes,_,covered=mappings(engine)
+    history_from=prior.get('history_from') or start
+    end=str(at.astimezone(MSK).date()-timedelta(days=1))
+    events,_=wb_events(raw,history_from,end,codes)
+    identities={str(r.get('saleID')):r for r in raw}
+    with transaction(engine) as s:
+        for event in events:
+            r=identities.get(event['id'],{});ref=r.get('srid')
+            data={**event,'account':account,'order_ref':str(ref or ''),'order_at':timestamp(r.get('date'),True)}
+            key='market-sale:'+__import__('hashlib').sha256(json.dumps([account,event['id']]).encode()).hexdigest();e=s.get(Entity,key)
+            if e:e.data=data;e.version+=1
+            else:s.add(Entity(id=key,kind='market_sale',version=1,data=data))
+    with transaction(engine) as s:
+        events=[{k:v for k,v in e.data.items() if k in ('id','item_id','date','kind','quantity')} for e in s.scalars(select(Entity).where(Entity.kind=='market_sale')) if e.data.get('account')==account and history_from<=e.data['date']<=end and e.data['item_id'] in covered['wb']]
+        by_ref=defaultdict(list)
+        for e in s.scalars(select(Entity).where(Entity.kind=='market_sale',Entity.data['account'].as_string()==account)):
+            if e.data.get('order_ref'):by_ref[e.data['order_ref']].append(e.data)
+        for e in s.scalars(select(Entity).where(Entity.kind=='market_order',Entity.data['platform'].as_string()=='wb',Entity.data['account'].as_string()==account)):
+            d=e.data;related=by_ref.get(d['source_ref'])
+            if not related:continue
+            last=max(related,key=lambda r:(r.get('order_at') or r['date'],r['kind']=='return'))
+            state='returned' if last['kind']=='return' else 'delivered'
+            if d['status']==state:continue
+            history=d.get('history',[])+[dict(at=now().isoformat(),status=state,raw_status=last['kind'],source='wb-sales')]
+            e.data={**d,'status':state,'sale_status':state,'history':history[-100:]};e.version+=1
+    store_window(engine,dict(platform='wb',start=history_from,end=end,at=now().isoformat(),complete=True,verified=True,covered_items=list(covered['wb']),events=events,source='WB supplier/sales',unmatched=0))
+    set_sync(engine,'wb-sales',history_from=history_from,received=len(raw),history_to=end)

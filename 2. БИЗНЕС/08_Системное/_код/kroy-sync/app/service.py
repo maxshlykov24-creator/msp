@@ -132,6 +132,8 @@ def execute(engine, user, op_id, command, payload, reason):
         from .db import User
         actor = s.get(User, user.id)
         require(actor is not None and actor.active and COMMAND_RIGHT[command] in PERMISSIONS.get(actor.role, set()), 'Доступ отозван', 403)
+        if command == 'market.order.apply':
+            require(actor.id == 'marketplace-orders-worker', 'Сверка выполняется фоновым процессом', 403)
         if command == 'task.confirm' and actor.role == 'cutter':
             task = entity(s, payload['id'], 'task')
             require(not task.data.get('assignee') or task.data['assignee'] == actor.id, 'Задание назначено другому сотруднику', 403)

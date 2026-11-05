@@ -72,6 +72,7 @@ def create_app(engine=None):
         with Session(engine) as s:
             result = []
             for u in s.scalars(select(User)):
+                if u.id=='marketplace-orders-worker':continue
                 version = s.get(Entity, 'user-version:' + u.id)
                 result.append({'id': u.id, 'name': u.name, 'role': u.role, 'active': u.active,
                                'version': version.version if version else 1})

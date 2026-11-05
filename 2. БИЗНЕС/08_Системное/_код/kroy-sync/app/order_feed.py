@@ -11,7 +11,7 @@ from sqlalchemy import select, func, cast, Text
 from .db import Entity, Item, Balance, now, transaction
 from .service import require
 
-STATES={'new','assembling','ready','shipping','delivered','cancelled','returned','unknown'}
+STATES={'ordered','new','assembling','ready','shipping','delivered','cancelled','returned','unknown'}
 PENDING={'new','assembling','ready'}
 WB_CANCEL={'canceled','canceled_by_client','canceled_by_missed_call','declined_by_client','cancel','cancelled'}
 OZON_STATES={'awaiting_registration':'new','acceptance_in_progress':'new','awaiting_packaging':'assembling','awaiting_approve':'new','awaiting_deliver':'ready','driver_pickup':'shipping','delivering':'shipping','delivered':'delivered','cancelled':'cancelled','not_accepted':'cancelled','arbitration':'unknown','client_arbitration':'unknown','sent_by_seller':'shipping'}
@@ -61,7 +61,7 @@ def normalized(platform,scheme,raw,account,lookups,source):
             lines.append(dict(item_id=next(iter(matches)) if len(matches)==1 else None,sku=str(p.get('sku') or ''),barcode='',offer_id=str(p.get('offer_id') or ''),quantity=q if type(q) is int and q>0 else None,mapping='matched' if len(matches)==1 else 'ambiguous' if matches else 'missing'))
         due=raw.get('shipment_date');handed=raw.get('delivering_date');raw_status=raw.get('status') or '';supplier_status=''
     elif source=='wb-statistics':
-        external=str(raw['srid']);ref=external;created=raw.get('date');status='cancelled' if raw.get('isCancel') is True else 'unknown'
+        external=str(raw['srid']);ref=external;created=raw.get('date');status='cancelled' if raw.get('isCancel') is True else 'ordered'
         matches=codes.get(str(raw.get('barcode')),set())
         lines=[dict(item_id=next(iter(matches)) if len(matches)==1 else None,barcode=str(raw.get('barcode') or ''),sku='',offer_id=str(raw.get('supplierArticle') or ''),quantity=1,mapping='matched' if len(matches)==1 else 'ambiguous' if matches else 'missing')]
         due=handed=None;raw_status='isCancel' if raw.get('isCancel') else 'ordered';supplier_status=''
@@ -83,7 +83,7 @@ def normalized(platform,scheme,raw,account,lookups,source):
 
 
 def ingest(engine,platform,scheme,account,rows,source,observed_at=None,only_new=False):
-    at=observed_at or now().isoformat();changed=created=0
+    at=timestamp(observed_at) if observed_at else now().isoformat();changed=created=0
     with transaction(engine) as s:
         lookups=index(s)
         for raw in rows:
@@ -97,10 +97,11 @@ def ingest(engine,platform,scheme,account,rows,source,observed_at=None,only_new=
             if old.get('source')=='wb-fbs' and source=='wb-statistics':continue
             if old.get('status') in ('delivered','returned','cancelled') and d['status'] in PENDING and old.get('source')==d['source']:
                 d['status']=old['status'];d['raw_status']=old.get('raw_status');d['status_warning']='Площадка вернула более ранний статус; нужна сверка'
+            if source=='wb-statistics' and old.get('sale_status') and not raw.get('isCancel'):d['status']=old['sale_status']
             history=list(old.get('history',[]))
             if not old or any(old.get(k)!=d.get(k) for k in ('status','raw_status','lines','scheme')):
                 history.append(dict(at=at,status=d['status'],raw_status=d['raw_status'],source=source));history=history[-100:]
-            data={**old,**d,'observed_at':at,'first_seen':old.get('first_seen',at),'history':history}
+            data={**old,**d,'open_verified':bool(raw.get('_open_verified') or platform=='wb' and source=='wb-fbs' and raw.get('supplierStatus') in ('new','confirm') or old.get('open_verified')),'observed_at':at,'first_seen':old.get('first_seen',at),'history':history}
             data['needs_mapping']=not d['lines'] or any(l['mapping']!='matched' or l['quantity'] is None for l in d['lines'])
             data['accounting_state']=old.get('accounting_state','unprocessed')
             if e:
@@ -111,7 +112,7 @@ def ingest(engine,platform,scheme,account,rows,source,observed_at=None,only_new=
 
 
 def ingest_returns(engine, account, rows, observed_at=None):
-    at=observed_at or now().isoformat()
+    at=timestamp(observed_at) if observed_at else now().isoformat()
     with transaction(engine) as s:
         _,skus,_=index(s)
         for r in rows:
@@ -141,8 +142,10 @@ def list_orders(s,platform='',scheme='',status='',query='',start='',end='',page=
     q=select(Entity).where(Entity.kind=='market_order')
     for key,value in [('platform',platform),('scheme',scheme),('status',status)]:
         if value:q=q.where(Entity.data[key].as_string()==value)
-    if start:q=q.where(Entity.data['created_at'].as_string()>=start+'T00:00:00')
-    if end:q=q.where(Entity.data['created_at'].as_string()<end+'T24:00:00')
+    if start:q=q.where(Entity.data['created_at'].as_string()>=timestamp(start+'T00:00:00',True))
+    if end:
+        from datetime import date,timedelta
+        q=q.where(Entity.data['created_at'].as_string()<timestamp(str(date.fromisoformat(end)+timedelta(days=1))+'T00:00:00',True))
     if query:q=q.where(cast(Entity.data,Text).ilike('%'+query.replace('\\','\\\\').replace('%','\\%').replace('_','\\_')+'%',escape='\\'))
     if attention:q=q.where((Entity.data['needs_mapping'].as_boolean()==True)|(Entity.data['accounting_state'].as_string().in_(['shortage','needs_review','waiting_stock'])))
     total=s.scalar(select(func.count()).select_from(q.subquery()))
@@ -153,6 +156,8 @@ def list_orders(s,platform='',scheme='',status='',query='',start='',end='',page=
 
 
 def public_order(s,e):
-    d=copy.deepcopy(e.data);ledger=s.get(Entity,d.get('ledger_id',''))
+    d=copy.deepcopy(e.data);ledger=s.get(Entity,d['ledger_id']) if d.get('ledger_id') else None
     returns=[{'id':r.id,**r.data} for r in s.scalars(select(Entity).where(Entity.kind=='market_return',Entity.data['account'].as_string()==d['account'],Entity.data['posting_number'].as_string()==d['external_id']))]
+    if d['platform']=='wb':
+        returns=[{'id':r.id,**r.data,'status_label':'Возврат зарегистрирован ВБ','changed_at':r.data.get('order_at')} for r in s.scalars(select(Entity).where(Entity.kind=='market_sale',Entity.data['account'].as_string()==d['account'],Entity.data['order_ref'].as_string()==d['source_ref'],Entity.data['kind'].as_string()=='return'))]
     return {'id':e.id,'version':e.version,**d,'returns':returns,'ledger':{'id':ledger.id,'version':ledger.version,**ledger.data} if ledger else None}
