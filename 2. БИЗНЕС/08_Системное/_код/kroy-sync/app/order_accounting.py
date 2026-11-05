@@ -65,10 +65,14 @@ def reconcile(engine,location):
         user=s.get(User,'marketplace-orders-worker')
         if not user:
             # Service identity has no usable login token.
-            user=User(id='marketplace-orders-worker',name='Синхронизация заказов',role='warehouse',active=True,token_hash=hashlib.sha256(('no-login:'+str(uuid5(NAMESPACE_URL,location))).encode()).hexdigest());s.add(user)
+            user=User(id='marketplace-orders-worker',name='Синхронизация заказов',role='warehouse',active=True,token_hash=__import__('secrets').token_hex(32));s.add(user)
         jobs=[]
         for e in s.scalars(select(Entity).where(Entity.kind=='market_order')):
             d=e.data;ledger=s.get(Entity,d.get('ledger_id',''))
+            if ledger is None and (d['scheme']!='fbs' or d['needs_mapping'] or d['status'] not in PENDING):
+                label='marketplace' if d['scheme']!='fbs' else 'needs_mapping' if d['needs_mapping'] else 'history'
+                if d.get('accounting_state')!=label:e.data={**d,'accounting_state':label}
+                continue
             # A successful unchanged source state is not another warehouse operation.
             own_version=ledger.version if ledger else None
             balance_versions=[]

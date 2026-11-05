@@ -2,7 +2,7 @@ import hashlib
 import os
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request, Query
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -136,6 +136,40 @@ def create_app(engine=None):
                     if doc: data['created_at'] = doc.created_at.isoformat()
                 result.append({'id': e.id, 'version': e.version, **data})
             return result
+
+    @app.get('/api/orders')
+    def market_orders(platform: str='', scheme: str='', status: str='', q: str=Query('',max_length=200), start: str='', end: str='', page: int=Query(1,ge=1), per_page: int=Query(50,ge=1,le=100), attention: bool=False, user=Depends(auth)):
+        from .order_feed import list_orders, STATES
+        from datetime import date
+        if platform not in ('','wb','ozon') or scheme not in ('','fbs','fbo') or status and status not in STATES: raise HTTPException(422,'Проверь фильтры заказов')
+        try:
+            if start:date.fromisoformat(start)
+            if end:date.fromisoformat(end)
+            if start and end and start>end:raise ValueError()
+        except ValueError:raise HTTPException(422,'Проверь период заказов')
+        with Session(engine) as s:return list_orders(s,platform,scheme,status,q,start,end,page,per_page,attention)
+
+    @app.get('/api/orders/sync')
+    def order_sync_state(user=Depends(auth)):
+        from .order_feed import sync_state
+        state=sync_state(engine)
+        return {k:{x:v for x,v in d.items() if x not in ('account','token_fingerprint')} for k,d in state.items() if not k.startswith('limit:') and k!='wb-identity'}
+
+    @app.post('/api/orders/refresh')
+    def order_refresh(user=Depends(auth)):
+        if 'orders' not in PERMISSIONS[user.role]:raise HTTPException(403,'Нет права обновления заказов')
+        from .order_feed import set_sync
+        from .db import now
+        set_sync(engine,'request',requested_at=now().isoformat())
+        return {'status':'queued'}
+
+    @app.get('/api/orders/{order_id}')
+    def market_order_detail(order_id: str,user=Depends(auth)):
+        from .order_feed import public_order
+        with Session(engine) as s:
+            e=s.get(Entity,order_id)
+            if not e or e.kind!='market_order':raise HTTPException(404,'Заказ не найден')
+            return public_order(s,e)
 
     @app.get('/api/journal')
     def journal(item_id: str | None = None, user=Depends(auth)):

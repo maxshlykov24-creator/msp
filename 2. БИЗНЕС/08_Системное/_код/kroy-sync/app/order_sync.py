@@ -13,7 +13,7 @@ from .db import Entity, now, transaction
 from .order_feed import ingest,ingest_returns,sync_state,set_sync,timestamp,PENDING
 
 ALLOWED={
- 'wb':{'/api/v3/orders/new':'GET','/api/v3/orders':'GET','/api/v3/orders/status':'POST','/api/v1/supplier/orders':'GET'},
+ 'wb':{'/api/v3/orders/new':'GET','/api/v3/orders':'GET','/api/v3/orders/status':'POST','/api/v1/supplier/orders':'GET','/api/v1/seller-info':'GET'},
  'ozon':{'/v4/posting/fbs/list':'POST','/v4/posting/fbs/unfulfilled/list':'POST','/v3/posting/fbo/list':'POST','/v3/posting/fbs/get':'POST','/v2/posting/fbo/get':'POST','/v1/returns/list':'POST'}}
 
 class FeedFailure(RuntimeError):pass
@@ -48,7 +48,7 @@ class Client:
         last=state.get('last_request');spacing=61 if path=='/api/v1/supplier/orders' else 3.1 if self.platform=='wb' else 2.1
         delay=max(0,spacing-(now()-datetime.fromisoformat(last)).total_seconds()) if last else 0
         if delay:self.sleep(delay)
-        host='https://api-seller.ozon.ru' if self.platform=='ozon' else 'https://statistics-api.wildberries.ru' if path=='/api/v1/supplier/orders' else 'https://marketplace-api.wildberries.ru'
+        host='https://api-seller.ozon.ru' if self.platform=='ozon' else 'https://common-api.wildberries.ru' if path=='/api/v1/seller-info' else 'https://statistics-api.wildberries.ru' if path=='/api/v1/supplier/orders' else 'https://marketplace-api.wildberries.ru'
         req=urllib.request.Request(host+path+('?' + urlencode(params) if params else ''),data=json.dumps(body or {}).encode() if method=='POST' else None,headers={**self.headers,'Content-Type':'application/json'},method=method)
         for attempt in range(3):
             set_sync(self.engine,key,last_request=now().isoformat())
@@ -148,11 +148,20 @@ def ozon_returns(client):
 
 def run(engine,env,history_steps=1):
     at=now();state=sync_state(engine);result={}
-    accounts={'wb':hashlib_account(env['WB_TOKEN']),'ozon':str(env['OZON_CLIENT_ID'])}
+    identity=state.get('wb-identity',{});fingerprint=hashlib_account(env['WB_TOKEN'])
+    if identity.get('token_fingerprint')!=fingerprint or not identity.get('account'):
+        try:
+            info=Client(engine,'wb','identity',{'Authorization':env['WB_TOKEN']}).get('/api/v1/seller-info')
+            if not isinstance(info.get('sid'),str) or not info['sid']:raise FeedFailure('Не подтверждён продавец ВБ')
+            identity=dict(account=info['sid'],token_fingerprint=fingerprint,state='ready');set_sync(engine,'wb-identity',**identity)
+        except Exception:
+            identity={};set_sync(engine,'wb-identity',state='error',error='Не удалось подтвердить кабинет ВБ')
+    accounts={'wb':identity.get('account'),'ozon':str(env['OZON_CLIENT_ID'])}
     clients={'wb':Client(engine,'wb',accounts['wb'],{'Authorization':env['WB_TOKEN']}),'ozon':Client(engine,'ozon',accounts['ozon'],{'Api-Key':env['OZON_API_KEY'],'Client-Id':env['OZON_CLIENT_ID']})}
     def phase(key,work):
         set_sync(engine,key,state='running',attempt_at=now().isoformat())
         try:
+            if key.startswith('wb-') and not accounts['wb']:raise FeedFailure('Сначала нужно подтвердить кабинет ВБ')
             value=work();set_sync(engine,key,state='ready',success_at=now().isoformat(),error=None);return value
         except Exception as e:
             message=str(e) if isinstance(e,FeedFailure) else 'Ошибка проверки данных; предыдущая выгрузка сохранена'
@@ -172,7 +181,7 @@ def run(engine,env,history_steps=1):
         with transaction(engine) as s:
             for e in s.scalars(select(Entity).where(Entity.kind=='market_order',Entity.data['platform'].as_string()=='wb',Entity.data['scheme'].as_string()=='fbs')):
                 d=e.data
-                if d['source']=='wb-fbs' and d['account']==account and (d['status'] not in ('cancelled','returned','delivered') or d.get('created_at','')>=str(at-timedelta(days=30))):tracked.append(dict(id=int(d['external_id']),rid=d['source_ref'],createdAt=d['created_at'],skus=[l['barcode'] for l in d['lines'] if l.get('barcode')],article=d['lines'][0].get('offer_id','') if d['lines'] else ''))
+                if d['source']=='wb-fbs' and d['account']==account and (d['status'] not in ('cancelled','returned','delivered') or (d.get('created_at') or '')>=(at-timedelta(days=30)).isoformat()):tracked.append(dict(id=int(d['external_id']),rid=d['source_ref'],createdAt=d['created_at'],skus=[l['barcode'] for l in d['lines'] if l.get('barcode')],article=d['lines'][0].get('offer_id','') if d['lines'] else ''))
         merged={r['id']:r for r in tracked};merged.update({r['id']:r for r in rows});merged.update({r['id']:r for r in fresh or []})
         statuses=wb_statuses(wb,list(merged))
         ingest(engine,'wb','fbs',account,[{**r,**statuses[r['id']]} for r in merged.values()],'wb-fbs')
