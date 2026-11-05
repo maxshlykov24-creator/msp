@@ -6,7 +6,7 @@ type Item=Record<string,any>;
 export function useProductFilters(items:Item[],location:string){
  const[query,setQuery]=useState(''),[category,setCategory]=useState('Все'),[color,setColor]=useState(''),[size,setSize]=useState(''),[stock,setStock]=useState('any'),[open,setOpen]=useState(false);
  const categories=[...new Set(items.map(productCategory))].sort((a,b)=>a==='Материалы'?1:b==='Материалы'?-1:a.localeCompare(b,'ru'));
- const context=items.filter(i=>category==='Все'||productCategory(i)===category);
+ const context=items.filter(i=>category==='Все'?productCategory(i)!=='Материалы':productCategory(i)===category);
  const colors=[...new Set(context.map(i=>i.color).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'ru'));
  const sizes=[...new Set(context.map(i=>i.size||''))].sort(compareSizes);
  function pickCategory(c:string){setCategory(c);setColor('');setSize('')}
@@ -26,7 +26,7 @@ export function ProductFilters({filters:f,create,categoryLabel='Категори
  {count>0&&<div className="filter-chips product-filter-chips">{f.color&&<button aria-label={'Убрать фильтр: '+f.color} onClick={()=>f.setColor('')}>{f.color}<Icon name="close" size={13}/></button>}{f.size&&<button aria-label={'Убрать фильтр: '+f.size} onClick={()=>f.setSize('')}>{f.size==='__none__'?'Без размера':f.size}<Icon name="close" size={13}/></button>}{f.stock!=='any'&&<button aria-label={'Убрать фильтр: '+stockLabel} onClick={()=>f.setStock('any')}>{stockLabel}<Icon name="close" size={13}/></button>}<button className="text-button" onClick={()=>{f.setColor('');f.setSize('');f.setStock('any')}}>Сбросить фильтры</button></div>}
  </div>
 }
-export function StockSummary({available,total,className=''}:{available:number|null;total:number|null;className?:string}){
+export function StockSummary({available,frozen,className=''}:{available:number|null;frozen:number|null;className?:string}){
  const fmt=(n:number|null)=>n===null?'—':n.toLocaleString('ru-RU');
- return <span className={'stock-summary '+className}><span title="Доступно для продажи: без резерва и заморозки"><small>Доступно</small><strong className={available!==null&&available>0?'stock-positive':''}>{fmt(available)}</strong></span><span title="Доступно + резерв + заморозка"><small>Остаток</small><strong>{fmt(total)}</strong></span></span>
+ return <span className={'stock-summary '+className}><span title="Можно продать: без резерва и заморозки"><small>Можно продать</small><strong className={available!==null&&available>0?'stock-positive':''}>{fmt(available)}</strong></span><span title="Заморожено и не продаётся"><small>Заморожено</small><strong>{fmt(frozen)}</strong></span></span>
 }

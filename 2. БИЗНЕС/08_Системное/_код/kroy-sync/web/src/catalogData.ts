@@ -33,6 +33,11 @@ export function stockFigures(item:Variant,location:string){
 }
 export function modelStock(items:Variant[],location:string){
  const values=items.map(i=>stockFigures(i,location));
- const sum=(key:'available'|'total'):number|null=>values.length&&new Set(items.map(i=>i.unit)).size===1&&values.every(v=>v[key]!==null)?values.reduce((n,v)=>n+v[key]!,0):null;
- return {available:sum('available'),total:sum('total')};
+ const sum=(key:'available'|'frozen'):number|null=>values.length&&new Set(items.map(i=>i.unit)).size===1&&values.every(v=>v[key]!==null)?values.reduce((n,v)=>n+v[key]!,0):null;
+ return {available:sum('available'),frozen:sum('frozen')};
+}
+export function words(n:number,one:string,few:string,many:string){
+ const abs=Math.abs(n)%100,last=abs%10;
+ const form=abs>10&&abs<20?many:last===1?one:last>1&&last<5?few:many;
+ return `${n.toLocaleString('ru-RU')} ${form}`;
 }

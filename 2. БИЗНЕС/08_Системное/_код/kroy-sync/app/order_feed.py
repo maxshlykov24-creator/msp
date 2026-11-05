@@ -153,7 +153,9 @@ def list_orders(s,platform='',scheme='',status='',query='',start='',end='',page=
         if value:q=q.where(Entity.data[key].as_string()==value)
     if status:
         grouped=case((and_(Entity.data['platform'].as_string()=='ozon',Entity.data['raw_status'].as_string()=='awaiting_packaging'),'new'),(and_(Entity.data['platform'].as_string()=='ozon',Entity.data['raw_status'].as_string().in_(['arbitration','client_arbitration'])),'shipping'),else_=Entity.data['status'].as_string())
-        q=q.where(grouped==status)
+        if status=='open':q=q.where(grouped.in_(['new','assembling','ready']))
+        elif status=='closed':q=q.where(grouped.in_(['cancelled','returned']))
+        else:q=q.where(grouped==status)
     if start:q=q.where(Entity.data['created_at'].as_string()>=timestamp(start+'T00:00:00',True))
     if end:
         from datetime import date,timedelta
