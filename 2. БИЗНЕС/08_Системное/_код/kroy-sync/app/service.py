@@ -17,7 +17,7 @@ COMMAND_RIGHT = {
     'task.save': 'cut_plan', 'task.issue': 'cut_plan', 'item.create': 'catalog', 'item.update': 'catalog', 'user.create': 'settings', 'user.update': 'settings', 'norm.set': 'settings', 'telegram.link': 'settings', 'stock.adjust': 'adjust', 'freeze.create': 'freeze',
     'freeze.release': 'freeze', 'freeze.extend': 'freeze', 'freeze.configure': 'settings', 'task.create': 'cut_plan',
     'task.reverse_fact': 'adjust', 'order.reserve': 'orders', 'fbo.reserve': 'orders', 'fbo.resolve': 'adjust', 'task.approve': 'cut_plan', 'task.revise': 'cut_plan', 'task.confirm': 'cut', 'task.cancel': 'cut_plan',
-    'count.create': 'count', 'count.scan': 'count', 'count.set': 'count', 'count.resolve': 'count', 'count.post': 'adjust',
+    'count.create': 'count', 'count.scan': 'count', 'count.set': 'count', 'count.resolve': 'count', 'count.post': 'adjust', 'count.save': 'count', 'count.refresh': 'count',
     'order.create': 'orders', 'order.ship': 'orders', 'order.cancel': 'orders',
     'return.receive': 'orders', 'fbo.create': 'orders', 'fbo.dispatch': 'orders',
     'fbo.accept': 'orders', 'finance.record': 'finance',
@@ -316,58 +316,9 @@ def dispatch(s, doc, command, p):
                 d['status'] = 'partial'
         save(e, d)
         return {'id': e.id, 'version': e.version, 'status': d['status']}
-    if command == 'count.create':
-        require(isinstance(p['item_ids'], list) and p['item_ids'] and len(set(p['item_ids'])) == len(p['item_ids']), 'Укажи уникальные позиции пересчёта', 422)
-        snapshots = {}
-        for item_id in p['item_ids']:
-            b = get_balance(s, item_id, p['location'])
-            snapshots[item_id] = {'version': b.version, 'count': '0'}
-        e = create_entity(s, doc, 'count', {'location': p['location'], 'items': snapshots, 'unknown': [], 'status': 'draft'})
-        return {'id': e.id, 'version': 1}
     if command.startswith('count.'):
-        e = entity(s, p['id'], 'count', p['version'])
-        d = copy.deepcopy(e.data)
-        require(d['status'] == 'draft', 'Пересчёт уже проведён')
-        if command == 'count.scan':
-            require(isinstance(p['barcode'], str), 'Штрихкод должен быть строкой', 422)
-            candidates = [i for i in s.scalars(select(Item)) if p['barcode'] in i.barcodes]
-            if len(candidates) != 1 or candidates[0].id not in d['items']:
-                d['unknown'].append({'barcode': p['barcode'], 'reason': 'Неизвестный, неоднозначный или вне области пересчёта'})
-            else:
-                i = candidates[0]
-                require(i.unit in ('piece', 'roll'), 'Метры требуют ручного измерения', 422)
-                d['items'][i.id]['count'] = str(Decimal(d['items'][i.id]['count']) + 1)
-        elif command == 'count.set':
-            require(p['item_id'] in d['items'], 'Позиция вне области пересчёта')
-            q = quantity(p['quantity'], get_item(s, p['item_id']), positive=False)
-            require(q >= 0, 'Посчитанное количество не может быть отрицательным')
-            d['items'][p['item_id']]['count'] = str(q)
-        elif command == 'count.resolve':
-            index = p['index']
-            require(type(index) is int and 0 <= index < len(d['unknown']), 'Неизвестная строка сканирования')
-            row = d['unknown'][index]
-            require(not row.get('resolved'), 'Скан уже разобран')
-            if p.get('item_id'):
-                require(p['item_id'] in d['items'], 'Позиция вне области пересчёта')
-                i = get_item(s, p['item_id'])
-                require(i.unit in ('piece', 'roll'), 'Метры требуют измерения')
-                d['items'][i.id]['count'] = str(Decimal(d['items'][i.id]['count']) + 1)
-            row['resolved'] = True
-            row['resolution'] = p.get('item_id') or 'ignored_out_of_scope'
-            row['document_id'] = doc
-        else:
-            require(not any(not row.get('resolved') for row in d['unknown']), 'Есть неразобранные коды. Нужна сверка')
-            require(p.get('confirm_zeroes') is True, 'Подтверди нули для несканированных позиций', 422)
-            for item_id, row in d['items'].items():
-                b = get_balance(s, item_id, d['location'])
-                require(b.version == row['version'], 'После начала пересчёта были движения или резервы. Нужна сверка')
-                target = Decimal(row['count']) - b.frozen - b.reserved - b.damaged
-                require(target >= 0, 'Пересчёт ниже ограниченного количества')
-                b.known = True
-                move(s, doc, item_id, d['location'], {'free': target - b.free})
-            d['status'] = 'posted'
-        save(e, d)
-        return {'id': e.id, 'version': e.version}
+        from .counting import count_command
+        return count_command(s, doc, command, p)
     if command in ('order.create', 'fbo.create'):
         kind = 'order' if command == 'order.create' else 'fbo'
         require(p['platform'] in ('wb', 'ozon', 'manual'), 'Неизвестная площадка', 422)

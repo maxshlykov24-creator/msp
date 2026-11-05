@@ -123,7 +123,9 @@ export function Select({
     const view = window.visualViewport;
     const viewTop = view?.offsetTop ?? 0;
     const viewH = view?.height ?? window.innerHeight;
-    const below = viewTop + viewH - rect.bottom - gap;
+    const navRect = document.querySelector(".kassa-mobile-nav")?.getBoundingClientRect();
+    const viewBottom = navRect?.height ? Math.min(viewTop + viewH, navRect.top) : viewTop + viewH;
+    const below = viewBottom - rect.bottom - gap;
     const above = rect.top - viewTop - gap;
     // Поле у нижнего края: вниз остаётся узкая полоска. Поднимаем список,
     // если сверху места больше, и не даём ему вылезать за экран.

@@ -102,8 +102,6 @@ export function Layout({
   ).length;
   const canSeeMoney = canSeeFinanceQueues(user?.role);
   const mobileNav = canSeeMoney ? [...MOBILE_NAV_BASE, MOBILE_NAV_FINANCE] : MOBILE_NAV_BASE;
-  // На экране новой заявки нижнее меню скрываем — место под sticky-блок суммы/кнопок.
-  const showMobileNav = route !== "new";
 
   // Дефолт консультанта в формах = имя залогиненного, если он в справочнике.
   useEffect(() => {
@@ -329,18 +327,17 @@ export function Layout({
           </div>
         </header>
         <main
-          className={`flex-1 px-4 md:px-8 py-6 overflow-x-hidden max-w-full ${
-            showMobileNav ? "pb-24 md:pb-6" : "pb-6"
-          }`}
+          className="kassa-main flex-1 px-4 md:px-8 py-6 overflow-x-hidden max-w-full"
         >
           <div key={route} className="page-in">
             {children}
           </div>
         </main>
-        {/* Mobile bottom nav — скрыт на «Новой заявке», чтобы не перекрывать sticky-бар */}
-        {showMobileNav && (
+        {/* Вне прокрутки, анимации страниц и модальных окон — всегда у края экрана. */}
+        {createPortal(
           <nav
-            className={`kassa-chrome md:hidden sticky bottom-0 z-20 border-t grid pb-[env(safe-area-inset-bottom)] ${
+            aria-label="Основное меню"
+            className={`kassa-mobile-nav kassa-chrome md:hidden border-t grid pb-[env(safe-area-inset-bottom)] ${
               mobileNav.length === 5 ? "grid-cols-5" : "grid-cols-4"
             }`}
           >
@@ -348,7 +345,9 @@ export function Layout({
               const badge = n.badge === "queue" ? pendingQueue : 0;
               return (
                 <button
+                  type="button"
                   key={n.id}
+                  aria-current={route === n.id ? "page" : undefined}
                   onClick={() => (n.id === "board" ? onBoard("all", "all") : setRoute(n.id))}
                   className={`relative flex flex-col items-center justify-center gap-1 py-2.5 min-h-[64px] text-[10px] font-medium transition active:bg-ink-800 ${
                     route === n.id ? "text-gold" : "text-mute"
@@ -364,7 +363,8 @@ export function Layout({
                 </button>
               );
             })}
-          </nav>
+          </nav>,
+          document.body
         )}
       </div>
       </div>

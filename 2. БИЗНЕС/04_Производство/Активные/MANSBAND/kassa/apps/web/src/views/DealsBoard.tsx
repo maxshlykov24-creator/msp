@@ -146,7 +146,10 @@ export function DealsBoard({
   const [filtersOpen, setFiltersOpen] = useState(false);
 
   useEffect(() => {
-    if (!initialDealNumber) return;
+    if (!initialDealNumber) {
+      setActive(null);
+      return;
+    }
     const deal = deals.find((row) => row.number === initialDealNumber);
     if (deal) setActive(deal);
   }, [initialDealNumber, deals]);

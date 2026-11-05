@@ -527,7 +527,7 @@ export function SaryScreen({
       )}
 
       {selectedList.length > 0 && (
-        <div className="fixed bottom-0 left-0 right-0 z-30 border-t border-ink-700 bg-ink-900/95 backdrop-blur px-4 py-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)]">
+        <div className="kassa-action-dock fixed left-0 right-0 z-30 border-t border-ink-700 bg-ink-900/95 backdrop-blur px-4 py-3 md:pb-[calc(env(safe-area-inset-bottom)+0.75rem)]">
           <div className="max-w-5xl mx-auto space-y-3">
             <div className="flex flex-wrap items-center gap-3">
               <div className="text-white text-sm font-semibold">

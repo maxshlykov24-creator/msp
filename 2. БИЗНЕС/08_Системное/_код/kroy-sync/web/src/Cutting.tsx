@@ -1,4 +1,4 @@
-import { Choice, Select, Icon, ActionMenu } from './UI';
+import { Choice, Select, Icon, ActionMenu, confirmAction } from './UI';
 import React, { useEffect, useState, useRef } from 'react';
 import './Cutting.css';
 import {compareSizes,compareVariants,productCategory,photoCandidates} from './catalogData';
@@ -90,8 +90,7 @@ function CutEditor({ api, items, locations, users, existing, close, saved }: {
         e.preventDefault();
         e.returnValue = '';
     } }; window.addEventListener('beforeunload', f); return () => window.removeEventListener('beforeunload', f); }, [dirty]);
-    useEffect(() => { const guard = (e: Event) => { if (dirty && !window.confirm('В задании есть несохранённые изменения. Покинуть раздел?'))
-        e.preventDefault(); }; window.addEventListener('yuji:before-navigation', guard); return () => window.removeEventListener('yuji:before-navigation', guard); }, [dirty]);
+    useEffect(() => { const guard = (e: Event) => { if(dirty){e.preventDefault();confirmAction('Выйти из задания?','Есть несохранённые изменения.','Выйти без сохранения').then(ok=>{if(ok){setDirty(false);(e as CustomEvent).detail?.retry?.()}})} }; window.addEventListener('yuji:before-navigation', guard); return () => window.removeEventListener('yuji:before-navigation', guard); }, [dirty]);
     const byId = (id: string) => items.find(i => i.id === id)!;
     const orderedIds=(ids:string[])=>[...ids].sort((a,b)=>compareVariants(byId(a),byId(b)));
     const productFilters=useProductFilters(garments,location);
@@ -157,7 +156,7 @@ function CutEditor({ api, items, locations, users, existing, close, saved }: {
             setBusy(false);
         }
     }
-    const closeEditor = () => { if (!dirty || window.confirm('Закрыть без сохранения изменений?'))
+    const closeEditor = async () => { if (!dirty || await confirmAction('Закрыть задание?','Есть несохранённые изменения.','Закрыть без сохранения'))
         close(); };
     const hasNeed = selected.some(id => Number(qty[id]) > 0);
     const completeGroups = groups.length > 0 && groups.every(g => g.material && g.ratio.trim() && Number(g.quantity) > 0 && Object.values(g.products).some(q => Number(q) > 0));

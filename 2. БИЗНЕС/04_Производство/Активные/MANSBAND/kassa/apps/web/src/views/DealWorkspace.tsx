@@ -885,7 +885,7 @@ export function DealWorkspace({
         )}
       </div>
 
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-ink-700 bg-ink-950/95 backdrop-blur pb-[env(safe-area-inset-bottom)]">
+      <div className="kassa-action-dock fixed inset-x-0 z-40 border-t border-ink-700 bg-ink-950/95 backdrop-blur md:pb-[env(safe-area-inset-bottom)]">
         <div className="max-w-3xl mx-auto px-3 sm:px-4 pt-2.5 pb-2.5 space-y-2">
           <SummaryBar total={live.total || total} paid={paid} />
           {showSuccess && successGaps.length > 0 && baseFilled && (

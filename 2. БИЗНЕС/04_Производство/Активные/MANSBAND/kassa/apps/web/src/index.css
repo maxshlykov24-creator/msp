@@ -3,6 +3,7 @@
 @tailwind utilities;
 
 :root {
+  --mobile-nav-height: 0px;
   color-scheme: dark;
   --ink-950: 0 0 0;
   --ink-900: 14 14 14;
@@ -626,6 +627,23 @@ html.theme-light nav {
   transition: background-color 0.35s var(--ease), border-color 0.35s var(--ease);
 }
 
+.kassa-mobile-nav {
+  position: fixed;
+  inset: auto 0 0;
+  z-index: 130;
+  height: var(--mobile-nav-height);
+  background: rgb(var(--ink-950));
+}
+
+.kassa-action-dock {
+  bottom: var(--mobile-nav-height);
+}
+
+/* Карточка уже расположена над меню; её кнопки закреплены внутри окна. */
+.kassa-modal .kassa-action-dock {
+  bottom: 0;
+}
+
 /* Узкая колонка разделов. Без backdrop-filter, чтобы подсказка не обрезалась. */
 .kassa-rail {
   width: 72px;
@@ -897,12 +915,19 @@ html:not(.theme-light) .rail-mark-img {
 }
 
 @media (max-width: 767px) {
+  :root {
+    --mobile-nav-height: calc(65px + env(safe-area-inset-bottom, 0px));
+  }
+  .kassa-main {
+    padding-bottom: calc(var(--mobile-nav-height) + 1.5rem);
+  }
   .kassa-ov {
+    bottom: var(--mobile-nav-height);
     align-items: flex-end;
-    padding: 8px 8px env(safe-area-inset-bottom, 8px);
+    padding: 8px;
   }
   .kassa-modal {
-    max-height: calc(100dvh - 12px);
+    max-height: calc(100dvh - var(--mobile-nav-height) - 16px);
     border-radius: 18px 18px 10px 10px;
   }
 }

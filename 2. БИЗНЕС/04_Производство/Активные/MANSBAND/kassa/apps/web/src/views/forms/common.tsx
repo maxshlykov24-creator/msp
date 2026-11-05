@@ -1471,7 +1471,7 @@ export function FormShell({
 
       {/* Фиксированный нижний блок: сумма/оплата/остаток + этапы — всегда на экране */}
       {hasDock && (
-        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-ink-700 bg-ink-950/95 backdrop-blur pb-[env(safe-area-inset-bottom)]">
+        <div className="kassa-action-dock fixed inset-x-0 z-40 border-t border-ink-700 bg-ink-950/95 backdrop-blur md:pb-[env(safe-area-inset-bottom)]">
           <div className="max-w-3xl mx-auto px-3 sm:px-4 pt-2.5 pb-2.5 space-y-2">
             {summary}
             {footer}
@@ -1509,11 +1509,11 @@ export function useSaved() {
   }
 
   const toast = error ? (
-    <div role="alert" className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 max-w-[90vw] rounded-xl border border-amber-400 bg-ink-900 px-5 py-3 text-amber-300">
+    <div role="alert" className="fixed bottom-[calc(var(--mobile-nav-height)+6rem)] left-1/2 -translate-x-1/2 z-50 max-w-[90vw] rounded-xl border border-amber-400 bg-ink-900 px-5 py-3 text-amber-300">
       {error}
     </div>
   ) : saved ? (
-    <div role="status" className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 bg-white text-ink-950 font-semibold px-5 py-3 rounded-xl shadow-glow animate-[fadein_0.2s]">
+    <div role="status" className="fixed bottom-[calc(var(--mobile-nav-height)+1.5rem)] left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 bg-white text-ink-950 font-semibold px-5 py-3 rounded-xl shadow-glow animate-[fadein_0.2s]">
       <CheckCircle2 size={18} /> Заявка сохранена
     </div>
   ) : null;

@@ -430,3 +430,81 @@ def test_catalog_update_keeps_id_unit_and_history(setup):
         assert s.scalar(select(Entity).where(Entity.kind=='item_revision')) is not None
     with pytest.raises(DomainError):
         cmd('item.update', {'id':'m','version':1,'name':'M','model':'Модель','barcodes':['001']})
+
+
+def test_scanned_count_excludes_frozen_preserves_reserve_and_unseen(setup):
+    engine, user, cmd = setup
+    cmd('freeze.create', {'item_id': 's', 'location': 'own', 'version': 1, 'quantity': 3})
+    cmd('order.create', {'platform': 'manual', 'account': 'test', 'external_id': 'count-reserve',
+                         'location': 'own', 'lines': [{'item_id': 's', 'quantity': 2}]})
+    c = cmd('count.create', {'location': 'own', 'mode': 'scanned', 'barcode': '001'})
+    with Session(engine) as s:
+        data = s.get(Entity, c['id']).data
+        assert data['items']['s']['expected'] == '7.000'
+        assert data['number'] == 'ПР-001'
+    c = cmd('count.set', {'id': c['id'], 'version': c['version'], 'item_id': 's', 'quantity': 6})
+    before = balance(engine)
+    c = cmd('count.save', {'id': c['id'], 'version': c['version'], 'comment': 'Полка 1'})
+    assert balance(engine) == before
+    p = {'id': c['id'], 'version': c['version']}
+    op = str(uuid4())
+    result = cmd('count.post', p, op)
+    assert cmd('count.post', p, op) == result
+    assert balance(engine)['free'] == 4
+    assert balance(engine)['reserved'] == 2
+    assert balance(engine)['frozen'] == 3
+    assert balance(engine, 'm')['free'] == 0
+    with Session(engine) as s:
+        data = s.get(Entity, c['id']).data
+        assert data['comment'] == 'Полка 1'
+        assert data['items']['s']['difference'] == '-1.000'
+
+
+def test_scanned_count_unknown_and_initial_balance_and_retry(setup):
+    engine, user, cmd = setup
+    with transaction(engine) as s:
+        s.add(Item(id='new', name='Новая позиция', model='Новая', kind='garment', unit='piece', barcodes=['003']))
+    op = str(uuid4()); p = {'location': 'own', 'mode': 'scanned', 'barcode': '003'}
+    c = cmd('count.create', p, op)
+    assert cmd('count.create', p, op) == c
+    with Session(engine) as s:
+        assert s.get(Entity, c['id']).data['items']['new']['expected'] is None
+    c = cmd('count.scan', {'id': c['id'], 'version': c['version'], 'barcode': 'bad'})
+    with pytest.raises(DomainError, match='неразобранные'):
+        cmd('count.post', {'id': c['id'], 'version': c['version']})
+    c = cmd('count.resolve', {'id': c['id'], 'version': c['version'], 'index': 0, 'item_id': None})
+    cmd('count.post', {'id': c['id'], 'version': c['version']})
+    assert balance(engine, 'new')['free'] == 1
+    assert balance(engine)['free'] == 10
+
+
+def test_scanned_count_conflict_refresh_and_restricted_quantity(setup):
+    engine, user, cmd = setup
+    c = cmd('count.create', {'location': 'own', 'mode': 'scanned', 'barcode': '001'})
+    cmd('order.create', {'platform': 'manual', 'account': 'test', 'external_id': 'concurrent-count',
+                         'location': 'own', 'lines': [{'item_id': 's', 'quantity': 2}]})
+    with pytest.raises(DomainError, match='движения'):
+        cmd('count.post', {'id': c['id'], 'version': c['version']})
+    c = cmd('count.refresh', {'id': c['id'], 'version': c['version']})
+    with pytest.raises(DomainError, match='меньше резерва'):
+        cmd('count.post', {'id': c['id'], 'version': c['version']})
+    assert balance(engine)['free'] == 8
+    c = cmd('count.set', {'id': c['id'], 'version': c['version'], 'item_id': 's', 'quantity': 5})
+    cmd('count.post', {'id': c['id'], 'version': c['version']})
+    assert balance(engine)['free'] == 3
+
+
+def test_scanned_count_empty_ambiguous_and_permissions(setup):
+    engine, user, cmd = setup
+    c = cmd('count.create', {'location': 'own', 'mode': 'scanned'})
+    with pytest.raises(DomainError, match='Нет посчитанных'):
+        cmd('count.post', {'id': c['id'], 'version': c['version']})
+    with transaction(engine) as s:
+        s.get(Item, 'm').barcodes = ['001']
+        s.add(User(id='cutter-count', name='Cutter', role='cutter', active=True, token_hash='cutter-count'))
+    c = cmd('count.scan', {'id': c['id'], 'version': c['version'], 'barcode': '001'})
+    with Session(engine) as s:
+        data = s.get(Entity, c['id']).data
+        assert not data['items'] and len(data['unknown']) == 1
+    with pytest.raises(DomainError, match='Нет права'):
+        cmd('count.create', {'location': 'own', 'mode': 'scanned'}, actor=User(id='cutter-count', role='cutter'))
