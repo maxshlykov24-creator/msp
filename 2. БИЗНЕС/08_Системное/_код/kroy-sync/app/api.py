@@ -122,6 +122,7 @@ def create_app(engine=None):
     def entities(kind: str, user=Depends(auth)):
         if kind not in ('task', 'freeze', 'count', 'order', 'fbo', 'finance', 'notice', 'integration', 'norm', 'telegram_link', 'mapping'):
             raise HTTPException(404, 'Раздел не найден')
+        if kind=='order' and user.role=='cutter':raise HTTPException(403,'Нет доступа к заказам')
         if kind == 'telegram_link' and 'settings' not in PERMISSIONS[user.role]:
             raise HTTPException(403, 'Нет права управления привязками')
         if kind == 'finance' and 'finance' not in PERMISSIONS[user.role]:
@@ -140,6 +141,7 @@ def create_app(engine=None):
 
     @app.get('/api/orders')
     def market_orders(platform: str='', scheme: str='', status: str='', q: str=Query('',max_length=200), start: str='', end: str='', page: int=Query(1,ge=1), per_page: int=Query(50,ge=1,le=100), attention: bool=False, user=Depends(auth)):
+        if user.role=='cutter':raise HTTPException(403,'Нет доступа к заказам')
         from .order_feed import list_orders, STATES
         from datetime import date
         if platform not in ('','wb','ozon') or scheme not in ('','fbs','fbo') or status and status not in STATES: raise HTTPException(422,'Проверь фильтры заказов')
@@ -152,6 +154,7 @@ def create_app(engine=None):
 
     @app.get('/api/orders/sync')
     def order_sync_state(user=Depends(auth)):
+        if user.role=='cutter':raise HTTPException(403,'Нет доступа к заказам')
         from .order_feed import sync_state
         state=sync_state(engine)
         return {k:{x:v for x,v in d.items() if x not in ('account','token_fingerprint')} for k,d in state.items() if not k.startswith('limit:') and k!='wb-identity'}
@@ -166,6 +169,7 @@ def create_app(engine=None):
 
     @app.get('/api/orders/{order_id}')
     def market_order_detail(order_id: str,user=Depends(auth)):
+        if user.role=='cutter':raise HTTPException(403,'Нет доступа к заказам')
         from .order_feed import public_order
         with Session(engine) as s:
             e=s.get(Entity,order_id)

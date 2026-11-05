@@ -80,7 +80,7 @@ def postings(client,scheme,start,end,open_only=False,on_page=None):
         batch=data.get('postings');more=data.get('has_next')
         if not isinstance(batch,list) or type(more) is not bool:raise FeedFailure('Неполный ответ отправлений '+scheme)
         for row in batch:
-            if open_only:row['_open_verified']=True
+            if open_only:row['_status_verified']=True
             key=row.get('posting_number')
             if not key or key in seen:raise FeedFailure('Повтор или отсутствие номера отправления')
             seen.add(key)
@@ -153,7 +153,7 @@ def ozon_returns(client):
     raise FeedFailure('Лимит страниц возвратов')
 
 
-def run(engine,env,history_steps=1,on_current=None):
+def run(engine,env,history_steps=1,on_current=None,deep=True):
     at=now();state=sync_state(engine);result={}
     identity=state.get('wb-identity',{});fingerprint=hashlib_account(env['WB_TOKEN'])
     if identity.get('token_fingerprint')!=fingerprint or not identity.get('account'):
@@ -185,7 +185,7 @@ def run(engine,env,history_steps=1,on_current=None):
         return rows
     fresh=phase('wb-new',current_wb)
     def fbs():
-        rows=wb_history(wb,at-timedelta(days=30),lambda batch:ingest(engine,'wb','fbs',account,batch,'wb-fbs',only_new=True))
+        rows=wb_history(wb,at-timedelta(days=30),lambda batch:ingest(engine,'wb','fbs',account,batch,'wb-fbs',only_new=True)) if deep else []
         tracked=[]
         with transaction(engine) as s:
             for e in s.scalars(select(Entity).where(Entity.kind=='market_order',Entity.data['platform'].as_string()=='wb',Entity.data['scheme'].as_string()=='fbs')):
@@ -193,8 +193,8 @@ def run(engine,env,history_steps=1,on_current=None):
                 if d['source']=='wb-fbs' and d['account']==account and (d['status'] not in ('cancelled','returned','delivered') or (d.get('created_at') or '')>=(at-timedelta(days=30)).isoformat()):tracked.append(dict(id=int(d['external_id']),rid=d['source_ref'],createdAt=d['created_at'],skus=[l['barcode'] for l in d['lines'] if l.get('barcode')],article=d['lines'][0].get('offer_id','') if d['lines'] else ''))
         merged={r['id']:r for r in tracked};merged.update({r['id']:r for r in rows});merged.update({r['id']:r for r in fresh or []})
         statuses=wb_statuses(wb,list(merged))
-        ingest(engine,'wb','fbs',account,[{**r,**statuses[r['id']]} for r in merged.values()],'wb-fbs')
-        set_sync(engine,'wb-fbs',received=len(merged),history_from=(at-timedelta(days=30)).isoformat(),history_to=at.isoformat())
+        ingest(engine,'wb','fbs',account,[{**r,**statuses[r['id']],'_status_verified':True} for r in merged.values()],'wb-fbs')
+        set_sync(engine,'wb-fbs',received=len(merged),history_from=(at-timedelta(days=30)).isoformat() if deep else state.get('wb-fbs',{}).get('history_from'),history_to=at.isoformat() if deep else state.get('wb-fbs',{}).get('history_to'))
     phase('wb-fbs',fbs)
     def statistics():
         last=state.get('wb-statistics',{}).get('success_at');start=(at-timedelta(days=90)).isoformat() if not last else min(at-timedelta(days=7),datetime.fromisoformat(last)-timedelta(days=1)).isoformat()
@@ -203,45 +203,57 @@ def run(engine,env,history_steps=1,on_current=None):
         unknown=sum(r.get('warehouseType') not in ('Склад WB','Склад продавца') for r in rows)
         if unknown:raise FeedFailure('Не определена схема '+str(unknown)+' заказов ВБ')
         set_sync(engine,'wb-statistics',received=len(rows),history_from=(state.get('wb-statistics',{}).get('history_from') if not state.get('wb-statistics',{}).get('bootstrap_partial') else None) or start,bootstrap_partial=False,history_to=at.isoformat(),window_from=start)
-    phase('wb-statistics',statistics)
-    phase('wb-sales',lambda:sync_wb_sales(engine,wb,account,state.get('wb-sales',{}),at))
+    if deep:phase('wb-statistics',statistics)
+    if deep:phase('wb-sales',lambda:sync_wb_sales(engine,wb,account,state.get('wb-sales',{}),at))
     oz=clients['ozon'];account=accounts['ozon']
-    phase('ozon-open',lambda:ingest(engine,'ozon','fbs',account,postings(oz,'fbs',(at-timedelta(days=90)).isoformat(),(at+timedelta(days=30)).isoformat(),True),'ozon-fbs'))
-    for scheme in ('fbs','fbo'):
-        def current(scheme=scheme):
-            key='ozon-'+scheme;last=state.get(key,{}).get('success_at');start=min(at-timedelta(days=31),datetime.fromisoformat(last)-timedelta(days=1)) if last else at-timedelta(days=31)
-            # Never request an unbounded interval after an outage.
-            cursor=start
-            count=0
-            while cursor<at:
-                end=min(cursor+timedelta(days=31),at)
-                rows=postings(oz,scheme,cursor.isoformat(),end.isoformat(),on_page=lambda batch:ingest(engine,'ozon',scheme,account,batch,'ozon-'+scheme,only_new=True))
-                ingest(engine,'ozon',scheme,account,[{**r,'_open_verified':True} for r in rows],'ozon-'+scheme);count+=len(rows);cursor=end
-            # Independently follow older nonterminal postings by exact posting number.
-            with transaction(engine) as s:
-                tracked=[copy_data(e) for e in s.scalars(select(Entity).where(Entity.kind=='market_order',Entity.data['platform'].as_string()=='ozon',Entity.data['scheme'].as_string()==scheme)) if e.data['account']==account and e.data.get('created_at') and e.data['created_at']<start.isoformat() and e.data['status'] not in ('delivered','cancelled','returned')]
-            for d in sorted(tracked,key=lambda d:d.get('observed_at',''))[:100]:
-                data=oz.get('/v3/posting/fbs/get' if scheme=='fbs' else '/v2/posting/fbo/get',{'posting_number':d['external_id'],'with':{'analytics_data':False,'financial_data':False}})
-                data=data.get('result',data)
-                if data.get('posting_number')!=d['external_id']:raise FeedFailure('Не подтверждён номер старого отправления')
-                ingest(engine,'ozon',scheme,account,[{**data,'_open_verified':True}],'ozon-'+scheme)
-            set_sync(engine,key,received=count,window_from=start.isoformat(),history_to=at.isoformat(),tracked_old=len(tracked))
-        phase('ozon-'+scheme,current)
-    phase('ozon-returns',lambda:ingest_returns(engine,account,ozon_returns(oz)))
-    # Backfill independently from current orders: completed windows survive failures.
-    for scheme in ('fbs','fbo'):
-        key='ozon-history-'+scheme
-        def history(scheme=scheme,key=key):
-            prior=sync_state(engine).get(key,{});cursor=datetime.fromisoformat(prior['cursor']) if prior.get('cursor') else at-timedelta(days=31)
-            start=datetime.fromisoformat(prior['start']) if prior.get('start') else at-timedelta(days=365)
-            for _ in range(history_steps):
-                if cursor<=start:break
-                since=max(start,cursor-timedelta(days=31))
-                rows=postings(oz,scheme,since.isoformat(),cursor.isoformat(),on_page=lambda batch:ingest(engine,'ozon',scheme,account,batch,'ozon-'+scheme,only_new=True))
-                ingest(engine,'ozon',scheme,account,rows,'ozon-'+scheme);cursor=since
-                set_sync(engine,key,cursor=cursor.isoformat(),start=start.isoformat(),received=len(rows),complete=cursor<=start,history_to=at.isoformat())
-            return cursor
-        phase(key,history)
+    def open_ozon():
+        rows=postings(oz,'fbs',(at-timedelta(days=90)).isoformat(),(at+timedelta(days=30)).isoformat(),True)
+        ingest(engine,'ozon','fbs',account,rows,'ozon-fbs')
+        ids={r['posting_number'] for r in rows}
+        with transaction(engine) as s:
+            missing=[dict(e.data) for e in s.scalars(select(Entity).where(Entity.kind=='market_order',Entity.data['platform'].as_string()=='ozon',Entity.data['scheme'].as_string()=='fbs')) if e.data['account']==account and e.data['status'] in PENDING and e.data['external_id'] not in ids]
+        for d in sorted(missing,key=lambda d:d.get('observed_at',''))[:100]:
+            row=oz.get('/v3/posting/fbs/get',{'posting_number':d['external_id'],'with':{'analytics_data':False,'financial_data':False}});row=row.get('result',row)
+            if row.get('posting_number')!=d['external_id']:raise FeedFailure('Не подтверждён номер открытого отправления')
+            ingest(engine,'ozon','fbs',account,[{**row,'_status_verified':True}],'ozon-fbs')
+        set_sync(engine,'ozon-open',received=len(rows),tracked_missing=len(missing))
+    phase('ozon-open',open_ozon)
+    if deep:
+        for scheme in ('fbs','fbo'):
+            def current(scheme=scheme):
+                key='ozon-'+scheme;last=state.get(key,{}).get('success_at');start=min(at-timedelta(days=31),datetime.fromisoformat(last)-timedelta(days=1)) if last else at-timedelta(days=31)
+                # Never request an unbounded interval after an outage.
+                cursor=start
+                count=0
+                while cursor<at:
+                    end=min(cursor+timedelta(days=31),at)
+                    rows=postings(oz,scheme,cursor.isoformat(),end.isoformat(),on_page=lambda batch:ingest(engine,'ozon',scheme,account,batch,'ozon-'+scheme,only_new=True))
+                    ingest(engine,'ozon',scheme,account,[{**r,'_status_verified':True} for r in rows],'ozon-'+scheme);count+=len(rows);cursor=end
+                # Independently follow older nonterminal postings by exact posting number.
+                with transaction(engine) as s:
+                    tracked=[copy_data(e) for e in s.scalars(select(Entity).where(Entity.kind=='market_order',Entity.data['platform'].as_string()=='ozon',Entity.data['scheme'].as_string()==scheme)) if e.data['account']==account and e.data.get('created_at') and e.data['created_at']<start.isoformat() and e.data['status'] not in ('delivered','cancelled','returned')]
+                for d in sorted(tracked,key=lambda d:d.get('observed_at',''))[:100]:
+                    data=oz.get('/v3/posting/fbs/get' if scheme=='fbs' else '/v2/posting/fbo/get',{'posting_number':d['external_id'],'with':{'analytics_data':False,'financial_data':False}})
+                    data=data.get('result',data)
+                    if data.get('posting_number')!=d['external_id']:raise FeedFailure('Не подтверждён номер старого отправления')
+                    ingest(engine,'ozon',scheme,account,[{**data,'_status_verified':True}],'ozon-'+scheme)
+                set_sync(engine,key,received=count,window_from=start.isoformat(),history_to=at.isoformat(),tracked_old=len(tracked))
+            phase('ozon-'+scheme,current)
+        phase('ozon-returns',lambda:ingest_returns(engine,account,ozon_returns(oz)))
+        # Backfill independently from current orders: completed windows survive failures.
+        for scheme in ('fbs','fbo'):
+            key='ozon-history-'+scheme
+            def history(scheme=scheme,key=key):
+                prior=sync_state(engine).get(key,{});cursor=datetime.fromisoformat(prior['cursor']) if prior.get('cursor') else at-timedelta(days=31)
+                start=datetime.fromisoformat(prior['start']) if prior.get('start') else at-timedelta(days=365)
+                for _ in range(history_steps):
+                    if cursor<=start:break
+                    since=max(start,cursor-timedelta(days=31))
+                    rows=postings(oz,scheme,since.isoformat(),cursor.isoformat(),on_page=lambda batch:ingest(engine,'ozon',scheme,account,batch,'ozon-'+scheme,only_new=True))
+                    ingest(engine,'ozon',scheme,account,rows,'ozon-'+scheme);cursor=since
+                    set_sync(engine,key,cursor=cursor.isoformat(),start=start.isoformat(),received=len(rows),complete=cursor<=start,history_to=at.isoformat())
+                return cursor
+            phase(key,history)
     set_sync(engine,'cycle',finished_at=now().isoformat())
     return {k:v for k,v in sync_state(engine).items() if not k.startswith('limit:')}
 

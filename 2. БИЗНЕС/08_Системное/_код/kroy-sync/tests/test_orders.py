@@ -162,7 +162,7 @@ def test_unverified_historical_pending_waits_for_exact_current_check(setup):
  before=count(engine,Document)
  ingest(engine,'ozon','fbs','seller',[raw],'ozon-fbs');reconcile(engine,'own')
  assert count(engine,Document)==before and balance(engine)['reserved']==0
- ingest(engine,'ozon','fbs','seller',[{**raw,'_open_verified':True}],'ozon-fbs');reconcile(engine,'own')
+ ingest(engine,'ozon','fbs','seller',[{**raw,'_status_verified':True}],'ozon-fbs');reconcile(engine,'own')
  assert balance(engine)['reserved']==2 and balance(engine)['free']==8
 
 
@@ -217,3 +217,66 @@ def test_mapping_arriving_later_resolves_same_order(setup):
   s.get(Item,'s').barcodes=['001','later']
  ingest(engine,'wb','fbs','seller',[wb(qty='later')],'wb-fbs');reconcile(engine,'own')
  assert market(engine).id==original and balance(engine)['reserved']==1
+
+
+def test_first_count_after_handover_is_not_deducted_again(setup):
+ from app.db import Item
+ engine,_,cmd=setup
+ with transaction(engine) as s:s.add(Item(id='not-initialized',name='Новая позиция',model='Новая',kind='garment',unit='piece',barcodes=['003']))
+ ingest(engine,'wb','fbs','seller',[wb(qty='003')],'wb-fbs');reconcile(engine,'own')
+ assert market(engine).data['accounting_state']=='waiting_stock'
+ ingest(engine,'wb','fbs','seller',[wb('complete','sold',qty='003')],'wb-fbs');reconcile(engine,'own')
+ cmd('stock.adjust',dict(item_id='not-initialized',location='own',version=0,physical=5))
+ reconcile(engine,'own')
+ assert balance(engine,'not-initialized')['free']==5
+ assert market(engine).data['accounting_state']=='covered_by_count'
+ reconcile(engine,'own');assert balance(engine,'not-initialized')['free']==5
+
+
+def test_existing_exact_manual_order_is_linked_without_double_reserve(setup):
+ engine,_,cmd=setup
+ own=cmd('order.create',dict(platform='wb',account='seller',external_id='123',location='own',lines=[dict(item_id='s',quantity=1)]))
+ ingest(engine,'wb','fbs','seller',[wb()],'wb-fbs');reconcile(engine,'own')
+ assert balance(engine)['free']==9 and balance(engine)['reserved']==1
+ assert market(engine).data['ledger_id']==own['id']
+
+
+def test_wb_srid_cannot_duplicate_between_fbs_and_fbw(setup):
+ engine,_,_=setup
+ ingest(engine,'wb','fbs','seller',[wb('complete','sold')],'wb-fbs')
+ ingest(engine,'wb','fbo','seller',[dict(srid='stable-rid',date=now().isoformat(),barcode='001',isCancel=False)],'wb-statistics')
+ with Session(engine) as s:assert s.scalar(select(func.count()).select_from(Entity).where(Entity.kind=='market_order'))==1
+ assert market(engine).data['scheme']=='fbs'
+
+
+def test_cancellation_with_unmapped_or_missing_composition_still_releases_reserve(setup):
+ engine,_,_=setup
+ ingest(engine,'wb','fbs','seller',[wb()],'wb-fbs');reconcile(engine,'own')
+ ingest(engine,'wb','fbs','seller',[wb('cancel','canceled',qty='no-barcode')],'wb-fbs');reconcile(engine,'own')
+ assert balance(engine)['free']==10 and balance(engine)['reserved']==0
+ assert market(engine).data['accounting_state']=='cancelled'
+
+
+def test_fast_cycle_does_not_wait_for_historical_pages(setup,monkeypatch):
+ import app.order_sync as sync
+ engine,_,_=setup;paths=[]
+ def get(self,path,body=None,params=None):
+  paths.append(path)
+  if path=='/api/v1/seller-info':return {'sid':'seller'}
+  if path=='/api/v3/orders/new':return {'orders':[]}
+  if path=='/v4/posting/fbs/unfulfilled/list':return {'postings':[],'has_next':False}
+  raise AssertionError('Fast cycle requested historical data: '+path)
+ monkeypatch.setattr(sync.Client,'get',get)
+ sync.run(engine,{'WB_TOKEN':'fixture','OZON_CLIENT_ID':'1','OZON_API_KEY':'fixture'},deep=False)
+ assert '/v4/posting/fbs/list' not in paths and '/api/v1/supplier/orders' not in paths
+
+
+def test_order_missed_during_outage_is_counted_after_activation_only(setup):
+ from app.order_feed import set_sync
+ engine,_,_=setup
+ set_sync(engine,'accounting-start',at=(now()-timedelta(days=1)).isoformat())
+ raw={**wb('complete','sold'),'_status_verified':True}
+ ingest(engine,'wb','fbs','seller',[raw],'wb-fbs');reconcile(engine,'own')
+ assert balance(engine)['free']==9 and balance(engine)['reserved']==0
+ assert market(engine).data['accounting_state']=='shipped'
+ reconcile(engine,'own');assert balance(engine)['free']==9

@@ -28,7 +28,7 @@ def timestamp(value, moscow=False):
 
 
 def stable_id(platform, account, scheme, external):
-    return 'market-order:'+hashlib.sha256(json.dumps([platform,account,scheme,str(external)],ensure_ascii=False).encode()).hexdigest()
+    return 'market-order:'+hashlib.sha256(json.dumps([platform,account,'' if platform=='wb' else scheme,str(external)],ensure_ascii=False).encode()).hexdigest()
 
 
 def index(s):
@@ -79,7 +79,7 @@ def normalized(platform,scheme,raw,account,lookups,source):
         lines=[dict(item_id=next(iter(matches)) if len(matches)==1 else None,barcode=str((raw.get('skus') or [''])[0]),sku=str(raw.get('chrtId',raw.get('chrtID')) or ''),offer_id=str(raw.get('article') or ''),quantity=1,mapping='matched' if len(matches)==1 else 'ambiguous' if matches else 'missing')]
         due=handed=None
     require(external and len(external)<=200,'Нет номера заказа площадки',422)
-    return dict(platform=platform,account=account,scheme=scheme,external_id=external,source_ref=str(ref),created_at=timestamp(created,platform=='wb' and source=='wb-statistics'),shipment_due=timestamp(due),handed_at=timestamp(handed),status=status,raw_status=raw_status,supplier_status=supplier_status,lines=lines,source=source,parent=raw.get('parent_posting_number') if platform=='ozon' else None)
+    return dict(platform=platform,account=account,scheme=scheme,external_id=external,source_ref=str(ref),created_at=timestamp(created,platform=='wb' and source=='wb-statistics'),shipment_due=timestamp(due),handed_at=timestamp(handed),status=status,raw_status=raw_status,supplier_status=supplier_status,lines=lines,source=source,parent=raw.get('parent_posting_number') if platform=='ozon' else None,order_number=str(raw.get('order_number') or raw.get('gNumber') or ''),order_id=str(raw.get('order_id') or raw.get('orderUid') or ''))
 
 
 def ingest(engine,platform,scheme,account,rows,source,observed_at=None,only_new=False):
@@ -98,10 +98,12 @@ def ingest(engine,platform,scheme,account,rows,source,observed_at=None,only_new=
             if old.get('status') in ('delivered','returned','cancelled') and d['status'] in PENDING and old.get('source')==d['source']:
                 d['status']=old['status'];d['raw_status']=old.get('raw_status');d['status_warning']='Площадка вернула более ранний статус; нужна сверка'
             if source=='wb-statistics' and old.get('sale_status') and not raw.get('isCancel'):d['status']=old['sale_status']
+            for field in ('created_at','parent','order_number','order_id','handed_at'):
+                if not d.get(field) and old.get(field):d[field]=old[field]
             history=list(old.get('history',[]))
             if not old or any(old.get(k)!=d.get(k) for k in ('status','raw_status','lines','scheme')):
                 history.append(dict(at=at,status=d['status'],raw_status=d['raw_status'],source=source));history=history[-100:]
-            data={**old,**d,'open_verified':bool(raw.get('_open_verified') or platform=='wb' and source=='wb-fbs' and raw.get('supplierStatus') in ('new','confirm') or old.get('open_verified')),'observed_at':at,'first_seen':old.get('first_seen',at),'history':history}
+            data={**old,**d,'status_verified':bool(raw.get('_status_verified') or platform=='wb' and source=='wb-fbs' and raw.get('supplierStatus') in ('new','confirm') or old.get('status_verified')),'observed_at':at,'first_seen':old.get('first_seen',at),'history':history}
             data['needs_mapping']=not d['lines'] or any(l['mapping']!='matched' or l['quantity'] is None for l in d['lines'])
             data['accounting_state']=old.get('accounting_state','unprocessed')
             if e:
