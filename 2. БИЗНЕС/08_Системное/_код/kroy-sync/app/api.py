@@ -34,7 +34,7 @@ def create_app(engine=None):
         if not length.isdigit() or int(length) > 2_000_000:
             return JSONResponse({'detail': 'Слишком большой запрос'}, status_code=413)
         response = await call_next(request)
-        response.headers['Cache-Control'] = 'no-store'
+        response.headers.setdefault('Cache-Control', 'no-store')
         response.headers['X-Content-Type-Options'] = 'nosniff'
         response.headers['Referrer-Policy'] = 'no-referrer'
         response.headers['Content-Security-Policy'] = "default-src 'self'; img-src 'self' https: data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'"
@@ -77,6 +77,23 @@ def create_app(engine=None):
                                'version': version.version if version else 1})
             return result
 
+    @app.get('/api/photos/{key}')
+    def public_product_photo(key: str):
+        import re
+        from .photos import photo_root, image_type, photo_key, cache_photo
+        if not re.fullmatch(r'[a-f0-9]{64}', key): raise HTTPException(404, 'Фото не найдено')
+        path = photo_root() / (key + '.img')
+        if not path.is_file():
+            with Session(engine) as s:
+                url = next((i.photo for i in s.scalars(select(Item)) if i.photo and photo_key(i.photo) == key), None)
+            if not url: raise HTTPException(404, 'Фото не найдено')
+            try: cached = cache_photo(url)
+            except Exception: raise HTTPException(503, 'Фото временно недоступно')
+            if cached is None: raise HTTPException(404, 'Фото недоступно')
+        with path.open('rb') as f: mime = image_type(f.read(16))
+        if not mime: raise HTTPException(404, 'Фото недоступно')
+        return FileResponse(path, media_type=mime, headers={'Cache-Control':'public, max-age=86400, immutable'})
+
     @app.get('/api/catalog')
     def catalog(user=Depends(auth)):
         with Session(engine) as s:
@@ -86,10 +103,19 @@ def create_app(engine=None):
                     'free': str(b.free) if b.known else None, 'frozen': str(b.frozen) if b.known else None,
                     'reserved': str(b.reserved) if b.known else None, 'damaged': str(b.damaged) if b.known else None,
                     'version': b.version})
+            from .photos import photo_preview
+            items = list(s.scalars(select(Item).order_by(Item.model, Item.color, Item.size)))
+            color_photos = {}
+            for i in items:
+                if i.photo: color_photos.setdefault((i.kind, i.model, i.color), set()).add(i.photo)
+            def preview(i):
+                urls = color_photos.get((i.kind, i.model, i.color), set())
+                url = i.photo or (next(iter(urls)) if len(urls) == 1 else '')
+                return photo_preview(url)
             return {'items': [{'id': i.id, 'name': i.name, 'model': i.model, 'color': i.color, 'size': i.size,
                        'category': i.category, 'kind': i.kind, 'unit': i.unit, 'barcodes': i.barcodes,
-                       'photo': i.photo, 'source': i.source, 'balances': balances.get(i.id, [])}
-                      for i in s.scalars(select(Item).order_by(Item.model, Item.color, Item.size))]}
+                       'photo': i.photo, 'photo_preview': preview(i), 'source': i.source, 'balances': balances.get(i.id, [])}
+                      for i in items]}
 
     @app.get('/api/entities/{kind}')
     def entities(kind: str, user=Depends(auth)):

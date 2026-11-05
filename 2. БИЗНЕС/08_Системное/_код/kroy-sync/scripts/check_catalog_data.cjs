@@ -1,0 +1,12 @@
+const fs=require('fs'),ts=require('../web/node_modules/typescript'),assert=require('node:assert/strict');
+const source=fs.readFileSync('web/src/catalogData.ts','utf8'),target={};
+new Function('exports',ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2021}}).outputText)(target);
+const sort=items=>[...items].sort(target.compareSizes);
+assert.deepEqual(sort(['XL','S','XXL','XS','M','L']),['XS','S','M','L','XL','XXL']);
+assert.deepEqual(sort(['104','86','92','98']),['86','92','98','104']);
+assert.deepEqual(sort(['50','42','46','44','48']),['42','44','46','48','50']);
+assert.deepEqual(sort(['S/M','XS','L/XL','M/L']),['XS','S/M','M/L','L/XL']);
+assert.deepEqual(sort(['M','4XS','2XS','3XL','XS','S']),['4XS','2XS','XS','S','M','3XL']);
+assert.deepEqual(sort(['','ONE SIZE','S','M']),['S','M','ONE SIZE','']);
+assert.equal(target.productCategory({kind:'garment',category:'YUJI',model:'Костюм двойка поло'}),'Костюмы');
+console.log('Size ordering and category grouping passed');

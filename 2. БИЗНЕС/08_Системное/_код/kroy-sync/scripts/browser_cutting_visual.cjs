@@ -48,7 +48,7 @@ const output='.runtime/cutting-visual';fs.mkdirSync(output,{recursive:true});
   await p.route('**/api/cutting/sales-refresh',r=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({status:'done',id:'local-fixture'})}));
   await p.getByRole('button',{name:'+ Задание',exact:true}).click();await screenshots('empty-editor');
   await p.locator('.cut-picker summary').first().click();await p.getByRole('button',{name:'Выбрать все варианты',exact:true}).click();await p.getByRole('button',{name:'Рассчитать потребность',exact:true}).click();
-  await p.getByLabel('Название задания',{exact:true}).fill('Пополнение базовой коллекции: лонгсливы для осенней поставки с очень длинным названием');
+  await p.getByLabel('Комментарий к заданию',{exact:true}).fill('Пополнение базовой коллекции: лонгсливы для осенней поставки с очень длинным названием');
   await p.getByLabel('К крою Лонг скимс S',{exact:true}).fill('38');await p.getByLabel('К крою Лонг скимс M',{exact:true}).fill('37');await p.getByLabel('Основание ручного расчёта или поправки').fill('Изолированный визуальный тест. Количества заданы вручную.');
   await p.locator('.cut-demand-table .cut-disclosure').first().evaluate(el=>el.open=true);await screenshots('demand');
   await p.getByRole('button',{name:'Далее →'}).click();await p.locator('.cut-auto-layout summary').click();

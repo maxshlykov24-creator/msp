@@ -211,6 +211,7 @@ def dispatch(s, doc, command, p):
         return {'id': e.id, 'version': e.version}
     if command in ('task.save', 'task.issue'):
         from .cutting import metadata, validate_issue
+        from .task_numbers import next_task_number
         from .db import now
         meta = metadata(s, p)
         products = lines(s, p['products'], 'garment', allow_empty=command == 'task.save')
@@ -222,7 +223,7 @@ def dispatch(s, doc, command, p):
         else:
             UUID(p.get('new_id', doc))
             e = create_entity(s, p.get('new_id', doc), 'task', {})
-            d = {'created_at': now().isoformat(), 'number': 'КР-' + doc[:8].upper(), 'facts': []}
+            d = {'created_at': now().isoformat(), 'number': next_task_number(s), 'facts': []}
         if command == 'task.issue':
             validate_issue(s, p, meta)
             require(materials, 'Укажи расход ткани')
@@ -236,9 +237,10 @@ def dispatch(s, doc, command, p):
         save(e, d)
         return {'id': e.id, 'version': e.version, 'status': d['status']}
     if command == 'task.create':
+        from .task_numbers import next_task_number
         products = lines(s, p['products'], 'garment')
         materials = lines(s, p['materials'], 'material', allow_empty=True)
-        e = create_entity(s, doc, 'task', {'title': p['title'], 'location': p['location'],
+        e = create_entity(s, doc, 'task', {'title': p['title'], 'location': p['location'], 'number': next_task_number(s),
                 'products': products, 'materials': materials, 'status': 'draft',
                 'remaining_products': products, 'remaining_materials': materials, 'facts': []})
         return {'id': e.id, 'version': e.version}

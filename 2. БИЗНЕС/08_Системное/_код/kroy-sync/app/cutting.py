@@ -88,6 +88,7 @@ def calculate(s, raw):
 
 def metadata(s, p):
     meta = dict(p.get('cutting') or {})
+    require(isinstance(meta.get('comment', ''), str) and len(meta.get('comment', '')) <= 4000, 'Комментарий: не более 4000 символов', 422)
     require(meta.get('schema') == 1, 'Неверный формат задания', 422)
     for key in ('due_on', 'available_on'):
         if meta.get(key): date.fromisoformat(meta[key])
