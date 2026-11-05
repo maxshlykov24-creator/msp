@@ -1521,7 +1521,24 @@ def mirror_autoru_line(chat_id: str | int, who: str, text: str, msg_id: str = ""
     store.save_doc(key, doc)
 
 
+def note_text_equal(left: str, right: str) -> bool:
+    # amoCRM HTML-escapes quotes in common notes on readback.
+    import html
+    return html.unescape(left) == html.unescape(right)
+
+
+_note_locks: dict[str, asyncio.Lock] = {}
+
+
 async def flush_notes(chat_id: str) -> None:
+    lock = _note_locks.setdefault(chat_id, asyncio.Lock())
+    if lock.locked():
+        return
+    async with lock:
+        await _flush_notes_locked(chat_id)
+
+
+async def _flush_notes_locked(chat_id: str) -> None:
     import time
     doc = store.load_doc(chat_id)
     state = doc.get("crm") or {}
@@ -1560,8 +1577,12 @@ async def flush_notes(chat_id: str) -> None:
                 store.save_doc(chat_id, doc)
             delivered = any(int(n["id"]) > row["before_id"] and
                             n.get("note_type") == "common" and
-                            (n.get("params") or {}).get("text") == row["text"] for n in notes)
+                            note_text_equal((n.get("params") or {}).get("text", ""), row["text"]) for n in notes)
             if not delivered:
+                if row.get("post_started"):
+                    raise RuntimeError("CRM note outcome uncertain; reconcile before retry")
+                row["post_started"] = time.time()
+                store.save_doc(chat_id, doc)
                 result = await asyncio.to_thread(amo_client.write, "/api/v4/leads/%s/notes" % lead_id, [{
                     "note_type": "common", "params": {"text": row["text"]},
                     "is_need_to_trigger_digital_pipeline": False,
@@ -1573,13 +1594,15 @@ async def flush_notes(chat_id: str) -> None:
                     notes.append({"id": saved["id"], "note_type": "common", "params": {"text": row["text"]}})
             # Confirm the exact content by a fresh GET before acknowledging.
             matches = [n for n in notes if int(n["id"]) > row["before_id"]
-                       and (n.get("params") or {}).get("text") == row["text"]]
+                       and note_text_equal((n.get("params") or {}).get("text", ""), row["text"])]
             if not matches:
                 raise RuntimeError("CRM note not confirmed")
             note_id = int(matches[-1]["id"])
+            row["note_id"] = note_id
+            store.save_doc(chat_id, doc)
             check_code, checked = await asyncio.to_thread(amo_client.request,
                 "/api/v4/leads/%s/notes/%s" % (lead_id, note_id))
-            if check_code != 200 or (checked or {}).get("params", {}).get("text") != row["text"]:
+            if check_code != 200 or not note_text_equal((checked or {}).get("params", {}).get("text", ""), row["text"]):
                 raise RuntimeError("CRM note readback failed")
             doc = store.load_doc(chat_id)
             state = doc.setdefault("crm", {})

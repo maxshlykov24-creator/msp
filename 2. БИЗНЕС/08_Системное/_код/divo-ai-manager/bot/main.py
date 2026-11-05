@@ -1028,8 +1028,8 @@ async def _generate(history: list[dict], chat_id: str = "") -> str:
         doc = store.load_doc(chat_id) if chat_id else {}
         alert = (doc.get("crm") or {}).get("alert") or {}
         if alert.get("tg") and not (doc.get("crm") or {}).get("handoff_pending"):
-            return "Номер принял. Передал менеджеру запрос на звонок."
-        return "Номер получил. Передаю запрос на звонок менеджеру."
+            return "Номер получил. Передал коллеге ваш запрос."
+        return "Номер получил."
     doc = store.load_doc(chat_id) if chat_id else {}
     last = history[-1].get("content", "") if history else ""
     prior = history[:-1]

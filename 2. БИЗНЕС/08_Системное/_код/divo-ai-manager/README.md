@@ -483,3 +483,13 @@ OpenClaw-агент, который через Telegram квалифицируе
 Финальная живая проверка: divo-ai-bot active/running, NRestarts=0 после последнего запуска; успешные опросы обеих площадок, ERROR/Traceback в последних 180 строках нет. Основная модель и тестовый Haiku не менялись.
 
 Доказательства и резервные копии на VPS: /root/divo-ai-manager/99_АРХИВ/takeover-20261105/ — candidates.json, older-candidates.json, verified-offers.json, execution-before/, send-journal.json, results.json, final-check.json. Полные переписки и телефоны хранятся только в закрытой серверной папке. Перед каждой выборочной обработкой основной процесс кратко останавливался, чтобы исключить параллельную отправку; запуск восстановлен в finally.
+
+## 2026-11-05: stability first stage, not complete
+
+Confirmed duplication cause in lead 47175090: amoCRM returns HTML-escaped quotes, so literal readback comparison rejected a successful write. Backup: /root/divo-ai-manager/99_АРХИВ/stability-20261105/. Deployed canonical HTML comparison, per-chat note worker lock, durable POST intent and returned note ID. An uncertain write without a reconciled result does not automatically POST again. The affected queue is now empty. Two live checks show the same 112 historical duplicates; none deleted. Local suite: 92 passing tests including escaped-text reconciliation without POST.
+
+Deployed visit policy changes: contact is not required to answer or acknowledge a proposed visit; no unsolicited video offer to collect a phone. Generic phone acknowledgement no longer promises a call. Model and Haiku unchanged. Live service active/running, NRestarts=0.
+
+Official GET /api/v4/contacts/chats returned zero chats for contacts in leads 47175090 and 47174258. The previously tried nested /contacts/{id}/chats endpoint was incorrect; its 404 was not evidence. No chat binding repaired yet.
+
+Remaining approved work: verified provider-to-CRM binding and manager delivery path, webhook role and delivery semantics, independent queues and stale-state protection, full inbound reconciliation and selective recovery, monitoring, authorized test chats and a full working day observation. User asked to identify test chats. Current stage does not constitute completion of the stability plan or proof of conversational quality on live traffic.

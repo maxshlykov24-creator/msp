@@ -3695,3 +3695,28 @@ def test_nov05_review_send_no_duplicate_or_stale_reply():
             await send_reviewed(channel,cid,'Третий',fresh,reader,journal)
             assert channel.send.call_count==1
     asyncio.run(run())
+
+
+def test_nov05_crm_escaped_quotes_readback():
+    from bot import crm
+    assert crm.note_text_equal('Кузов "не битый"', 'Кузов &quot;не битый&quot;')
+    assert not crm.note_text_equal('Не битый', 'Битый')
+
+
+def test_nov05_existing_escaped_note_is_not_posted_again():
+    import asyncio
+    from unittest.mock import patch, Mock
+    from tools.rehearse import Sandbox
+    from bot import crm, store
+    async def run():
+        with Sandbox():
+            cid = "av:escaped-regression"
+            store.save_doc(cid, {"crm": {"note_pending": [{"id": "transcript:1", "text": 'Кузов "не битый"', "lead_id": 321, "before_id": 10}]}})
+            note = {"id": 12, "note_type": "common", "params": {"text": "Кузов &quot;не битый&quot;"}}
+            def request(path, *args, **kwargs):
+                return (200, note) if path.endswith('/12') else (200, {"_embedded": {"notes": [note]}})
+            with patch.object(crm, "_note_lead", return_value=321), patch.object(crm.amo_client, "request", side_effect=request), patch.object(crm.amo_client, "write") as post:
+                await crm.flush_notes(cid)
+                assert not store.load_doc(cid)["crm"]["note_pending"]
+                post.assert_not_called()
+    asyncio.run(run())
