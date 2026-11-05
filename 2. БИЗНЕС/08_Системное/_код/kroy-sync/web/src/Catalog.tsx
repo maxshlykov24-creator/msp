@@ -5,7 +5,7 @@ import {ItemPhoto} from './ItemPhoto';
 import {ProductFilters,StockSummary,useProductFilters} from './ProductFilters';
 type Item=Record<string,any>;
 const fmt=(n:number|null)=>n===null?'—':n.toLocaleString('ru-RU');
-export function Catalog({items,locations,location,canFreeze,onFreeze,onCount}:{items:Item[];locations:string[];location:string;canFreeze?:boolean;onFreeze?:(item:Item)=>void;onCount?:()=>void}){
+export function Catalog({items,locations,location,canFreeze,onFreeze,onCount}:{items:Item[];locations:string[];location:string;canFreeze?:boolean;onFreeze?:(item:any)=>void;onCount?:()=>void}){
  const chosen=location||locations[0]||'';
  const f=useProductFilters(items,chosen);
  const[expanded,setExpanded]=useState<Set<string>>(new Set()),[closed,setClosed]=useState<Set<string>>(new Set()),[picked,setPicked]=useState<Item|null>(null);

@@ -19,3 +19,7 @@ main{padding:36px 40px;max-width:1540px;width:100%;margin:0 auto;align-self:star
 .staff-row>.choice{flex:0 0 200px}
 @media(max-width:700px){.staff-row>.choice{flex:1;min-width:150px}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;scroll-behavior:auto!important}}
+@media(max-width:900px){.sidebar nav button{flex-direction:column;gap:2px;height:auto;min-height:48px;padding:6px 4px}.sidebar nav button span,.rail-compact .sidebar nav button span{display:block;font-size:9px;line-height:1.15;font-weight:550;max-width:72px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.profile>.theme-pill{display:none}}
+@media(max-width:600px){.sidebar,.rail-compact .sidebar{height:auto;min-height:74px}.sidebar nav button,.rail-compact .sidebar nav button{height:auto;width:auto;min-width:0;padding:6px 2px;flex-direction:column}.sidebar nav button span{display:block}}
+label.check{flex-direction:row;align-items:center;gap:8px;margin:0 0 16px}
+.tech-details{margin-top:18px}.tech-details summary{cursor:pointer;font-weight:600}
