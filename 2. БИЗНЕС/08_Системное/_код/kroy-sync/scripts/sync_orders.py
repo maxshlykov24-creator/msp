@@ -20,9 +20,10 @@ with (ROOT/'orders-reader.lock').open('a') as lock:
   state=sync_state(engine)
   if 'accounting-start' not in state:set_sync(engine,'accounting-start',at=now().isoformat())
   request=state.get('request',{});requested=request.get('requested_at','')>request.get('handled_at','')
-  quick=not watch or time.time()-last>=900
-  due=watch and not quick and reports_due(state,now())
-  if quick or due:
+  # Current FBS and open Ozon only. Statistics and sales stay on their own limits.
+  quick=not watch or time.time()-last>=300
+  due=reports_due(state,now())
+  if quick or (watch and due):
    set_sync(engine,'cycle',state='running',started_at=now().isoformat())
    try:
     with transaction(engine) as s:
@@ -31,7 +32,7 @@ with (ROOT/'orders-reader.lock').open('a') as lock:
     age=(now()-datetime.fromisoformat(last_deep)).total_seconds() if last_deep else 999999
     deep=quick and (not watch or age>=21600)
     if deep:set_sync(engine,'cycle',deep_attempt_at=now().isoformat())
-    result=run(engine,os.environ,history_steps=12 if '--backfill' in sys.argv else 1,deep=deep,reports=True,current=quick,on_current=(lambda:reconcile(engine,location)) if location else None)
+    result=run(engine,os.environ,history_steps=12 if '--backfill' in sys.argv else 1,deep=deep,reports=bool(due or deep),current=quick,on_current=(lambda:reconcile(engine,location)) if location else None)
     if location:accounting=reconcile(engine,location)
     else:accounting={'error':'Не задан склад нашего учёта'}
     bad=any(v.get('state') in ('error','waiting') for k,v in result.items() if k not in ('cycle','request','wb-identity'))
