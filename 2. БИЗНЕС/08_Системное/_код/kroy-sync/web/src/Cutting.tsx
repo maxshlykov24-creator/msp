@@ -4,7 +4,7 @@ import './Cutting.css';
 import {compareSizes,compareVariants,productCategory,photoCandidates} from './catalogData';
 import {ItemPhoto as Photo} from './ItemPhoto';
 import {ProductFilters,StockSummary,useProductFilters} from './ProductFilters';
-import {modelStock} from './catalogData';
+import {modelStock, words} from './catalogData';
 type Row = Record<string, any>;
 type Api = (path: string, body?: any) => Promise<any>;
 const states: Record<string, string> = { draft: 'Черновик', approved: 'Выдано', partial: 'Частично выполнено', complete: 'Завершено', cancelled: 'Отменено' };
@@ -15,6 +15,8 @@ const shift = (days: number) => { const d = new Date(today() + 'T12:00:00Z'); d.
 const defaults = () => ({ start: shift(-14), end: shift(-1), horizon: 28, target_date: shift(28), include_uncertain: [] as string[] });
 const errorText = (e: unknown) => e instanceof Error ? e.message : String(e);
 const unitLabel = (i?: Row) => i?.unit === 'roll' ? 'рул.' : i?.unit === 'meter' ? 'м' : 'шт.';
+const foldName = (value: string) => value.trim().toLocaleLowerCase('ru');
+const normFor = (model: string, norms: Record<string, number>) => Object.keys(norms).find(name => foldName(name) === foldName(model)) || '';
 const dateText = (value?: string) => value ? new Date(value + 'T12:00:00Z').toLocaleDateString('ru-RU') : 'Не указан';
 function CutSection({ title, description, action, children, className = '' }: {
     title: string;
@@ -86,12 +88,15 @@ function CutEditor({ api, items, locations, users, existing, close, saved }: {
     useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }); }, [step]);
     const garments = items.filter(i => i.kind === 'garment').sort(compareVariants), materials = items.filter(i => i.kind === 'material');
     useEffect(() => { api('norms').then(r => setNorms(r.values)).catch(() => { }); }, []);
+    useEffect(() => { if (!Object.keys(norms).length) return; setGroups(current => { let touched = false; const next = current.map(g => { if (g.norm) return g; const match = normFor(g.model, norms); if (!match) return g; touched = true; return { ...g, norm: match }; }); return touched ? next : current; }); }, [norms]);
     useEffect(() => { const f = (e: BeforeUnloadEvent) => { if (dirty) {
         e.preventDefault();
         e.returnValue = '';
     } }; window.addEventListener('beforeunload', f); return () => window.removeEventListener('beforeunload', f); }, [dirty]);
     useEffect(() => { const guard = (e: Event) => { if(dirty){e.preventDefault();confirmAction('Выйти из задания?','Есть несохранённые изменения.','Выйти без сохранения').then(ok=>{if(ok){setDirty(false);(e as CustomEvent).detail?.retry?.()}})} }; window.addEventListener('yuji:before-navigation', guard); return () => window.removeEventListener('yuji:before-navigation', guard); }, [dirty]);
     const byId = (id: string) => items.find(i => i.id === id)!;
+    const taskModels = [...new Set(selected.map(id => byId(id)?.model).filter(Boolean))];
+    const catalogModels = new Set(garments.map(i => i.model)).size;
     const orderedIds=(ids:string[])=>[...ids].sort((a,b)=>compareVariants(byId(a),byId(b)));
     const productFilters=useProductFilters(garments,location);
     const [comment,setComment]=useState(old.comment||existing?.comment||'');
@@ -131,7 +136,7 @@ function CutEditor({ api, items, locations, users, existing, close, saved }: {
     } }
     function applyRecommendations() { if (!calc)
         return; changed(); setManualQty(ids=>ids.filter(id=>calc.rows.find((r:Row)=>r.item_id===id)?.recommendation==null)); setQty(Object.fromEntries(calc.rows.slice().sort((a:Row,b:Row)=>compareVariants(byId(a.item_id),byId(b.item_id))).map((r: Row) => [r.item_id, r.recommendation == null ? (qty[r.item_id] || '') : String(r.recommendation)]))); setGroups([]); }
-    function addGroup() { changed(); setGroups([...groups, { id: crypto.randomUUID(), model: byId(selected[0])?.model || '', ratio: '', material: '', quantity: '', products: {}, norm: '', preliminary: true }]); }
+    function addGroup() { const model = byId(selected[0])?.model || ''; changed(); setGroups([...groups, { id: crypto.randomUUID(), model, ratio: '', material: '', quantity: '', products: {}, norm: normFor(model, norms), preliminary: true }]); }
     function updateGroup(index: number, key: string, value: any) { changed(); setGroups(groups.map((g, i) => i === index ? { ...g, [key]: value } : g)); }
     const productTotals = groups.reduce((out: Record<string, number>, g) => { Object.entries(g.products || {}).forEach(([id, q]) => { out[id] = (out[id] || 0) + Number(q); }); return out; }, {});
     const materialTotals = groups.reduce((out: Record<string, number>, g) => { if (g.material)
@@ -196,7 +201,8 @@ function CutEditor({ api, items, locations, users, existing, close, saved }: {
    </>}
    {step === 1 && <CutSection title="Раскладки задания" description="Объединяй цвета одной модели с одинаковым распределением размеров.">
     <LayoutBuilder api={api} selected={orderedIds(selected).map(byId).filter(i => Number(qty[i.id]) > 0)} qty={qty} materials={materials} norms={norms} location={location} add={g => { changed(); setGroups([...groups, ...g]); }}/>
-    {groups.map((g, index) => <section className="cut-layout" key={g.id}><div className="cut-layout-heading"><div><span className="cut-eyebrow">Крой {String(index + 1).padStart(2, '0')}</span><h4>{g.model}</h4></div><button className="text-button" onClick={() => { changed(); setGroups(groups.filter((_, i) => i !== index)); }}>Убрать крой</button></div><div className="cut-form-grid"><label>Модель<Choice label="Модель" value={g.model} onChange={e => { changed(); setGroups(groups.map((x, i) => i === index ? { ...x, model: e.target.value, products: {} } : x)); }}>{[...new Set(selected.map(id => byId(id).model))].map(m => <option key={m}>{m}</option>)}</Choice></label><label>Соотношение размеров<input placeholder="Например, 50% S · 50% M" value={g.ratio} onChange={e => updateGroup(index, 'ratio', e.target.value)}/></label><label>Ткань<Choice label="Ткань" value={g.material} onChange={e => updateGroup(index, 'material', e.target.value)}><option value="">Выбери материал</option>{materials.map(m => <option key={m.id} value={m.id}>{m.name} · {unitLabel(m)}</option>)}</Choice></label><label>Расход{g.material ? ' · ' + unitLabel(byId(g.material)) : ''}<input aria-label="Расход" type="number" min="0" step={byId(g.material)?.unit === 'roll' ? '1' : '0.001'} value={g.quantity} onChange={e => updateGroup(index, 'quantity', e.target.value)}/></label></div><div className="cut-subsection"><h4>Плановый выпуск</h4><div className="cut-quantity-grid">{orderedIds(selected).map(byId).filter(i => i.model === g.model && Number(qty[i.id]) > 0).map(i => <label key={i.id}><span>{i.color}<span className="cut-size">{i.size}</span></span><input aria-label={i.color + ' · ' + i.size} type="number" min="0" step="1" value={g.products[i.id] || ''} onChange={e => updateGroup(index, 'products', { ...g.products, [i.id]: e.target.value })}/></label>)}</div></div></section>)}
+    <p className="cut-hint">В задании {words(taskModels.length, 'модель', 'модели', 'моделей')}, в каталоге {words(catalogModels, 'модель', 'модели', 'моделей')}. Список модели в карточке берётся из шага «Товары». Выход с рулона — отдельный список Жени от 23.10: штуки с целого рулона, не метры ткани и не доля размеров.</p>
+    {groups.map((g, index) => <section className="cut-layout" key={g.id}><div className="cut-layout-heading"><div><span className="cut-eyebrow">Крой {String(index + 1).padStart(2, '0')}</span><h4>{g.model}</h4></div><button className="text-button" onClick={() => { changed(); setGroups(groups.filter((_, i) => i !== index)); }}>Убрать крой</button></div><div className="cut-form-grid"><label>Модель в задании<Choice label="Модель в задании" value={g.model} onChange={e => { const model = e.target.value; changed(); setGroups(groups.map((x, i) => i === index ? { ...x, model, products: {}, norm: normFor(model, norms) } : x)); }}>{taskModels.map(m => <option key={m}>{m}</option>)}</Choice></label><label>Выход с рулона<Choice label="Выход с рулона" value={g.norm || ''} onChange={e => updateGroup(index, 'norm', e.target.value)}><option value="">Выбери норму Жени</option>{Object.entries(norms).map(([name, qty]) => <option key={name} value={name}>{name} · {qty} шт. с рулона</option>)}</Choice></label><label>Доля размеров<input aria-label="Доля размеров" placeholder="Например, 50% S · 50% M" value={g.ratio} onChange={e => updateGroup(index, 'ratio', e.target.value)}/></label><label>Ткань<Choice label="Ткань" value={g.material} onChange={e => updateGroup(index, 'material', e.target.value)}><option value="">Выбери материал</option>{materials.map(m => <option key={m.id} value={m.id}>{m.name} · {unitLabel(m)}</option>)}</Choice></label><label>Расход{g.material ? ' · ' + unitLabel(byId(g.material)) : ''}<input aria-label="Расход" type="number" min="0" step={byId(g.material)?.unit === 'roll' ? '1' : '0.001'} value={g.quantity} onChange={e => updateGroup(index, 'quantity', e.target.value)}/></label></div><p className="cut-hint">{g.norm && norms[g.norm] ? norms[g.norm] + ' шт. с целого рулона. Это не метры ткани и не доля размеров.' : 'Норма Жени — штуки с целого рулона. К ткани и размерам она не привязана.'}{byId(g.material)?.unit === 'meter' ? ' Ткань в каталоге в метрах, норму в метры не переводим: длины рулона нет.' : ''}</p><div className="cut-subsection"><h4>Плановый выпуск</h4><div className="cut-quantity-grid">{orderedIds(selected).map(byId).filter(i => i.model === g.model && Number(qty[i.id]) > 0).map(i => <label key={i.id}><span>{i.color}<span className="cut-size">{i.size}</span></span><input aria-label={i.color + ' · ' + i.size} type="number" min="0" step="1" value={g.products[i.id] || ''} onChange={e => updateGroup(index, 'products', { ...g.products, [i.id]: e.target.value })}/></label>)}</div></div></section>)}
     {!groups.length && <div className="cut-inline-empty">Подбери раскладки автоматически или добавь ручной крой.</div>}
     <div className="cut-button-row"><button className="secondary" onClick={addGroup}>+ Ручной крой</button></div>
    </CutSection>}
@@ -257,9 +263,10 @@ function LayoutBuilder({ api, selected, qty, materials, norms, location, add }: 
         }
     } add(groups); setResult(null); }
     const rollMaterials = materials.filter(m => m.unit === 'roll');
-    if(!rollMaterials.length)return <CutNotice>Рулоны не внесены. Добавь ручной крой ниже.</CutNotice>;
-    return <details className="cut-auto-layout"><summary><span className="cut-auto-icon"><Icon name="planning" size={19}/></span><span><strong>Подобрать раскладки</strong><small>По потребности, доступной ткани и нормам</small></span><Icon name="down" size={17}/></summary><div className="cut-auto-body">
-  <div className="cut-form-grid"><label>Модель<Choice label="Модель для подбора" value={model} onChange={e => { setModel(e.target.value); setBindings({}); setResult(null); setRatios(''); }}>{models.map(m => <option key={m}>{m}</option>)}</Choice></label><label>Норма выхода с рулона<Choice label="Норма выхода" value={norm} onChange={e => { setNorm(e.target.value); setResult(null); }}><option value="">Сопоставь модель с нормой</option>{Object.entries(norms).map(([m, q]) => <option key={m} value={m}>{m} · {q} шт.</option>)}</Choice></label></div>
+    return <details className="cut-auto-layout"><summary><span className="cut-auto-icon"><Icon name="planning" size={19}/></span><span><strong>Подобрать раскладки</strong><small>{rollMaterials.length ? 'По потребности, доступной ткани и нормам' : 'Для автоподбора нужна ткань с учётом в целых рулонах.'}</small></span><Icon name="down" size={17}/></summary><div className="cut-auto-body">
+  {!rollMaterials.length && <CutNotice>Для автоподбора нужна ткань с учётом в целых рулонах. Сейчас ткань учтена в метрах. Норма Жени задаёт штуки с целого рулона, длины рулона нет, поэтому в метры она не переводится. Выбери выход с рулона в карточке кроя.</CutNotice>}
+  {!!rollMaterials.length && <>
+  <div className="cut-form-grid"><label>Модель<Choice label="Модель для подбора" value={model} onChange={e => { setModel(e.target.value); setBindings({}); setResult(null); setRatios(''); }}>{models.map(m => <option key={m}>{m}</option>)}</Choice></label><label>Норма Жени<Choice label="Норма Жени" value={norm} onChange={e => { setNorm(e.target.value); setResult(null); }}><option value="">Сопоставь модель с нормой</option>{Object.entries(norms).map(([m, q]) => <option key={m} value={m}>{m} · {q} шт.</option>)}</Choice></label></div>
   <div className="cut-subsection"><h4>Ткань по цветам</h4><div className="cut-form-grid">{colors.map(c => <label key={c}>{c || 'Цвет не указан'}<Choice label={'Ткань · ' + (c || 'Цвет не указан')} value={bindings[c] || ''} onChange={e => { setBindings({ ...bindings, [c]: e.target.value }); setResult(null); }}><option value="">Выбери рулоны</option>{rollMaterials.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}</Choice></label>)}</div></div>
   {norm && Object.values(bindings).some(Boolean) && <label>Допустимые соотношения: {sizes.join(' : ')}<textarea value={ratios} onChange={e => { setRatios(e.target.value); setResult(null); }} placeholder="Каждая раскладка с новой строки, например 1:1:0"/><span className="cut-hint">Укажи только допустимые для ткани соотношения. Норма даёт предварительный выход.</span></label>}
   {error && <CutNotice error>{error}</CutNotice>}
@@ -268,6 +275,7 @@ function LayoutBuilder({ api, selected, qty, materials, norms, location, add }: 
         string,
         any
     ]) => <div key={color}><span className="cut-eyebrow">{color}</span><strong>{row.rolls} <small>рул.</small></strong><p>{Object.entries(row.output).sort(([a],[b])=>compareSizes(a,b)).map(([size, q]) => size + ' — ' + q + ' шт.').join(' · ')}</p></div>)}</div><div className="cut-button-row"><button onClick={accept}>Добавить в задание</button></div></>}</div>}
+  </>}
  </div></details>;
 }
 function CutDocument({ api, task, items, users, canPlan, canCut, canAdjust, refresh, close, edit }: {
