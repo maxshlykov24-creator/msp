@@ -125,7 +125,7 @@ def logout(request: Request):
 @app.get("/api/state")
 def state(request: Request):
     person = actor(request)
-    return {**flow.view(), "actor": person}
+    return {**flow.view(person), "actor": person}
 
 
 @app.post("/api/refresh")
@@ -138,23 +138,67 @@ def refresh(request: Request):
 
 @app.post("/api/wave")
 def wave(body: Wave, request: Request):
-    return flow.wave(actor(request), body.ids, body.cart)
+    return flow.wave(actor(request), body.ids, body.cart, body.picker)
+
+
+def _blocked(person, job, action, exc):
+    with flow.db() as db:
+        flow.event(db, person, job, "blocked_" + action, str(exc))
+    raise exc
 
 
 @app.post("/api/action")
 def action(body: Action, request: Request):
     person = actor(request)
     try:
-        return flow.action(person, body.job, body.action, body.code, body.target)
+        return flow.action(person, body.job, body.action, body.code, body.target, body.request_id)
     except ReadError as exc:
-        with flow.db() as db:
-            flow.event(db, person, body.job, 'blocked_' + body.action, str(exc))
-        raise
+        _blocked(person, body.job, body.action, exc)
 
 
-@app.post('/api/station-scan')
+@app.post("/api/pick-scan")
+def pick_scan(body: PickScan, request: Request):
+    person = actor(request)
+    try:
+        return flow.pick_scan(person, body.wave, body.code, body.request_id)
+    except ReadError as exc:
+        _blocked(person, body.wave, "pick", exc)
+
+
+@app.post("/api/station-scan")
 def station_scan(body: StationScan, request: Request):
-    return flow.station_scan(actor(request), body.wave, body.code)
+    person = actor(request)
+    try:
+        return flow.station_scan(person, body.wave, body.code, body.request_id)
+    except ReadError as exc:
+        _blocked(person, body.wave, "station", exc)
+
+
+@app.post("/api/accept-cart")
+def accept_cart(body: AcceptCart, request: Request):
+    person = actor(request)
+    try:
+        return flow.accept_cart(person, body.cart, body.request_id)
+    except ReadError as exc:
+        _blocked(person, "", "accept", exc)
+
+
+@app.post("/api/claim")
+def claim(body: Claim, request: Request):
+    person = actor(request)
+    try:
+        return flow.claim(person, body.wave, body.request_id)
+    except ReadError as exc:
+        _blocked(person, body.wave, "claim", exc)
+
+
+@app.post("/api/resolve")
+def resolve(body: Resolve, request: Request):
+    person = actor(request)
+    try:
+        return flow.resolve(person, body.job, body.decision, body.reason, body.request_id)
+    except ReadError as exc:
+        _blocked(person, body.job, "resolve", exc)
 
 
 @app.get('/proposal')
