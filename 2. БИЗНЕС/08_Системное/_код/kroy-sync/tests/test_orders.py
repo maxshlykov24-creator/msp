@@ -304,3 +304,25 @@ def test_conflicting_marketplace_barcode_is_never_guessed(setup):
   rows=list(s.scalars(select(Entity).where(Entity.kind=='mapping')))
   assert all(r.data['state']=='ambiguous' for r in rows)
   assert not barcode_matches(s,'shared')
+
+
+def test_owner_can_bind_unmapped_identity_once_without_moving_stock(setup):
+ engine,_,cmd=setup
+ ingest(engine,'wb','fbo','seller',[dict(srid='a',date=now().isoformat(),barcode='new-alias',isCancel=False),dict(srid='b',date=now().isoformat(),barcode='new-alias',isCancel=False)],'wb-statistics')
+ e=market(engine);before=count(engine,Movement);op=str(uuid4());payload=dict(id=e.id,version=e.version,line=0,item_id='s')
+ result=cmd('market.order.map',payload,op);assert result['changed_orders']==2
+ assert cmd('market.order.map',payload,op)==result
+ assert count(engine,Movement)==before
+ with Session(engine) as s:assert not any(r.data['needs_mapping'] for r in s.scalars(select(Entity).where(Entity.kind=='market_order')))
+ ingest(engine,'wb','fbo','seller',[dict(srid='c',date=now().isoformat(),barcode='new-alias',isCancel=False)],'wb-statistics')
+ with Session(engine) as s:
+  e=s.get(Entity,stable_id('wb','seller','fbo','c'));assert e.data['lines'][0]['item_id']=='s'
+
+
+def test_manual_ozon_identity_is_also_used_for_normalized_sales(setup):
+ from app.sales import catalog_links
+ engine,_,cmd=setup
+ ingest(engine,'ozon','fbs','seller',[dict(posting_number='manual',status='delivered',in_process_at=now().isoformat(),products=[dict(sku=999,quantity=1,offer_id='external')])],'ozon-fbs')
+ e=market(engine);cmd('market.order.map',dict(id=e.id,version=e.version,line=0,item_id='m'))
+ skus,covered,absent,proof=catalog_links(engine,dict(at=now().isoformat(),complete=True,items=[dict(id=10,barcodes=['unknown'],sources=[{'sku':999}])]))
+ assert skus['999']==['m'] and 'm' in covered and 'm' not in absent

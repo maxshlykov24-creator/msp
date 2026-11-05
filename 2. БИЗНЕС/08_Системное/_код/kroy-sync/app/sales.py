@@ -161,6 +161,12 @@ def mappings(engine):
             if d['platform']=='ozon':
                 for candidate in d['candidates']:
                     for sku in candidate.get('skus',[]):skus[str(sku)].add(d['item_id'])
+        for e in s.scalars(select(Entity).where(Entity.kind=='market_identity')):
+            d=e.data
+            if d['identity_kind']=='barcode':
+                if d['item_id'] not in codes.setdefault(d['value'],[]):codes[d['value']].append(d['item_id'])
+                if d['platform']=='wb':covered['wb'].add(d['item_id'])
+            elif d['identity_kind']=='ozon_sku':skus[d['value']].add(d['item_id']);covered['ozon'].add(d['item_id'])
     # One external SKU cannot be assigned to multiple local variants.
     ambiguous={iid for values in skus.values() if len(values)!=1 for iid in values}
     covered['ozon']-=ambiguous
@@ -269,10 +275,15 @@ def catalog_links(engine, catalog):
         codes=defaultdict(set)
         for item in items:
             for code in item.barcodes:codes[str(code)].add(item.id)
-        skus=defaultdict(set);covered=set();matched_products=0
+        skus=defaultdict(set);covered=set();matched_products=0;manual=defaultdict(set)
+        for e in s.scalars(select(Entity).where(Entity.kind=='market_identity')):
+            if e.data['identity_kind']=='ozon_sku':manual[e.data['value']].add(e.data['item_id'])
+        for sku,ids in manual.items():
+            skus[sku]|=ids
+            if len(ids)==1:covered|=ids
         for product in catalog['items']:
-            matches=set().union(*(codes.get(str(c),set()) for c in product.get('barcodes')or[]))
             product_skus={str(v['sku']) for v in product.get('sources')or[] if v.get('sku')}
+            matches=set().union(*(codes.get(str(c),set()) for c in product.get('barcodes')or[]))|set().union(*(manual.get(sku,set()) for sku in product_skus))
             if len(matches)!=1 or not product_skus:continue
             iid=next(iter(matches));matched_products+=1;covered.add(iid)
             for sku in product_skus:skus[sku].add(iid)

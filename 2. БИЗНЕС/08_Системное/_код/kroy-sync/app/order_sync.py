@@ -220,7 +220,7 @@ def run(engine,env,history_steps=1,on_current=None,deep=True):
         with transaction(engine) as s:
             for e in s.scalars(select(Entity).where(Entity.kind=='market_order',Entity.data['platform'].as_string()=='wb',Entity.data['scheme'].as_string()=='fbs')):
                 d=e.data
-                if d['source']=='wb-fbs' and d['account']==account and (d['status'] not in ('cancelled','returned','delivered') or (d.get('created_at') or '')>=(at-timedelta(days=30)).isoformat()):tracked.append(dict(id=int(d['external_id']),rid=d['source_ref'],createdAt=d['created_at'],skus=[l['barcode'] for l in d['lines'] if l.get('barcode')],article=d['lines'][0].get('offer_id','') if d['lines'] else ''))
+                if d['source']=='wb-fbs' and d['account']==account and (d['status'] not in ('cancelled','returned','delivered') or (d.get('created_at') or '')>=(at-timedelta(days=30)).isoformat()):tracked.append(dict(id=int(d['external_id']),chrtId=d['lines'][0].get('sku') if d['lines'] else None,rid=d['source_ref'],createdAt=d['created_at'],skus=[l['barcode'] for l in d['lines'] if l.get('barcode')],article=d['lines'][0].get('offer_id','') if d['lines'] else ''))
         merged={r['id']:r for r in tracked};merged.update({r['id']:r for r in rows});merged.update({r['id']:r for r in fresh or []})
         statuses=wb_statuses(wb,list(merged))
         ingest(engine,'wb','fbs',account,[{**r,**statuses[r['id']],'_status_verified':True} for r in merged.values()],'wb-fbs')

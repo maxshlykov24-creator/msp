@@ -44,6 +44,9 @@ def index(s):
             else:
                 variants[str(c.get('variant_id'))].add(d['item_id'])
                 for code in c.get('market_barcodes',[]):codes[str(code)].add(d['item_id'])
+    for e in s.scalars(select(Entity).where(Entity.kind=='market_identity')):
+        d=e.data;target=codes if d['identity_kind']=='barcode' else skus if d['identity_kind']=='ozon_sku' else variants
+        target[d['value']].add(d['item_id'])
     # Fresh sales-verified identities include archived SKUs.
     for e in s.scalars(select(Entity).where(Entity.kind=='sales_window')):
         if e.data.get('platform')!='ozon' or not e.data.get('verified'):continue

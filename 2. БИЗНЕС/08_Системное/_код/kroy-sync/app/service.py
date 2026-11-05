@@ -14,7 +14,7 @@ PERMISSIONS = {
     'cutter': {'cut'}, 'viewer': set(),
 }
 COMMAND_RIGHT = {
-    'market.order.apply': 'orders',
+    'market.order.apply': 'orders', 'market.order.map': 'catalog',
     'task.save': 'cut_plan', 'task.issue': 'cut_plan', 'item.create': 'catalog', 'item.update': 'catalog', 'user.create': 'settings', 'user.update': 'settings', 'norm.set': 'settings', 'telegram.link': 'settings', 'stock.adjust': 'adjust', 'freeze.create': 'freeze',
     'freeze.release': 'freeze', 'freeze.extend': 'freeze', 'freeze.configure': 'settings', 'task.create': 'cut_plan',
     'task.reverse_fact': 'adjust', 'order.reserve': 'orders', 'fbo.reserve': 'orders', 'fbo.resolve': 'adjust', 'task.approve': 'cut_plan', 'task.revise': 'cut_plan', 'task.confirm': 'cut', 'task.cancel': 'cut_plan',
@@ -157,6 +157,9 @@ def execute(engine, user, op_id, command, payload, reason):
 
 
 def dispatch(s, doc, command, p):
+    if command == 'market.order.map':
+        from .product_identity import bind_order_item
+        return bind_order_item(s, doc, p)
     if command == 'market.order.apply':
         from .order_accounting import apply
         return apply(s, doc, p)
