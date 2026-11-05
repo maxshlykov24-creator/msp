@@ -66,7 +66,7 @@ def test_store_variants_never_guess():
     assert m.render(lead(),rule(variants={'default':'общий'}))=='общий'
 
 
-@pytest.mark.parametrize('source,expected',[(None,['max','telegram','whatsapp']),('whatsapp',['whatsapp','max','telegram']),('instagram',['max','telegram','whatsapp','instagram']),('vk',['max','telegram','whatsapp'])])
+@pytest.mark.parametrize('source,expected',[(None,['max','telegram','whatsapp']),('whatsapp',['whatsapp','max','telegram']),('instagram',['max','telegram','whatsapp','instagram']),('vk',['max','telegram','whatsapp','vk'])])
 def test_configurable_routing(source,expected):
     assert order_for(source,{'order':['max','telegram','whatsapp'],'previous_first':True,'social_fallback':True})==expected
 
@@ -685,3 +685,15 @@ def test_saved_rejection_recovers_after_crash(db,transport,code,expected):
     a.state='inflight';a.reason='';j.state='inflight';db.commit()
     m.reconcile(db)
     assert a.state=='error' and a.reason==code and j.state==expected
+
+
+def test_vk_dispatch_without_phone_and_callback(db,transport,monkeypatch):
+    monkeypatch.setattr(m,'make_plan',lambda *args:([{'transport':'vk','channelId':'vk','recipient':{'chatId':'123'}}],'vk-key'))
+    original_get=transport.get
+    transport.get=lambda path,**kw: httpx.Response(200,json=[{'channelId':'vk','transport':'vk','state':'active'}]) if path=='/channels' else original_get(path,**kw)
+    j=job(db,doc(db));m.send(db,j,transport,STAMP)
+    assert j.state=='pending' and len(transport.posts)==1
+    assert transport.posts[0]['chatId']=='123' and 'phone' not in transport.posts[0]
+    db.add(ReminderEvent(key='vk-cb',message_id='m1',status='delivered'));db.commit();m.reconcile(db)
+    m.send(db,j,transport,STAMP)
+    assert j.state=='delivered' and len(transport.posts)==1

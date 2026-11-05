@@ -861,3 +861,14 @@ def test_managed_unknown_origin_uses_configured_direct_order_only(db,cfg,incomin
     assert [p['transport'] for p in routes]==['max','whatsapp','telegram']
     # No address or social chat can be invented from a conversation's origin.
     assert all(p['recipient'] is None for p in routes)
+
+
+@pytest.mark.parametrize('fallback', [True,False])
+def test_managed_vk_without_phone(db,cfg,fallback):
+    c=Fake();c.talks=[{'talk_id':1,'contact_id':123,'origin':'com.wazzup24'}]
+    contact={'id':123,'custom_fields_values':[{'field_id':3642123,'values':[{'value':'123'}]}]}
+    plan=resolve_plan(db,c,lead(),contact,cfg,ReminderSettings(),calendar=True,
+        routing={'order':['telegram','whatsapp','max'],'previous_first':True,'social_fallback':fallback})
+    assert all(not p['recipient'] for p in plan[:3])
+    assert [p['transport'] for p in plan]==['telegram','whatsapp','max']+(['vk'] if fallback else [])
+    if fallback: assert plan[-1]=={'transport':'vk','channelId':'vk','recipient':{'chatId':'123'}}

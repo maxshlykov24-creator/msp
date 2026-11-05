@@ -210,7 +210,7 @@ def order_for(source, routing=None):
         order = list(routing["order"])
         if source in DIRECT and routing["previous_first"]:
             order = [source, *(t for t in order if t != source)]
-        if source in {"instagram", "avito"} and routing["social_fallback"]:
+        if source in SOCIAL and routing["social_fallback"]:
             order.append(source)
         return order
 
@@ -279,8 +279,8 @@ def resolve_plan(db, c, lead, contact, s, r, *, calendar=False, calendar_job=Non
             if sent is not None and sent.transport in DIRECT:
                 source = sent.transport
                 preferred = next((route for route in yesterday.plan or [] if route["transport"] == source), None)
-    for transport in (order_for(None if source == "website" else source, routing) if not calendar or source != "vk" else list(routing["order"]) if routing else list(DIRECT)):
-        if calendar and transport == "vk":
+    for transport in (order_for(None if source == "website" else source, routing) if routing is not None or not calendar or source != "vk" else list(routing["order"]) if routing else list(DIRECT)):
+        if calendar and routing is None and transport == "vk":
             continue
         channel = getattr(r, transport + "_channel") if transport in DIRECT else getattr(s, transport + "_channel")
         dest = recipient(contact, transport, r) if transport in DIRECT else ({"chatId": first(contact, SOCIAL_FIELDS[transport]).strip()} if first(contact, SOCIAL_FIELDS[transport]).strip() else None)

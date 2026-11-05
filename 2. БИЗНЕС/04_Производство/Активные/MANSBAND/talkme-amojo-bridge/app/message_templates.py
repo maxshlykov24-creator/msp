@@ -500,7 +500,8 @@ def make_plan(db, c, lead, r, routing):
     contact = c.get(f"/api/v4/contacts/{cid}")
     plan = resolve_plan(db, c, lead, contact, s, rs, calendar=True, routing=routing)
     return plan, digest(["contact", cid, [(t,recipient(contact,t,rs)) for t in ("telegram","whatsapp","max")],
-        [(t,first(contact,f)) for t,f in (("instagram",3816137),("avito",3642125))]])
+        [(t,first(contact,f)) for t,f in (("instagram",3816137),("avito",3642125))] +
+        ([("vk", first(contact,3642123))] if any(p["transport"] == "vk" for p in plan) else [])])
 
 
 def snapshot(db, doc):
@@ -816,7 +817,7 @@ def send(db,j,c,stamp):
                 current=now()
                 if r.late_policy=="skip" and current>due+timedelta(minutes=5) and not started:raise ValueError("Окно первой отправки прошло")
                 if current.astimezone(MSK).date()!=local.date() or not r.window_start<=current.astimezone(MSK).hour<r.window_end:raise ValueError("Окно отправки закрыто")
-                limit={"telegram":4096,"max":4096,"whatsapp":10000,"instagram":1000,"avito":1000}[route["transport"]]
+                limit={"telegram":4096,"max":4096,"whatsapp":10000,"instagram":1000,"avito":1000,"vk":1000}[route["transport"]]
                 if len(j.rendered)>limit:raise ValueError("Текст превышает лимит канала "+route["transport"])
             if apply_confirmed_copy(db, j): return
             a=prior or Attempt(job_id=j.id,position=pos,transport=route["transport"],crm_id=f"rule-{j.id}-{pos}-{uuid.uuid4().hex}")
