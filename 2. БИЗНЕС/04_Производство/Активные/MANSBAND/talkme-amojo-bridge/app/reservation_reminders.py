@@ -558,6 +558,8 @@ async def webhook(secret: str, request: Request):
     db = get_session_factory()()
     try:
         record_events(db, body)
+        from app.message_templates import record_outbound
+        record_outbound(db, body)
         from app.stage_notifications import record_messages
         record_messages(db, body)
     except Exception as exc:

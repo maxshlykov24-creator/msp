@@ -466,6 +466,14 @@ def extract_phone(text: str) -> str:
         elif len(digits) == len(best) and digits.startswith("7") and not best.startswith("7"):
             best = digits
 
+    # A client may separate every digit with dots. Only a complete Russian
+    # mobile is accepted, after stripping listing URLs and VINs above.
+    for match in re.finditer(r"(?<![\w.])(?:\+?7|8)(?:[.\s()-]*\d){10}(?![\w.])", blob):
+        digits = re.sub(r"\D", "", match.group(0))
+        normalized = "7" + digits[1:] if digits.startswith("8") else digits
+        if "." in match.group(0) and _is_ru_mobile(normalized):
+            take(digits)
+
     for match in INTL_PHONE.finditer(blob):
         take(re.sub(r"\D", "", match.group(0)))
     # Без плюса: 994993845959. Российский шаблон берёт только 10–11 цифр

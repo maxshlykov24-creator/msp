@@ -178,11 +178,116 @@ class Operation(Base):
     result: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
-TABLES = [Document.__table__, History.__table__, Job.__table__, Attempt.__table__, Operation.__table__]
+class OutboundEvidence(Base):
+    """Provider echoes, including manual sends. No message text/contact PII stored."""
+    __tablename__ = "message_template_outbound_evidence"
+    id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    channel: Mapped[str] = mapped_column(String(100))
+    transport: Mapped[str] = mapped_column(String(24))
+    recipients: Mapped[list] = mapped_column(JSON)
+    body_hash: Mapped[str] = mapped_column(String(64), index=True)
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    status: Mapped[str] = mapped_column(String(24))
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+TABLES = [Document.__table__, History.__table__, Job.__table__, Attempt.__table__, Operation.__table__, OutboundEvidence.__table__]
 
 
 def digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+
+
+def body_hash(body):
+    # Ignore only presentation whitespace, never words, links or punctuation.
+    return digest(" ".join(body.split()))
+
+
+def recipient_hash(kind, value):
+    value = str(value or "").strip()
+    if kind == "phone": value = re.sub(r"\D", "", value)
+    if kind == "username": value = value.lstrip("@").casefold()
+    return digest([kind, value]) if value else ""
+
+
+def record_outbound(db, body):
+    """Durable evidence before forwarding callbacks. Edits/deletes cannot prove a send."""
+    from app.reservation_reminders import SUCCESS
+    for msg in body.get("messages") or []:
+        if not isinstance(msg, dict) or msg.get("isEcho") is not True: continue
+        mid = str(msg.get("messageId") or "")
+        if not mid or len(mid) > 100: continue
+        existing = db.get(OutboundEvidence, mid)
+        if msg.get("isEdited") or msg.get("isDeleted"):
+            if existing: existing.status = "changed"
+            continue
+        text_body = msg.get("text")
+        if not isinstance(text_body, str) or not text_body.strip(): continue
+        try:
+            stamp = datetime.fromisoformat(str(msg["dateTime"]).replace("Z", "+00:00"))
+            if stamp.tzinfo is None or stamp > now() + timedelta(minutes=5): continue
+        except (KeyError, ValueError): continue
+        channel, transport = str(msg.get("channelId") or ""), str(msg.get("chatType") or "")
+        if not channel or transport not in {"telegram", "whatsapp", "max", "vk", "avito", "instagram"}: continue
+        contact = msg.get("contact") or {}
+        keys = [recipient_hash("chatId", msg.get("chatId")),
+                recipient_hash("phone", contact.get("phone")),
+                recipient_hash("username", contact.get("username"))]
+        if transport == "whatsapp": keys.append(recipient_hash("phone", msg.get("chatId")))
+        keys = sorted(set(k for k in keys if k))
+        if not keys: continue
+        status = str(msg.get("status") or "")
+        if status not in SUCCESS | {"error"}: status = "pending"
+        if existing:
+            # A changed message must never be restored by an older replay.
+            if existing.status == "changed": continue
+            ranks = {"pending":0, "error":0, "sent":1, "delivered":2, "read":3}
+            if ranks.get(status,0) > ranks.get(existing.status,0): existing.status = status
+        else:
+            db.add(OutboundEvidence(id=mid, channel=channel, transport=transport, recipients=keys,
+                body_hash=body_hash(text_body), at=stamp, status=status))
+        db.flush()
+    db.commit()
+
+
+def confirmed_copy(db, j):
+    """Proves the task is fulfilled, not which sender/attempt produced the copy."""
+    from app.reservation_reminders import ReminderEvent, SUCCESS
+    if not j.rendered.strip() or not j.plan: return None
+    start = aware(j.source_at or j.due_at)
+    for e in db.scalars(select(OutboundEvidence).where(OutboundEvidence.body_hash == body_hash(j.rendered),
+            OutboundEvidence.at >= start, OutboundEvidence.at <= now()).order_by(OutboundEvidence.at)):
+        if e.status == "changed": continue
+        states = {e.status} | set(db.scalars(select(ReminderEvent.status).where(ReminderEvent.message_id == e.id)))
+        if not states & SUCCESS: continue
+        for route in j.plan:
+            keys = {recipient_hash(k,v) for k,v in (route.get("recipient") or {}).items() if k in {"phone","username","chatId"}}
+            if e.channel == route.get("channelId") and e.transport == route.get("transport") and keys & set(e.recipients):
+                return e, "delivered" if states & {"delivered","read"} else "sent"
+    return None
+
+
+def apply_confirmed_copy(db, j):
+    match = confirmed_copy(db, j)
+    if not match: return False
+    e, state = match
+    j.state, j.reason = state, "confirmed_outgoing_copy"
+    opid = f"outgoing-proof-{j.id}"
+    op = db.get(Operation, opid)
+    result = {"message_id":e.id, "sent_at":aware(e.at).isoformat(), "proof":"recipient_channel_text_time"}
+    if op is None: db.add(Operation(id=opid, digest=digest(result), state="confirmed", result=result))
+    db.commit()
+    return True
+
+
+def attempt_trace(db, a, **details):
+    opid = f"send-trace-{a.id}"
+    op = db.get(Operation, opid)
+    if op is None:
+        op = Operation(id=opid, digest=digest(a.crm_id), state="recorded", result={})
+        db.add(op)
+    op.result = {**op.result, **details}
+    db.commit()
 
 
 def entries(lead, field):
@@ -593,6 +698,8 @@ def reconcile(db):
             if j.state not in ("cancelled","expired","sent","delivered"):
                 j.state,j.reason=("ready","confirmed_delivery_error") if j.snapshot else ("failed","confirmed_delivery_error")
     db.commit()
+    for j in db.scalars(select(Job).where(Job.state.in_(["uncertain", "pending", "inflight", "sent"]))):
+        apply_confirmed_copy(db, j)
 
 
 def send(db,j,c,stamp):
@@ -632,6 +739,7 @@ def send(db,j,c,stamp):
             db.commit()
         if not j.rendered.strip():
             raise ValueError("Пустой текст сообщения: требуется проверка шаблона")
+        if apply_confirmed_copy(db, j): return
         channels={x["channelId"]:x for x in c.wz.get("/channels").json()}
         for pos,route in enumerate(j.plan):
             prior=db.scalar(select(Attempt).where(Attempt.job_id==j.id,Attempt.position==pos))
@@ -658,25 +766,38 @@ def send(db,j,c,stamp):
             if not available:a.reason="no_recipient" if not route["recipient"] else "inactive_channel"
             db.add(a);j.state="inflight" if available else "ready";db.commit()
             if not available:continue
+            attempt_trace(db, a, started_at=now().isoformat(), job_id=j.id,
+                          body_hash=body_hash(j.rendered), crm_message_id=a.crm_id)
             try:
                 resp=c.wz.post("/message",json={"channelId":route["channelId"],"chatType":route["transport"],**route["recipient"],"text":j.rendered,"clearUnanswered":False,"crmMessageId":a.crm_id})
                 try:result=resp.json()
                 except ValueError:result={}
+                if not isinstance(result,dict):result={}
+                code=str(result.get("error") or "")[:100]
+                safe_code=code if re.fullmatch(r"[A-Za-z0-9_]+",code) else "unclassified"
+                request_id=str(result.get("requestId") or "")
+                attempt_trace(db, a, http_status=resp.status_code, error_code=safe_code,
+                              request_id=request_id if re.fullmatch(r"[A-Za-z0-9_-]{1,120}",request_id) else "",
+                              response_at=now().isoformat())
                 if resp.status_code==201 and result.get("messageId"):
                     a.message_id=str(result["messageId"]);a.state,j.state="pending","pending";db.commit();return
-                code=str(result.get("error") or "")[:100]
-                if resp.status_code==400 and code in {"INVALID_MESSAGE_DATA","WRONG_TRANSPORT"}:
+                if resp.status_code==400 and code in {"INVALID_MESSAGE_DATA","WRONG_TRANSPORT", "VALIDATION_ERROR",
+                        "MESSAGE_NOTHING_TO_SEND", "MESSAGES_TEXT_CAN_NOT_BE_BLANK", "MESSAGE_TEXT_TOO_LONG",
+                        "MESSAGES_TOO_LONG_TELEGRAM", "MESSAGES_TOO_LONG_INSTAGRAM", "MESSAGES_TOO_LONG_VK",
+                        "MESSAGE_ONLY_TEXT_OR_CONTENT", "MESSAGES_ONLY_TEXT_OR_CONTENT"}:
                     # Explicit validation rejection: no message was accepted.
                     # Retrying another channel would repeat the malformed request.
                     a.state,a.reason,j.state,j.reason="error",code,"failed",code
                     db.commit();return
                 if 400<=resp.status_code<500 and code in REJECTED|{"CHANNEL_MAX_PHONE_NOT_OCCUPIED"}:
                     a.state,a.reason,j.state="error",code,"ready";db.commit();started=True;continue
-                safe_code=code if re.fullmatch(r"[A-Za-z0-9_]+",code) else "unclassified"
                 a.reason=f"http_{resp.status_code}:{safe_code}"[:150]
                 log.warning("Managed provider result unknown: job=%s status=%s code=%s",j.id,resp.status_code,safe_code)
                 a.state,j.state,j.reason="unknown","uncertain","provider_result_unknown"
-            except httpx.HTTPError:a.state,j.state,j.reason="unknown","uncertain","network_result_unknown"
+            except httpx.HTTPError as exc:
+                a.state,j.state,j.reason="unknown","uncertain","network_result_unknown"
+                a.reason=type(exc).__name__
+                attempt_trace(db, a, exception=type(exc).__name__, response_at=now().isoformat())
             db.commit();return
         j.state,j.reason="failed","all_channels_exhausted";db.commit()
     except ValueError as exc:

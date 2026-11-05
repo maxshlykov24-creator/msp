@@ -3655,3 +3655,43 @@ def test_nov05_archive_failure_keeps_new_messages():
     def fail(error): raise error
     for error in [AvitoError('archive rejected',status_code=400), AvitoError('unavailable',status_code=503), httpx.ReadTimeout('archive timeout')]:
         asyncio.run(run(error))
+
+
+def test_nov05_dotted_phone_without_false_identity():
+    from bot.nudge import extract_phone,extract_phone_from_history
+    assert extract_phone('8.9.0.0.0.0.0.0.0.01') == '79000000001'
+    assert not extract_phone('https://avito.ru/item/8.9.0.0.0.0.0.0.0.01')
+    assert not extract_phone('05.11.2026 10:30')
+    assert not extract_phone('8.900.000.000.000')
+    assert not extract_phone_from_history([{'role':'user','content':'Это вы звонили?'},{'role':'user','content':'8.9.0.0.0.0.0.0.0.01'}])
+    assert not extract_phone_from_history([{'role':'assistant','content':'8.9.0.0.0.0.0.0.0.01'}])
+
+
+def test_nov05_review_send_no_duplicate_or_stale_reply():
+    import asyncio,time
+    from pathlib import Path
+    from unittest.mock import AsyncMock,Mock
+    from tools.rehearse import Sandbox
+    from tools.catchup_waiting import send_reviewed,review_fingerprint
+    from bot import store
+    async def run():
+        with Sandbox():
+            cid='av:review';history=[{'id':'in','role':'user','content':'Вопрос','at':int(time.time())}]
+            expected=review_fingerprint(history);journal=store.settings.state_dir/'review-journal.json'
+            async def sent(*args):
+                history.append({'id':'out','role':'assistant','content':'Ответ','at':int(time.time())})
+                store.save_doc(cid,{'crm':{'out_ids':['out']}})
+            channel=Mock(send=AsyncMock(side_effect=sent));reader=AsyncMock(side_effect=lambda:list(history))
+            first=await send_reviewed(channel,cid,'Ответ',expected,reader,journal)
+            assert first['status']=='confirmed'
+            again=await send_reviewed(channel,cid,'Ответ',expected,reader,journal)
+            assert again==first and channel.send.call_count==1
+            changed=await send_reviewed(channel,cid,'Другой',expected,reader,journal)
+            assert changed['status']=='changed_skip' and channel.send.call_count==1
+            channel.send=AsyncMock(side_effect=RuntimeError('response lost'))
+            fresh=review_fingerprint(history)
+            lost=await send_reviewed(channel,cid,'Третий',fresh,reader,journal)
+            assert lost['status']=='uncertain'
+            await send_reviewed(channel,cid,'Третий',fresh,reader,journal)
+            assert channel.send.call_count==1
+    asyncio.run(run())
