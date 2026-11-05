@@ -77,7 +77,7 @@ def calculate(s, raw):
         net = sum(v['sales']-v['returns'] for v in platforms.values()) if all(v['known'] for v in platforms.values()) else None
         future = sum((Decimal(c['quantity']) for c in coverage[iid] if c['included']), Decimal(0))
         stock_assumed_zero = not (b and b.known)
-        free = b.free if not stock_assumed_zero else Decimal(0)
+        free = None if stock_assumed_zero else b.free
         target = int((Decimal(max(0, net))*p['horizon']/((date.fromisoformat(p['end'])-date.fromisoformat(p['start'])).days+1)).to_integral_value(rounding=ROUND_CEILING)) if net is not None else None
         rows.append(dict(item_id=iid, stock_assumed_zero=stock_assumed_zero, platforms=platforms, net=net, free=str(free) if free is not None else None, future=str(future), coverage=coverage[iid], target=target, recommendation=max(0, int(Decimal(target)-free-future)) if target is not None and free is not None else None, balance_version=b.version if b else None))
     body = dict(parameters=p, rows=rows, versions=sorted(versions))

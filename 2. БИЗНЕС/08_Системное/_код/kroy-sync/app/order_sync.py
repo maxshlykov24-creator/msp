@@ -226,7 +226,12 @@ def run(engine,env,history_steps=1,on_current=None,deep=True,reports=None,curren
         except Exception as e:
             message=str(e) if isinstance(e,FeedFailure) else 'Ошибка проверки данных; предыдущая выгрузка сохранена'
             set_sync(engine,key,state='waiting' if isinstance(e,Paused) else 'error',error=message,retry_at=e.retry_at if isinstance(e,Paused) else None)
-            if key=='wb-sales' and isinstance(e,Paused):update_wb_status(engine,state='waiting',reason=message,next_retry_at=e.retry_at,retry_buffered=True)
+            if key=='wb-sales' and isinstance(e,Paused):
+                from .sales import MSK,latest_window
+                end=str(at.astimezone(MSK).date()-timedelta(days=1));start=str(at.astimezone(MSK).date()-timedelta(days=14))
+                cached=latest_window(engine,'wb',start,end)
+                clean=bool(cached and not cached.get('identity_pending') and cached.get('covered_items') is not None)
+                update_wb_status(engine,state='ready_cached' if clean else 'waiting',reason='Оперативные продажи Wildberries; итоговый отчёт не сверён' if clean else message,next_retry_at=e.retry_at,retry_buffered=True)
             return None
     wb=clients['wb'];account=accounts['wb']
     def current_wb():
@@ -391,6 +396,31 @@ def sync_wb_sales(engine,client,account,prior,at):
         return _sync_wb_sales(engine,client,account,prior,at)
 
 
+def publish_saved_wb_sales(engine,account,at):
+    """Rematch sales already stored locally. A later marketplace page must not hide them."""
+    from .sales import MSK,mappings,store_window,wb_events
+    history_from=max(str(at.astimezone(MSK).date().replace(month=1,day=1)),str(at.astimezone(MSK).date()-timedelta(days=89)))
+    end=str(at.astimezone(MSK).date()-timedelta(days=1))
+    with transaction(engine) as s:
+        raw=[e.data['row'] for e in s.scalars(select(Entity).where(Entity.kind=='market_sale_raw',Entity.data['account'].as_string()==account))]
+    if not raw:return False
+    codes,_,covered=mappings(engine)
+    window_events,unmatched=wb_events(raw,history_from,end,codes)
+    report=sync_state(engine).get('report:wb-sales:'+account,{})
+    fresh=now().isoformat()
+    store_window(engine,dict(platform='wb',start=history_from,end=end,at=fresh,complete=True,verified=True,covered_items=list(covered['wb']),events=[e for e in window_events if e['item_id'] in set(covered['wb'])],source='WB supplier/sales',unmatched=unmatched,collection_proof=report.get('proof') or 'saved_rows'))
+    set_sync(engine,'wb-sales',rebuild_required=False)
+    update_wb_status(engine,state='ready_cached',at=fresh,reason='Оперативные продажи Wildberries; итоговый отчёт не сверён')
+    return True
+
+
+def _wb_windows_need_saved_sales(engine,at):
+    from .sales import MSK,latest_window
+    end=str(at.astimezone(MSK).date()-timedelta(days=1));start=str(at.astimezone(MSK).date()-timedelta(days=14))
+    cached=latest_window(engine,'wb',start,end)
+    return not (cached and not cached.get('identity_pending') and cached.get('covered_items') is not None)
+
+
 def _sync_wb_sales(engine,client,account,prior,at):
     from .sales import wb_events,store_window,mappings,MSK
     from .order_feed import timestamp
@@ -403,6 +433,8 @@ def _sync_wb_sales(engine,client,account,prior,at):
     cached_rebuild=bool(prior.get('rebuild_required') and prior.get('raw_complete_from') and prior['raw_complete_from']<=history_from and prior.get('raw_end'))
     fetched_at=prior.get('raw_at') if cached_rebuild else now().isoformat()
     end=prior['raw_end'] if cached_rebuild else str(at.astimezone(MSK).date()-timedelta(days=1))
+    if not cached_rebuild and (prior.get('rebuild_required') or _wb_windows_need_saved_sales(engine,at)):
+        publish_saved_wb_sales(engine,account,at)
     if not cached_rebuild:
         start=history_from if not prior.get('raw_complete_from') or prior['raw_complete_from']>year or prior.get('rebuild_required') else max(year,(datetime.fromisoformat(prior['raw_at'])-timedelta(days=1)).date().isoformat())
         def persist(batch):

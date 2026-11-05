@@ -328,6 +328,34 @@ def test_manual_ozon_identity_is_also_used_for_normalized_sales(setup):
  assert skus['999']==['m'] and 'm' in covered and 'm' not in absent
 
 
+def test_saved_sales_make_a_recommendation_while_the_report_is_still_limited(setup):
+    from app.cutting import calculate
+    from app.db import Balance
+    from app.order_sync import Paused, sync_wb_sales
+    from app.product_identity import refresh_wb_mappings
+    from app.sales import MSK, store_window
+    engine,_,_=setup
+    refresh_wb_mappings(engine,dict(at=now().isoformat(),cards=[dict(id=1,sizes=[dict(chrtID=10,skus=['001']),dict(chrtID=11,skus=['002'])])]))
+    day=str(now().astimezone(MSK).date()-timedelta(days=1))
+    with transaction(engine) as s:
+        s.add(Entity(id='market-sale-raw:saved',kind='market_sale_raw',version=1,data=dict(account='seller',row=dict(saleID='S-saved',date=day+'T12:00:00',lastChangeDate=day+'T12:00:00',barcode='001',srid='saved'))))
+        for item in ('s','m'):
+            balance=s.scalar(select(Balance).where(Balance.item_id==item,Balance.location=='own'))
+            balance.known=False
+        s.add(Entity(id='order-sync:wb-sales',kind='order_sync',version=1,data=dict(rebuild_required=True,state='waiting')))
+    class Limited:
+        def get(self,*args,**kwargs):raise Paused('Площадка ограничила частоту запросов','2099-01-01T00:00:00+00:00')
+    with pytest.raises(Paused):sync_wb_sales(engine,Limited(),'seller',{},now())
+    with Session(engine) as s:
+        window=s.scalar(select(Entity).where(Entity.kind=='sales_window',Entity.data['platform'].as_string()=='wb',Entity.data['collection_proof'].as_string()=='saved_rows'))
+        store_window(engine,dict(platform='ozon',start=window.data['start'],end=window.data['end'],at=now().isoformat(),complete=True,verified=True,covered_items=['s','m'],events=[]))
+    with Session(engine) as s:
+        rows={r['item_id']:r for r in calculate(s,dict(location='own',item_ids=['s','m']))['rows']}
+    assert rows['s']['platforms']['wb']['known'] and rows['s']['platforms']['wb']['sales']==1
+    assert rows['s']['stock_assumed_zero'] and rows['s']['recommendation'] is None and rows['s']['target']==2
+    assert rows['m']['platforms']['wb']['sales']==0 and rows['m']['stock_assumed_zero'] and rows['m']['recommendation'] is None
+
+
 def test_raw_sales_can_be_rebuilt_after_alias_change_without_an_api_call(setup):
  from app.product_identity import refresh_wb_mappings
  from app.order_sync import sync_wb_sales
@@ -516,7 +544,7 @@ def test_paginated_wb_sales_resume_after_cooldown_and_feed_recommendation(setup,
  from app.db import Balance
  with transaction(engine) as s:s.scalar(select(Balance).where(Balance.item_id=='s',Balance.location=='own')).known=False
  with Session(engine) as s:
-  row=calculate(s,dict(location='own',item_ids=['s']))['rows'][0];assert row['net']==2 and row['stock_assumed_zero'] and row['recommendation']==4
+  row=calculate(s,dict(location='own',item_ids=['s']))['rows'][0];assert row['net']==2 and row['stock_assumed_zero'] and row['recommendation'] is None and row['target']==4
 
 
 def test_wb_retry_without_headers_uses_conservative_method_limit(setup):

@@ -199,7 +199,8 @@ def sync(engine, env, start=None, end=None):
                 require(account,'Ожидается подтверждение кабинета ВБ',422)
                 try:_sync_wb_sales(engine,Client(engine,'wb',account,{'Authorization':env['WB_TOKEN']}),account,state.get('wb-sales',{}),now())
                 except Paused as e:
-                    results[platform]=dict(state='ready_cached' if cached and not cached.get('identity_pending') else 'waiting',at=cached['at'] if cached else None,reason=str(e),next_retry_at=e.retry_at,retry_buffered=True);continue
+                    cached=latest_window(engine,'wb',start,end)
+                    results[platform]=dict(state='ready_cached' if cached and not cached.get('identity_pending') else 'waiting',at=cached['at'] if cached else None,reason='Оперативные продажи Wildberries; итоговый отчёт не сверён' if cached and not cached.get('identity_pending') else str(e),next_retry_at=e.retry_at,retry_buffered=True);continue
                 cached=latest_window(engine,'wb',start,end)
                 results[platform]=dict(state='ready_cached' if cached and not cached.get('identity_pending') else 'waiting',at=cached['at'] if cached else None,reason='Оперативные продажи Wildberries; итоговый отчёт не сверён')
                 continue

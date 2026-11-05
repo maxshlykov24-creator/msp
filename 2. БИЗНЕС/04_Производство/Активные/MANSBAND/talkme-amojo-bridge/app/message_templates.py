@@ -28,6 +28,10 @@ from app.database import get_engine, get_session_factory
 
 log = logging.getLogger(__name__)
 LOCK = 674001929
+VALIDATION_REJECTIONS = {"INVALID_MESSAGE_DATA", "WRONG_TRANSPORT", "VALIDATION_ERROR",
+    "MESSAGE_NOTHING_TO_SEND", "MESSAGES_TEXT_CAN_NOT_BE_BLANK", "MESSAGE_TEXT_TOO_LONG",
+    "MESSAGES_TOO_LONG_TELEGRAM", "MESSAGES_TOO_LONG_INSTAGRAM", "MESSAGES_TOO_LONG_VK",
+    "MESSAGE_ONLY_TEXT_OR_CONTENT", "MESSAGES_ONLY_TEXT_OR_CONTENT"}
 
 
 def now():
@@ -717,7 +721,7 @@ def synchronize(db,c,stamp):
 
 
 def reconcile(db):
-    from app.reservation_reminders import ReminderEvent, SUCCESS
+    from app.reservation_reminders import ReminderEvent, SUCCESS, REJECTED
     for a in db.scalars(select(Attempt).join(Job,Job.id==Attempt.job_id).where(Attempt.state.in_(["inflight","pending","unknown","sent"]),Job.state!="delivered")):
         j=db.get(Job,a.job_id)
         if not a.message_id:
@@ -725,6 +729,14 @@ def reconcile(db):
             if trace and trace.result.get("http_status")==201 and trace.result.get("provider_message_id"):
                 a.message_id=trace.result["provider_message_id"]
                 a.state,j.state,j.reason="pending","pending",""
+            elif trace:
+                status,code=trace.result.get("http_status",0),trace.result.get("error_code","")
+                malformed=status==400 and code in VALIDATION_REJECTIONS
+                rejected=400<=status<500 and code in REJECTED|{"CHANNEL_MAX_PHONE_NOT_OCCUPIED"}
+                if malformed or rejected:
+                    a.state,a.reason="error",code
+                    if j.state not in {"sent","delivered","cancelled","expired"}:
+                        j.state,j.reason=("failed",code) if malformed else ("ready","confirmed_delivery_error")
         if not a.message_id:
             if a.state=="inflight":a.state,j.state,j.reason="unknown","uncertain","interrupted_send"
             continue
@@ -828,10 +840,7 @@ def send(db,j,c,stamp):
                               response_at=now().isoformat())
                 if resp.status_code==201 and result.get("messageId"):
                     a.message_id=str(result["messageId"]);a.state,j.state="pending","pending";db.commit();return
-                if resp.status_code==400 and code in {"INVALID_MESSAGE_DATA","WRONG_TRANSPORT", "VALIDATION_ERROR",
-                        "MESSAGE_NOTHING_TO_SEND", "MESSAGES_TEXT_CAN_NOT_BE_BLANK", "MESSAGE_TEXT_TOO_LONG",
-                        "MESSAGES_TOO_LONG_TELEGRAM", "MESSAGES_TOO_LONG_INSTAGRAM", "MESSAGES_TOO_LONG_VK",
-                        "MESSAGE_ONLY_TEXT_OR_CONTENT", "MESSAGES_ONLY_TEXT_OR_CONTENT"}:
+                if resp.status_code==400 and code in VALIDATION_REJECTIONS:
                     # Explicit validation rejection: no message was accepted.
                     # Retrying another channel would repeat the malformed request.
                     a.state,a.reason,j.state,j.reason="error",code,"failed",code

@@ -134,7 +134,7 @@ def test_catalog_links_do_not_invalidate_same_calculation(setup):
 
 
 @pytest.mark.parametrize('missing',[False,True])
-def test_unknown_or_missing_stock_is_assumed_zero_for_demand_only(setup,missing):
+def test_unknown_or_missing_stock_does_not_invent_a_recommendation(setup,missing):
     from app.db import Balance,Item,transaction
     from sqlalchemy import select
     from app.sales import store_window
@@ -149,6 +149,6 @@ def test_unknown_or_missing_stock_is_assumed_zero_for_demand_only(setup,missing)
         store_window(engine,dict(platform=platform,start=p['start'],end=p['end'],at=datetime.now(MSK).isoformat(),complete=True,verified=True,covered_items=[iid],events=[dict(id=platform,item_id=iid,date=p['end'],kind='sale',quantity=6)]))
     with Session(engine) as s:
         row=calculate(s,dict(location='own',item_ids=[iid]))['rows'][0]
-        assert row['stock_assumed_zero'] and row['recommendation']==24 and Decimal(row['free'])==0
+        assert row['stock_assumed_zero'] and row['recommendation'] is None and row['free'] is None and row['target']==24
         b=s.scalar(select(Balance).where(Balance.item_id==iid,Balance.location=='own'))
         assert b is None if missing else b.known is False

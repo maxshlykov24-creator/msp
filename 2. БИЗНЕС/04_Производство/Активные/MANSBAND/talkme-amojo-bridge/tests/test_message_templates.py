@@ -619,3 +619,12 @@ def test_connection_retries_are_bounded(db,transport,monkeypatch):
         m.send(db,j,transport,stamp)
     m.send(db,j,transport,stamp)
     assert len(transport.posts)==5 and j.state=='failed' and j.reason=='connection_unavailable'
+
+
+@pytest.mark.parametrize('code,expected',[('INVALID_MESSAGE_DATA','failed'),('CHANNEL_TGAPI_PHONE_NOT_OCCUPIED','ready')])
+def test_saved_rejection_recovers_after_crash(db,transport,code,expected):
+    j=job(db,doc(db));transport.response=(400,{'error':code,'requestId':'provider-request'})
+    m.send(db,j,transport,STAMP);a=db.scalar(select(m.Attempt))
+    a.state='inflight';a.reason='';j.state='inflight';db.commit()
+    m.reconcile(db)
+    assert a.state=='error' and a.reason==code and j.state==expected
