@@ -176,7 +176,7 @@ def mappings(engine):
 def latest_window(engine,platform,start,end):
     with transaction(engine) as s:
         windows=[e.data for e in s.scalars(select(Entity).where(Entity.kind=='sales_window')) if e.data.get('platform')==platform and e.data['start']<=start and e.data['end']>=end and e.data.get('verified') and e.data.get('complete')]
-        return copy.deepcopy(max(windows,key=lambda d:d['at'],default=None))
+        return copy.deepcopy(max(windows,key=lambda d:(not bool(d.get('identity_pending')),d['at']),default=None))
 
 
 def sync(engine, env, start=None, end=None):
@@ -191,9 +191,9 @@ def sync(engine, env, start=None, end=None):
         try:
             retry=prior.get('next_retry_at')
             if retry and datetime.fromisoformat(retry)>now():
-                results[platform]={**prior,'state':'ready_cached' if cached else 'waiting','at':cached['at'] if cached else None};continue
+                results[platform]={**prior,'state':'ready_cached' if cached and not cached.get('identity_pending') else 'waiting','at':cached['at'] if cached else None};continue
             if platform=='wb':
-                if cached and (now()-datetime.fromisoformat(cached['at'])).total_seconds()<3600:
+                if cached and not cached.get('identity_pending') and (now()-datetime.fromisoformat(cached['at'])).total_seconds()<3600:
                     results[platform]=dict(state='ready_cached',at=cached['at'],reason='Используется свежая полная выгрузка');continue
                 raw=get_json('https://statistics-api.wildberries.ru/api/v1/supplier/sales?dateFrom='+start,{'Authorization':env['WB_TOKEN']})
                 events,unmatched=wb_events(raw,start,end,codes);events=[e for e in events if e['item_id'] in covered['wb']]
@@ -226,7 +226,7 @@ def sync(engine, env, start=None, end=None):
             store_window(engine,data)
             results[platform]=dict(state='ready',at=data['at'],start=start,end=end,events=len(data['events']),covered=len(data['covered_items']),unmatched=data['unmatched'])
         except RateLimited as e:
-            results[platform]=dict(state='ready_cached' if cached else 'waiting',at=cached['at'] if cached else None,reason=str(e),next_retry_at=(now()+timedelta(seconds=e.seconds)).isoformat())
+            results[platform]=dict(state='ready_cached' if cached and not cached.get('identity_pending') else 'waiting',at=cached['at'] if cached else None,reason=str(e),next_retry_at=(now()+timedelta(seconds=e.seconds)).isoformat())
         except Exception as e:
             from .service import DomainError
             reason=e.message if isinstance(e,DomainError) else str(e) if isinstance(e,RuntimeError) else 'Ошибка проверки выгрузки'

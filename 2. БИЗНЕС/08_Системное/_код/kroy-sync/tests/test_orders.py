@@ -326,3 +326,34 @@ def test_manual_ozon_identity_is_also_used_for_normalized_sales(setup):
  e=market(engine);cmd('market.order.map',dict(id=e.id,version=e.version,line=0,item_id='m'))
  skus,covered,absent,proof=catalog_links(engine,dict(at=now().isoformat(),complete=True,items=[dict(id=10,barcodes=['unknown'],sources=[{'sku':999}])]))
  assert skus['999']==['m'] and 'm' in covered and 'm' not in absent
+
+
+def test_raw_sales_can_be_rebuilt_after_alias_change_without_an_api_call(setup):
+ from app.product_identity import refresh_wb_mappings
+ from app.order_sync import sync_wb_sales
+ from app.order_feed import sync_state
+ from app.cutting import calculate
+ from app.sales import MSK
+ engine,_,_=setup
+ refresh_wb_mappings(engine,dict(at=now().isoformat(),cards=[dict(id=1,sizes=[dict(chrtID=10,skus=['001'])])]))
+ day=str(now().astimezone(MSK).date()-timedelta(days=1))
+ class First:
+  def get(self,*a,**kw):return [dict(saleID='S-source',date=day+'T12:00:00',lastChangeDate=day+'T12:00:00',barcode='alternative',srid='purchase')]
+ sync_wb_sales(engine,First(),'seller',{},now())
+ refresh_wb_mappings(engine,dict(at=now().isoformat(),cards=[dict(id=1,sizes=[dict(chrtID=10,skus=['001','alternative'])])]))
+ with Session(engine) as s:
+  window=s.scalar(select(Entity).where(Entity.kind=='sales_window'));assert 's' in window.data['identity_pending']
+ class NoNetwork:
+  def get(self,*a,**kw):pytest.fail('An alias rebuild must use the complete raw snapshot')
+ sync_wb_sales(engine,NoNetwork(),'seller',sync_state(engine)['wb-sales'],now())
+ with Session(engine) as s:
+  window=s.scalar(select(Entity).where(Entity.kind=='sales_window'));assert sum(e['quantity'] for e in window.data['events'])==1
+  assert 's' in window.data['covered_items'] and not window.data.get('identity_pending')
+
+
+def test_sales_cooldown_is_shared_with_the_existing_sales_worker(setup):
+ from app.order_sync import Client,Paused,update_wb_status
+ engine,_,_=setup
+ update_wb_status(engine,next_retry_at=(now()+timedelta(hours=1)).isoformat())
+ client=Client(engine,'wb','seller',{},request=lambda *a,**kw:pytest.fail('Shared cooldown must block network'))
+ with pytest.raises(Paused):client.get('/api/v1/supplier/sales',params={'dateFrom':'2026-11-01'})

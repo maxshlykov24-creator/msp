@@ -119,7 +119,7 @@ def create_app(engine=None):
                       for i in items]}
 
     @app.get('/api/entities/{kind}')
-    def entities(kind: str, user=Depends(auth)):
+    def entities(kind: str, include_managed: bool=False, user=Depends(auth)):
         if kind not in ('task', 'freeze', 'count', 'order', 'fbo', 'finance', 'notice', 'integration', 'norm', 'telegram_link', 'mapping'):
             raise HTTPException(404, 'Раздел не найден')
         if kind=='order' and user.role=='cutter':raise HTTPException(403,'Нет доступа к заказам')
@@ -129,7 +129,9 @@ def create_app(engine=None):
             raise HTTPException(403, 'Нет доступа к финансам')
         with Session(engine) as s:
             result = []
-            for e in s.scalars(select(Entity).where(Entity.kind == kind)):
+            query=select(Entity).where(Entity.kind==kind)
+            if kind=='order' and not include_managed:query=query.where(Entity.data['managed_market_id'].as_string().is_(None))
+            for e in s.scalars(query):
                 if kind == 'task' and user.role == 'cutter' and (e.data.get('status') == 'draft' or e.data.get('assignee') not in (None, '', user.id)):
                     continue
                 data = dict(e.data)

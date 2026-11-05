@@ -45,6 +45,10 @@ class Client:
         key='limit:'+self.platform+':'+self.account+':'+path
         state=sync_state(self.engine).get(key,{})
         retry=state.get('retry_at')
+        if path=='/api/v1/supplier/sales':
+            with transaction(self.engine) as s:
+                shared=s.get(Entity,'cutting-sales-status');other=(shared.data.get('platforms',{}).get('wb',{}).get('next_retry_at')) if shared else None
+            if other and (not retry or other>retry):retry=other
         if retry and datetime.fromisoformat(retry)>now():raise Paused('Площадка ограничила частоту запросов',retry)
         last=state.get('last_request');spacing=61 if path in ('/api/v1/supplier/orders','/api/v1/supplier/sales') else 3.1 if self.platform=='wb' else 2.1
         delay=max(0,spacing-(now()-datetime.fromisoformat(last)).total_seconds()) if last else 0
@@ -57,7 +61,10 @@ class Client:
                 with self.request(req,timeout=40) as response:return json.load(response)
             except urllib.error.HTTPError as e:
                 if e.code==429:
-                    until=(now()+timedelta(seconds=retry_seconds(e.headers))).isoformat();set_sync(self.engine,key,retry_at=until);raise Paused('Площадка ограничила частоту запросов',until) from None
+                    until=(now()+timedelta(seconds=retry_seconds(e.headers))).isoformat();set_sync(self.engine,key,retry_at=until)
+                    if path=='/api/v1/supplier/sales':
+                        update_wb_status(self.engine,state='waiting',reason='Площадка ограничила частоту запросов',next_retry_at=until)
+                    raise Paused('Площадка ограничила частоту запросов',until) from None
                 if e.code not in (500,502,503,504) or attempt==2:
                     message=''
                     if e.code in (400,422):
@@ -120,17 +127,17 @@ def wb_statuses(client,ids):
     return out
 
 
-def wb_statistics(client,start):
+def wb_statistics(client,start,path='/api/v1/supplier/orders',identity='srid',page_size=80000):
     rows=[];seen={};cursor=start
     for _ in range(1000):
-        batch=client.get('/api/v1/supplier/orders',params={'dateFrom':cursor,'flag':0})
+        batch=client.get(path,params={'dateFrom':cursor,'flag':0})
         if not isinstance(batch,list):raise FeedFailure('Неполный отчёт заказов ВБ')
         for r in batch:
-            key=r.get('srid')
-            if not key:raise FeedFailure('Нет srid в статистике ВБ')
+            key=r.get(identity)
+            if not key:raise FeedFailure('Нет идентификатора строки отчёта ВБ')
             # Boundary repeats are allowed; retain the latest source revision.
             if key not in seen or str(r.get('lastChangeDate'))>str(seen[key].get('lastChangeDate')):seen[key]=r
-        if len(batch)<80000:return list(seen.values())
+        if len(batch)<page_size:return list(seen.values())
         nxt=batch[-1].get('lastChangeDate')
         if not nxt or nxt<=cursor:raise FeedFailure('Не продвинулся курсор статистики ВБ')
         cursor=nxt
@@ -228,7 +235,7 @@ def run(engine,env,history_steps=1,on_current=None,deep=True):
     if deep:phase('wb-catalog',catalog_wb)
     phase('wb-fbs',fbs)
     def statistics():
-        last=state.get('wb-statistics',{}).get('success_at');start=(at-timedelta(days=90)).isoformat() if not last else min(at-timedelta(days=7),datetime.fromisoformat(last)-timedelta(days=1)).isoformat()
+        last=state.get('wb-statistics',{}).get('success_at');start=(at-timedelta(days=90)).date().isoformat() if not last else min(at-timedelta(days=7),datetime.fromisoformat(last)-timedelta(days=1)).date().isoformat()
         rows=wb_statistics(wb,start)
         for scheme,warehouse in [('fbo','Склад WB'),('fbs','Склад продавца')]:ingest(engine,'wb',scheme,account,[r for r in rows if r.get('warehouseType')==warehouse],'wb-statistics')
         unknown=sum(r.get('warehouseType') not in ('Склад WB','Склад продавца') for r in rows)
@@ -284,38 +291,54 @@ def hashlib_account(token):
 def copy_data(e):return dict(e.data)
 
 
+def update_wb_status(engine,**fields):
+    with transaction(engine) as s:
+        e=s.get(Entity,'cutting-sales-status');data=dict(e.data) if e else {};platforms=dict(data.get('platforms',{}));platforms['wb']={**platforms.get('wb',{}),**fields};data['platforms']=platforms
+        if e:e.data=data;e.version+=1
+        else:s.add(Entity(id='cutting-sales-status',kind='sales_status',version=1,data=data))
+
+
 def sync_wb_sales(engine,client,account,prior,at):
     from .sales import wb_events,store_window,mappings,MSK
     from .order_feed import timestamp
-    from .db import Item
     from collections import defaultdict
-    start=(at-timedelta(days=89)).date().isoformat() if not prior.get('success_at') else min(at-timedelta(days=7),datetime.fromisoformat(prior['success_at'])-timedelta(days=1)).date().isoformat()
-    raw=client.get('/api/v1/supplier/sales',params={'dateFrom':start,'flag':0})
-    if not isinstance(raw,list) or len(raw)>=80000:raise FeedFailure('Неполный список продаж ВБ для статусов заказов')
+    import hashlib
+    prior={**prior,**sync_state(engine).get('wb-sales',{})}
+    history_from=prior.get('history_from') or (at-timedelta(days=90)).date().isoformat()
+    cached_rebuild=bool(prior.get('rebuild_required') and prior.get('raw_complete_from') and prior['raw_complete_from']<=history_from and prior.get('raw_end'))
+    fetched_at=prior.get('raw_at') if cached_rebuild else now().isoformat()
+    end=prior['raw_end'] if cached_rebuild else str(at.astimezone(MSK).date()-timedelta(days=1))
+    if not cached_rebuild:
+        start=history_from if not prior.get('raw_complete_from') or prior.get('rebuild_required') else min(at-timedelta(days=7),datetime.fromisoformat(prior['success_at'])-timedelta(days=1)).date().isoformat()
+        raw=wb_statistics(client,start,'/api/v1/supplier/sales','saleID')
+        with transaction(engine) as s:
+            for r in raw:
+                safe={k:r.get(k) for k in ('saleID','date','lastChangeDate','barcode','srid','warehouseType')};key='market-sale-raw:'+hashlib.sha256(json.dumps([account,safe['saleID']]).encode()).hexdigest();e=s.get(Entity,key);data=dict(account=account,row=safe)
+                if e:e.data=data;e.version+=1
+                else:s.add(Entity(id=key,kind='market_sale_raw',version=1,data=data))
+    with transaction(engine) as s:raw=[e.data['row'] for e in s.scalars(select(Entity).where(Entity.kind=='market_sale_raw',Entity.data['account'].as_string()==account))]
     codes,_,covered=mappings(engine)
-    history_from=prior.get('history_from') or start
-    end=str(at.astimezone(MSK).date()-timedelta(days=1))
-    events,unmatched=wb_events(raw,history_from,end,codes)
+    minimum=min((str(r['date'])[:10] for r in raw),default=history_from)
+    events,_=wb_events(raw,minimum,str(at.astimezone(MSK).date()),codes)
+    window_events,unmatched=wb_events(raw,history_from,end,codes)
     identities={str(r.get('saleID')):r for r in raw}
     with transaction(engine) as s:
         for event in events:
-            r=identities.get(event['id'],{});ref=r.get('srid')
-            data={**event,'account':account,'order_ref':str(ref or ''),'order_at':timestamp(r.get('date'),True)}
-            key='market-sale:'+__import__('hashlib').sha256(json.dumps([account,event['id']]).encode()).hexdigest();e=s.get(Entity,key)
+            r=identities[event['id']];data={**event,'account':account,'order_ref':str(r.get('srid') or ''),'order_at':timestamp(r.get('date'),True)}
+            key='market-sale:'+hashlib.sha256(json.dumps([account,event['id']]).encode()).hexdigest();e=s.get(Entity,key)
             if e:e.data=data;e.version+=1
             else:s.add(Entity(id=key,kind='market_sale',version=1,data=data))
-    with transaction(engine) as s:
-        events=[{k:v for k,v in e.data.items() if k in ('id','item_id','date','kind','quantity')} for e in s.scalars(select(Entity).where(Entity.kind=='market_sale')) if e.data.get('account')==account and history_from<=e.data['date']<=end and e.data['item_id'] in covered['wb']]
         by_ref=defaultdict(list)
-        for e in s.scalars(select(Entity).where(Entity.kind=='market_sale',Entity.data['account'].as_string()==account)):
-            if e.data.get('order_ref'):by_ref[e.data['order_ref']].append(e.data)
+        for event in events:
+            r=identities[event['id']]
+            if r.get('srid'):by_ref[str(r['srid'])].append({**event,'order_at':timestamp(r.get('date'),True)})
         for e in s.scalars(select(Entity).where(Entity.kind=='market_order',Entity.data['platform'].as_string()=='wb',Entity.data['account'].as_string()==account)):
             d=e.data;related=by_ref.get(d['source_ref'])
             if not related:continue
-            last=max(related,key=lambda r:(r.get('order_at') or r['date'],r['kind']=='return'))
-            state='returned' if last['kind']=='return' else 'delivered'
+            last=max(related,key=lambda r:(r.get('order_at') or r['date'],r['kind']=='return'));state='returned' if last['kind']=='return' else 'delivered'
             if d['status']==state:continue
             history=d.get('history',[])+[dict(at=now().isoformat(),status=state,raw_status=last['kind'],source='wb-sales')]
             e.data={**d,'status':state,'sale_status':state,'history':history[-100:]};e.version+=1
-    store_window(engine,dict(platform='wb',start=history_from,end=end,at=now().isoformat(),complete=True,verified=True,covered_items=list(covered['wb']),events=events,source='WB supplier/sales',unmatched=unmatched))
-    set_sync(engine,'wb-sales',history_from=history_from,received=len(raw),history_to=end)
+    store_window(engine,dict(platform='wb',start=history_from,end=end,at=fetched_at,complete=True,verified=True,covered_items=list(covered['wb']),events=[e for e in window_events if e['item_id'] in covered['wb']],source='WB supplier/sales',unmatched=unmatched))
+    set_sync(engine,'wb-sales',history_from=history_from,received=len(raw),history_to=end,raw_complete_from=history_from,raw_end=end,raw_at=fetched_at,rebuild_required=False)
+    update_wb_status(engine,state='ready_cached' if cached_rebuild else 'ready',at=fetched_at,reason='Продажи сверены с учётом всех подтверждённых штрихкодов',**({} if cached_rebuild else {'next_retry_at':None}))

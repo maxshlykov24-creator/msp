@@ -27,18 +27,33 @@ def refresh_wb_mappings(engine,catalog):
         for iid,rows in proposals.items():
             for c in rows:
                 for code in c['market_barcodes']:owners[code].add(iid)
-        changed=0;counts=defaultdict(int)
+        changed=0;counts=defaultdict(int);aliases_added=set()
         for i in items:
             rows=proposals[i.id];conflicts=set().union(*(owners[c]-{i.id} for row in rows for c in row['market_barcodes']))
             state='unique' if len(rows)==1 and not conflicts else 'ambiguous' if rows else 'missing';counts[state]+=1
             data=dict(item_id=i.id,platform='wb',state=state,candidates=rows,local_conflicts=sorted(conflicts),source_sha256=digest,observed_at=catalog['at'],approved=False)
             e=old.get(i.id)
+            previous_aliases={code for c in (e.data.get('candidates',[]) if e else []) for code in c.get('market_barcodes',[])}|set(i.barcodes)
+            if state=='unique' and any(set(c['market_barcodes'])-previous_aliases for c in rows):aliases_added.add(i.id)
             if e:
                 if e.data.get('candidates')==rows and e.data.get('state')==state:data['approved']=e.data.get('approved',False)
                 if any(e.data.get(k)!=data.get(k) for k in ('candidates','state','local_conflicts')):e.version+=1;changed+=1
                 e.data=data
             else:s.add(Entity(id='mapping:wb:'+i.id,kind='mapping',version=1,data=data));changed+=1
-        return dict(counts=counts,changed=changed,source_sha256=digest)
+        if aliases_added:
+            for w in s.scalars(select(Entity).where(Entity.kind=='sales_window',Entity.data['platform'].as_string()=='wb')):
+                if not w.data.get('unmatched'):continue
+                affected=aliases_added & set(w.data.get('covered_items',[]))
+                if not affected:continue
+                data=dict(w.data);blocked=dict(data.get('blocked_items',{}));blocked.update({iid:'Обновлены штрихкоды ВБ. Ожидается повторная сверка продаж' for iid in affected})
+                data.update(covered_items=sorted(set(data['covered_items'])-affected),blocked_items=blocked,identity_pending=sorted(set(data.get('identity_pending',[]))|affected),digest='identity-pending:'+data.get('digest',''));w.data=data;w.version+=1
+            key='order-sync:wb-sales';e=s.get(Entity,key);data={**(e.data if e else {}),'rebuild_required':True}
+            if e:e.data=data;e.version+=1
+            else:s.add(Entity(id=key,kind='order_sync',version=1,data=data))
+            e=s.get(Entity,'cutting-sales-status')
+            if e:
+                data=dict(e.data);platforms=dict(data.get('platforms',{}));platforms['wb']={**platforms.get('wb',{}),'state':'waiting','reason':'Обновлены штрихкоды. Продажи ВБ будут пересверены'};data['platforms']=platforms;e.data=data;e.version+=1
+        return dict(counts=counts,changed=changed,source_sha256=digest,aliases_added_for=sorted(aliases_added))
 
 
 def barcode_matches(s,code):
