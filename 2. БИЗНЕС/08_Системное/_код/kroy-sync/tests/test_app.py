@@ -508,3 +508,25 @@ def test_scanned_count_empty_ambiguous_and_permissions(setup):
         assert not data['items'] and len(data['unknown']) == 1
     with pytest.raises(DomainError, match='Нет права'):
         cmd('count.create', {'location': 'own', 'mode': 'scanned'}, actor=User(id='cutter-count', role='cutter'))
+
+
+def test_count_number_backfill_preserves_original_document(setup):
+    from app.counting import backfill_numbers
+    engine, user, cmd = setup
+    original = {'location': 'own', 'status': 'draft', 'items': {'s': {'version': 1, 'count': '4'}}, 'unknown': []}
+    with transaction(engine) as s:
+        s.add(Entity(id='legacy-count', kind='count', version=3, data=original))
+    before = balance(engine)
+    with transaction(engine) as s:
+        assert backfill_numbers(s) == 1
+    with Session(engine) as s:
+        row = s.get(Entity, 'legacy-count')
+        assert row.version == 4
+        assert row.data['number'] == 'ПР-001'
+        assert {k: v for k, v in row.data.items() if k not in ('number', 'created_at')} == original
+    with transaction(engine) as s:
+        assert backfill_numbers(s) == 0
+    assert balance(engine) == before
+    c = cmd('count.create', {'location': 'own', 'mode': 'scanned', 'barcode': '001'})
+    with Session(engine) as s:
+        assert s.get(Entity, c['id']).data['number'] == 'ПР-002'
