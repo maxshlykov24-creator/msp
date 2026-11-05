@@ -299,6 +299,19 @@ def update_wb_status(engine,**fields):
 
 
 def sync_wb_sales(engine,client,account,prior,at):
+    # Share the existing sales reader lock, so the two workers cannot race the
+    # same report endpoint after a cooldown expires.
+    from pathlib import Path
+    import fcntl
+    root=Path(os.environ.get('KROY_APP_ROOT','/opt/kroy-app-stage'))
+    if not root.is_dir():return _sync_wb_sales(engine,client,account,prior,at)
+    with (root/'sales-reader.lock').open('a') as lock:
+        try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        except BlockingIOError:raise Paused('Продажи уже сверяет другой читатель',(now()+timedelta(seconds=60)).isoformat()) from None
+        return _sync_wb_sales(engine,client,account,prior,at)
+
+
+def _sync_wb_sales(engine,client,account,prior,at):
     from .sales import wb_events,store_window,mappings,MSK
     from .order_feed import timestamp
     from collections import defaultdict

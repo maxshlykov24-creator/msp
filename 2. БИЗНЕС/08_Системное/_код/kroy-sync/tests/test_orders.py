@@ -357,3 +357,12 @@ def test_sales_cooldown_is_shared_with_the_existing_sales_worker(setup):
  update_wb_status(engine,next_retry_at=(now()+timedelta(hours=1)).isoformat())
  client=Client(engine,'wb','seller',{},request=lambda *a,**kw:pytest.fail('Shared cooldown must block network'))
  with pytest.raises(Paused):client.get('/api/v1/supplier/sales',params={'dateFrom':'2026-11-01'})
+
+
+def test_order_sales_reader_respects_existing_report_lock(setup,tmp_path,monkeypatch):
+ import fcntl
+ from app.order_sync import sync_wb_sales,Paused
+ engine,_,_=setup;monkeypatch.setenv('KROY_APP_ROOT',str(tmp_path))
+ with (tmp_path/'sales-reader.lock').open('a') as lock:
+  fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+  with pytest.raises(Paused,match='другой читатель'):sync_wb_sales(engine,None,'seller',{},now())
