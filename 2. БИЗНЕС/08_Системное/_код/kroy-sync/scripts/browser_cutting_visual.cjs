@@ -11,7 +11,7 @@ const output='.runtime/cutting-visual';fs.mkdirSync(output,{recursive:true});
  try{
   const p=await browser.newPage({viewport:{width:1440,height:1000},locale:'ru-RU',reducedMotion:'reduce'});
   p.on('pageerror',e=>errors.push(e.message));p.on('dialog',d=>d.accept());
-  async function login(port){await p.goto(`http://127.0.0.1:${port}/yuji/`);await p.getByLabel('Личный ключ доступа').fill('cut-local-test');await p.getByRole('button',{name:'Войти',exact:true}).click();await p.getByRole('heading',{name:'Поиск товара',exact:true}).waitFor();await p.getByRole('navigation').getByRole('button',{name:'Крой',exact:true}).click();await p.getByRole('heading',{name:'Задания на крой',exact:true}).waitFor()}
+  async function login(port){await p.goto(`http://127.0.0.1:${port}/yuji/`);await p.getByLabel('Личный ключ доступа').fill('cut-local-test');await p.getByRole('button',{name:'Войти',exact:true}).click();await p.getByRole('heading',{name:'Товары',exact:true}).waitFor();await p.getByRole('navigation').getByRole('button',{name:'Крой',exact:true}).click();await p.getByRole('heading',{name:'Задания на крой',exact:true}).waitFor()}
   async function choose(label,name){await p.getByRole('button',{name:label,exact:true}).click();await p.getByRole('option',{name,exact:true}).click()}
   async function screenshots(name){if(requested&&!requested.includes(name))return;for(const theme of ['light','dark']){
    await p.setViewportSize({width:1440,height:1000});await p.getByRole('button',{name:theme==='light'?'Светлая тема':'Тёмная тема',exact:true}).click();

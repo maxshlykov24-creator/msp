@@ -22,3 +22,17 @@ export function productCategory(i:Variant){
  return 'Другая одежда';
 }
 export function photoCandidates(i:Variant){return [...new Set([i.photo_preview,i.photo].filter(Boolean))] as string[]}
+
+export function stockFigures(item:Variant,location:string){
+ const balances=(item.balances||[]).filter((b:any)=>b.location===location);
+ const amount=(key:string):number|null=>balances.length&&balances.every((b:any)=>b.known&&b[key]!=null&&Number.isFinite(Number(b[key])))?balances.reduce((sum:number,b:any)=>sum+Number(b[key]),0):null;
+ // free already excludes reservations. Do not subtract reserved a second time.
+ const available=amount('free'),reserved=amount('reserved'),frozen=amount('frozen');
+ const total=available===null||reserved===null||frozen===null?null:available+reserved+frozen;
+ return {available,total,reserved,frozen};
+}
+export function modelStock(items:Variant[],location:string){
+ const values=items.map(i=>stockFigures(i,location));
+ const sum=(key:'available'|'total'):number|null=>values.length&&new Set(items.map(i=>i.unit)).size===1&&values.every(v=>v[key]!==null)?values.reduce((n,v)=>n+v[key]!,0):null;
+ return {available:sum('available'),total:sum('total')};
+}

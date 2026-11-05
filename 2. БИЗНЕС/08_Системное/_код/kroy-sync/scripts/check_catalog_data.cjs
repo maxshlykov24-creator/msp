@@ -10,3 +10,11 @@ assert.deepEqual(sort(['M','4XS','2XS','3XL','XS','S']),['4XS','2XS','XS','S','M
 assert.deepEqual(sort(['','ONE SIZE','S','M']),['S','M','ONE SIZE','']);
 assert.equal(target.productCategory({kind:'garment',category:'YUJI',model:'Костюм двойка поло'}),'Костюмы');
 console.log('Size ordering and category grouping passed');
+const item={unit:'piece',balances:[{location:'own',known:true,free:'7',reserved:'3',frozen:'5',damaged:'2'}]};
+assert.deepEqual(target.stockFigures(item,'own'),{available:7,total:15,reserved:3,frozen:5});
+assert.deepEqual(target.modelStock([item,item],'own'),{available:14,total:30});
+assert.deepEqual(target.stockFigures(item,'another'),{available:null,total:null,reserved:null,frozen:null});
+assert.deepEqual(target.modelStock([item,{...item,balances:[]}],'own'),{available:null,total:null});
+assert.equal(target.stockFigures({...item,balances:[{...item.balances[0],known:false}]},'own').available,null);
+assert.equal(target.modelStock([item,{...item,unit:'meter'}],'own').total,null);
+console.log('Available stock, reserved/frozen totals and unknown balances passed');

@@ -3,7 +3,7 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE_PATH||'playwright');const
 (async()=>{const browser=await chromium.launch({headless:true});try{
  const p=await browser.newPage({viewport:{width:1440,height:1100},locale:'ru-RU'}),errors=[];p.on('pageerror',e=>errors.push(e.message));
  const base=process.env.KROY_UI_URL||'https://ms-p.ru/yuji/',key=fs.readFileSync(process.env.KROY_UI_KEY_FILE||'.runtime/stage-owner.key','utf8').trim(),headers={Authorization:'Bearer '+key};
- await p.goto(base);await p.getByLabel('Личный ключ доступа').fill(key);await p.getByRole('button',{name:'Войти',exact:true}).click();await p.getByRole('heading',{name:'Поиск товара',exact:true}).waitFor();
+ await p.goto(base);await p.getByLabel('Личный ключ доступа').fill(key);await p.getByRole('button',{name:'Войти',exact:true}).click();await p.getByRole('heading',{name:'Товары',exact:true}).waitFor();
  const catalog=await(await p.request.get(base+'api/catalog',{headers})).json();const items=catalog.items.filter(i=>i.kind==='garment'),location=catalog.items.flatMap(i=>i.balances).find(b=>!b.location.includes(':')).location;
  const response=await p.request.post(base+'api/cutting/demand',{headers,data:{location,item_ids:items.map(i=>i.id)}});assert(response.ok());const overview=await response.json();
  const sample=overview.rows.find(r=>r.platforms.wb.known&&r.platforms.ozon.known&&r.platforms.ozon.sales>0&&r.platforms.wb.sales>0);assert(sample,'No item with both marketplace sales');const item=items.find(i=>i.id===sample.item_id);

@@ -2,7 +2,7 @@
 const {chromium}=require(process.env.PLAYWRIGHT_MODULE_PATH||'playwright');const fs=require('fs'),assert=require('node:assert/strict');
 (async()=>{const browser=await chromium.launch({headless:true});try{
  const page=await browser.newPage({viewport:{width:1440,height:1000},locale:'ru-RU'}),errors=[];page.on('pageerror',e=>errors.push(e.message));
- await page.goto(process.env.KROY_UI_URL||'http://127.0.0.1:18766/yuji/');await page.getByLabel('Личный ключ доступа').fill(process.env.KROY_UI_KEY_FILE?fs.readFileSync(process.env.KROY_UI_KEY_FILE,'utf8').trim():'cut-local-test');await page.getByRole('button',{name:'Войти',exact:true}).click();await page.getByRole('heading',{name:'Поиск товара',exact:true}).waitFor();
+ await page.goto(process.env.KROY_UI_URL||'http://127.0.0.1:18766/yuji/');await page.getByLabel('Личный ключ доступа').fill(process.env.KROY_UI_KEY_FILE?fs.readFileSync(process.env.KROY_UI_KEY_FILE,'utf8').trim():'cut-local-test');await page.getByRole('button',{name:'Войти',exact:true}).click();await page.getByRole('heading',{name:'Товары',exact:true}).waitFor();
  const choose=async(label,option)=>{await page.getByRole('button',{name:label,exact:true}).click();await page.getByRole('option',{name:option,exact:true}).click()};
  await page.getByRole('navigation').getByRole('button',{name:'Крой',exact:true}).click();await page.getByRole('heading',{name:'Задания на крой',exact:true}).waitFor();
  const initial=await page.locator('.cut-register tbody tr').count();
