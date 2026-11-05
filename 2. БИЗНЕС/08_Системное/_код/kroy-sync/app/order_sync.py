@@ -13,7 +13,7 @@ from .db import Entity, now, transaction
 from .order_feed import ingest,ingest_returns,sync_state,set_sync,timestamp,PENDING
 
 ALLOWED={
- 'wb':{'/api/v3/orders/new':'GET','/api/v3/orders':'GET','/api/v3/orders/status':'POST','/api/v1/supplier/orders':'GET','/api/v1/supplier/sales':'GET','/api/v1/seller-info':'GET'},
+ 'wb':{'/api/v3/orders/new':'GET','/api/v3/orders':'GET','/api/v3/orders/status':'POST','/api/v1/supplier/orders':'GET','/api/v1/supplier/sales':'GET','/api/v1/seller-info':'GET','/content/v2/get/cards/list':'POST'},
  'ozon':{'/v4/posting/fbs/list':'POST','/v4/posting/fbs/unfulfilled/list':'POST','/v3/posting/fbo/list':'POST','/v3/posting/fbs/get':'POST','/v2/posting/fbo/get':'POST','/v1/returns/list':'POST'}}
 
 class FeedFailure(RuntimeError):pass
@@ -49,7 +49,7 @@ class Client:
         last=state.get('last_request');spacing=61 if path in ('/api/v1/supplier/orders','/api/v1/supplier/sales') else 3.1 if self.platform=='wb' else 2.1
         delay=max(0,spacing-(now()-datetime.fromisoformat(last)).total_seconds()) if last else 0
         if delay:self.sleep(delay)
-        host='https://api-seller.ozon.ru' if self.platform=='ozon' else 'https://common-api.wildberries.ru' if path=='/api/v1/seller-info' else 'https://statistics-api.wildberries.ru' if path in ('/api/v1/supplier/orders','/api/v1/supplier/sales') else 'https://marketplace-api.wildberries.ru'
+        host='https://api-seller.ozon.ru' if self.platform=='ozon' else 'https://content-api.wildberries.ru' if path=='/content/v2/get/cards/list' else 'https://common-api.wildberries.ru' if path=='/api/v1/seller-info' else 'https://statistics-api.wildberries.ru' if path in ('/api/v1/supplier/orders','/api/v1/supplier/sales') else 'https://marketplace-api.wildberries.ru'
         req=urllib.request.Request(host+path+('?' + urlencode(params) if params else ''),data=json.dumps(body or {}).encode() if method=='POST' else None,headers={**self.headers,'Content-Type':'application/json'},method=method)
         for attempt in range(3):
             set_sync(self.engine,key,last_request=now().isoformat())
@@ -183,7 +183,37 @@ def run(engine,env,history_steps=1,on_current=None,deep=True):
         ingest(engine,'wb','fbs',account,[{**r,'supplierStatus':'new'} for r in rows],'wb-fbs',only_new=True)
         set_sync(engine,'wb-new',received=len(rows))
         return rows
+    def catalog_wb():
+        prior=state.get('wb-catalog',{})
+        if prior.get('success_at') and (at-datetime.fromisoformat(prior['success_at'])).total_seconds()<3600:return
+        from .product_identity import refresh_wb_mappings
+        cards=[];seen=set();cursors=set();cursor={'limit':100}
+        for _ in range(1000):
+            data=wb.get('/content/v2/get/cards/list',{'settings':{'cursor':cursor,'filter':{'withPhoto':-1}}});batch=data.get('cards')
+            if not isinstance(batch,list):raise FeedFailure('Неполный каталог ВБ')
+            for c in batch:
+                if not c.get('nmID') or c['nmID'] in seen:raise FeedFailure('Повтор карточки ВБ')
+                seen.add(c['nmID']);cards.append(dict(id=c['nmID'],sizes=[dict(chrtID=r['chrtID'],skus=r.get('skus',[])) for r in c.get('sizes',[])]))
+            if len(batch)<100:break
+            nxt=data.get('cursor') or {};key=(nxt.get('updatedAt'),nxt.get('nmID'))
+            if not all(key) or key in cursors:raise FeedFailure('Не продвинулся курсор карточек ВБ')
+            cursors.add(key);cursor={'limit':100,'updatedAt':key[0],'nmID':key[1]}
+        else:raise FeedFailure('Лимит страниц карточек ВБ')
+        result=refresh_wb_mappings(engine,dict(at=now().isoformat(),cards=cards));set_sync(engine,'wb-catalog',**result)
     fresh=phase('wb-new',current_wb)
+    oz=clients['ozon'];oz_account=accounts['ozon']
+    def open_ozon():
+        rows=postings(oz,'fbs',(at-timedelta(days=90)).isoformat(),(at+timedelta(days=30)).isoformat(),True)
+        ingest(engine,'ozon','fbs',oz_account,rows,'ozon-fbs')
+        ids={r['posting_number'] for r in rows}
+        with transaction(engine) as s:
+            missing=[dict(e.data) for e in s.scalars(select(Entity).where(Entity.kind=='market_order',Entity.data['platform'].as_string()=='ozon',Entity.data['scheme'].as_string()=='fbs')) if e.data['account']==oz_account and e.data['status'] in PENDING and e.data['external_id'] not in ids]
+        for d in sorted(missing,key=lambda d:d.get('observed_at',''))[:100]:
+            row=oz.get('/v3/posting/fbs/get',{'posting_number':d['external_id'],'with':{'analytics_data':False,'financial_data':False}});row=row.get('result',row)
+            if row.get('posting_number')!=d['external_id']:raise FeedFailure('Не подтверждён номер открытого отправления')
+            ingest(engine,'ozon','fbs',oz_account,[{**row,'_status_verified':True}],'ozon-fbs')
+        set_sync(engine,'ozon-open',received=len(rows),tracked_missing=len(missing))
+    phase('ozon-open',open_ozon)
     def fbs():
         rows=wb_history(wb,at-timedelta(days=30),lambda batch:ingest(engine,'wb','fbs',account,batch,'wb-fbs',only_new=True)) if deep else []
         tracked=[]
@@ -195,6 +225,7 @@ def run(engine,env,history_steps=1,on_current=None,deep=True):
         statuses=wb_statuses(wb,list(merged))
         ingest(engine,'wb','fbs',account,[{**r,**statuses[r['id']],'_status_verified':True} for r in merged.values()],'wb-fbs')
         set_sync(engine,'wb-fbs',received=len(merged),history_from=(at-timedelta(days=30)).isoformat() if deep else state.get('wb-fbs',{}).get('history_from'),history_to=at.isoformat() if deep else state.get('wb-fbs',{}).get('history_to'))
+    if deep:phase('wb-catalog',catalog_wb)
     phase('wb-fbs',fbs)
     def statistics():
         last=state.get('wb-statistics',{}).get('success_at');start=(at-timedelta(days=90)).isoformat() if not last else min(at-timedelta(days=7),datetime.fromisoformat(last)-timedelta(days=1)).isoformat()
@@ -205,19 +236,7 @@ def run(engine,env,history_steps=1,on_current=None,deep=True):
         set_sync(engine,'wb-statistics',received=len(rows),history_from=(state.get('wb-statistics',{}).get('history_from') if not state.get('wb-statistics',{}).get('bootstrap_partial') else None) or start,bootstrap_partial=False,history_to=at.isoformat(),window_from=start)
     if deep:phase('wb-statistics',statistics)
     if deep:phase('wb-sales',lambda:sync_wb_sales(engine,wb,account,state.get('wb-sales',{}),at))
-    oz=clients['ozon'];account=accounts['ozon']
-    def open_ozon():
-        rows=postings(oz,'fbs',(at-timedelta(days=90)).isoformat(),(at+timedelta(days=30)).isoformat(),True)
-        ingest(engine,'ozon','fbs',account,rows,'ozon-fbs')
-        ids={r['posting_number'] for r in rows}
-        with transaction(engine) as s:
-            missing=[dict(e.data) for e in s.scalars(select(Entity).where(Entity.kind=='market_order',Entity.data['platform'].as_string()=='ozon',Entity.data['scheme'].as_string()=='fbs')) if e.data['account']==account and e.data['status'] in PENDING and e.data['external_id'] not in ids]
-        for d in sorted(missing,key=lambda d:d.get('observed_at',''))[:100]:
-            row=oz.get('/v3/posting/fbs/get',{'posting_number':d['external_id'],'with':{'analytics_data':False,'financial_data':False}});row=row.get('result',row)
-            if row.get('posting_number')!=d['external_id']:raise FeedFailure('Не подтверждён номер открытого отправления')
-            ingest(engine,'ozon','fbs',account,[{**row,'_status_verified':True}],'ozon-fbs')
-        set_sync(engine,'ozon-open',received=len(rows),tracked_missing=len(missing))
-    phase('ozon-open',open_ozon)
+    account=oz_account
     if deep:
         for scheme in ('fbs','fbo'):
             def current(scheme=scheme):
@@ -276,7 +295,7 @@ def sync_wb_sales(engine,client,account,prior,at):
     codes,_,covered=mappings(engine)
     history_from=prior.get('history_from') or start
     end=str(at.astimezone(MSK).date()-timedelta(days=1))
-    events,_=wb_events(raw,history_from,end,codes)
+    events,unmatched=wb_events(raw,history_from,end,codes)
     identities={str(r.get('saleID')):r for r in raw}
     with transaction(engine) as s:
         for event in events:
@@ -298,5 +317,5 @@ def sync_wb_sales(engine,client,account,prior,at):
             if d['status']==state:continue
             history=d.get('history',[])+[dict(at=now().isoformat(),status=state,raw_status=last['kind'],source='wb-sales')]
             e.data={**d,'status':state,'sale_status':state,'history':history[-100:]};e.version+=1
-    store_window(engine,dict(platform='wb',start=history_from,end=end,at=now().isoformat(),complete=True,verified=True,covered_items=list(covered['wb']),events=events,source='WB supplier/sales',unmatched=0))
+    store_window(engine,dict(platform='wb',start=history_from,end=end,at=now().isoformat(),complete=True,verified=True,covered_items=list(covered['wb']),events=events,source='WB supplier/sales',unmatched=unmatched))
     set_sync(engine,'wb-sales',history_from=history_from,received=len(raw),history_to=end)

@@ -40,7 +40,8 @@ def snapshot(s, item_id, location):
 def scan(s, d, barcode):
     require(isinstance(barcode, str) and 0 < len(barcode.strip()) <= 300, 'Укажи штрихкод', 422)
     barcode = barcode.strip()
-    candidates = [i for i in s.scalars(select(Item)) if barcode in i.barcodes]
+    from .product_identity import barcode_matches
+    candidates = barcode_matches(s, barcode)
     if len(candidates) != 1 or (d.get('mode') != 'scanned' and candidates[0].id not in d['items']):
         require(len(d['unknown']) < 1000, 'Сначала разбери неизвестные коды', 422)
         d['unknown'].append({'barcode': barcode, 'reason': 'Код не найден или соответствует нескольким позициям'})

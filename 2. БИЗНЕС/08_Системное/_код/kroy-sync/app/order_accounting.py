@@ -72,11 +72,11 @@ def apply(s,doc,p):
                 dispatch(s,doc,'order.cancel',dict(id=ledger.id,version=ledger.version))
             elif status in PENDING and ld['status']=='shortage':
                 correct(s,doc,'order.reserve',dict(id=ledger.id,version=ledger.version))
-            elif status in ('shipping','delivered','returned') and ld['status']=='reserved':
+            elif status in ('shipping','pickup','delivered','returned') and ld['status']=='reserved':
                 dispatch(s,doc,'order.ship',dict(id=ledger.id,version=ledger.version))
             if status=='returned' and ledger.data['status']=='shipped':dispatch(s,doc,'order.cancel',dict(id=ledger.id,version=ledger.version))
             ld=ledger.data
-            if status in ('shipping','delivered','returned') and ld['status']=='shortage' and covered_by_initial_count(s,d,ledger.data):
+            if status in ('shipping','pickup','delivered','returned') and ld['status']=='shortage' and covered_by_initial_count(s,d,ledger.data):
                 save(ledger,{**ld,'status':'shipped','reserved':[],'initial_count_covered':True,'shortages':[]})
                 ld=ledger.data
                 if status=='returned':dispatch(s,doc,'order.cancel',dict(id=ledger.id,version=ledger.version));ld=ledger.data
@@ -84,7 +84,7 @@ def apply(s,doc,p):
             if ld['status']=='shortage':
                 unknown=any(not (b:=s.scalar(select(Balance).where(Balance.item_id==line['item_id'],Balance.location==ld['location']))) or not b.known for line in ld['lines'])
                 if unknown:d['accounting_state']='waiting_stock'
-                if status in ('shipping','delivered','returned'):d['accounting_note']='Площадка подтвердила передачу. Списание ждёт сверки начального остатка'
+                if status in ('shipping','pickup','delivered','returned'):d['accounting_note']='Площадка подтвердила передачу. Списание ждёт сверки начального остатка'
 
     save(e,d)
     return {'id':e.id,'version':e.version,'accounting_state':d['accounting_state']}
@@ -101,7 +101,7 @@ def reconcile(engine,location):
         balances={b.item_id:b for b in s.scalars(select(Balance).where(Balance.location==location))}
         initial=initial_times(s,location) if any(b.known for b in balances.values()) else {}
         gate=s.get(Entity,'order-sync:accounting-start')
-        for e in s.scalars(select(Entity).where(Entity.kind=='market_order')):
+        for e in s.scalars(select(Entity).where(Entity.kind=='market_order').order_by(Entity.data['created_at'].as_string().asc().nullslast(),Entity.id)):
             d=e.data;ledger=own.get(d.get('ledger_id',''))
             if ledger is None:
                 candidates=[]
@@ -158,7 +158,7 @@ def covered_by_initial_count(s,market,ledger):
     from datetime import datetime
     from decimal import Decimal
     if any(Decimal(r['quantity']) for r in ledger['reserved']):return False
-    observations=[h['at'] for h in market.get('history',[]) if h['status'] in ('shipping','delivered','returned')]
+    observations=[h['at'] for h in market.get('history',[]) if h['status'] in ('shipping','pickup','delivered','returned')]
     if not observations:return False
     handed=datetime.fromisoformat(min(observations))
     for line in ledger['lines']:
@@ -194,7 +194,7 @@ def initial_times(s,location):
 def capture_allowed(s,d,location,initial=None,gate=None):
     from datetime import datetime
     gate=gate or s.get(Entity,'order-sync:accounting-start')
-    if not gate or d['scheme']!='fbs' or d['needs_mapping'] or d['status'] not in ('shipping','delivered','returned') or not d.get('status_verified') or not d.get('created_at'):return False
+    if not gate or d['scheme']!='fbs' or d['needs_mapping'] or d['status'] not in ('shipping','pickup','delivered','returned') or not d.get('status_verified') or not d.get('created_at'):return False
     if d['created_at']<gate.data['at']:return False
     reference=datetime.fromisoformat(d.get('handed_at') or d['created_at'])
     initial=initial if initial is not None else initial_times(s,location)

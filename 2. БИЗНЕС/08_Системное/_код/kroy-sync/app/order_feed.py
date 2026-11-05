@@ -11,7 +11,7 @@ from sqlalchemy import select, func, cast, Text
 from .db import Entity, Item, Balance, now, transaction
 from .service import require
 
-STATES={'ordered','new','assembling','ready','shipping','delivered','cancelled','returned','unknown'}
+STATES={'ordered','new','assembling','ready','shipping','pickup','delivered','cancelled','returned','unknown'}
 PENDING={'new','assembling','ready'}
 WB_CANCEL={'canceled','canceled_by_client','canceled_by_missed_call','declined_by_client','cancel','cancelled'}
 OZON_STATES={'awaiting_registration':'new','acceptance_in_progress':'new','awaiting_packaging':'assembling','awaiting_approve':'new','awaiting_deliver':'ready','driver_pickup':'shipping','delivering':'shipping','delivered':'delivered','cancelled':'cancelled','not_accepted':'cancelled','arbitration':'unknown','client_arbitration':'unknown','sent_by_seller':'shipping'}
@@ -41,7 +41,9 @@ def index(s):
         for c in d.get('candidates',[]):
             if d.get('platform')=='ozon':
                 for sku in c.get('skus',[]):skus[str(sku)].add(d['item_id'])
-            else:variants[str(c.get('variant_id'))].add(d['item_id'])
+            else:
+                variants[str(c.get('variant_id'))].add(d['item_id'])
+                for code in c.get('market_barcodes',[]):codes[str(code)].add(d['item_id'])
     # Fresh sales-verified identities include archived SKUs.
     for e in s.scalars(select(Entity).where(Entity.kind=='sales_window')):
         if e.data.get('platform')!='ozon' or not e.data.get('verified'):continue
@@ -60,6 +62,7 @@ def normalized(platform,scheme,raw,account,lookups,source):
             matches=skus.get(str(p.get('sku')),set());q=p.get('quantity')
             lines.append(dict(item_id=next(iter(matches)) if len(matches)==1 else None,sku=str(p.get('sku') or ''),barcode='',offer_id=str(p.get('offer_id') or ''),quantity=q if type(q) is int and q>0 else None,mapping='matched' if len(matches)==1 else 'ambiguous' if matches else 'missing'))
         due=raw.get('shipment_date');handed=raw.get('delivering_date');raw_status=raw.get('status') or '';supplier_status=''
+        if raw.get('substatus') in ('posting_in_pickup_point','in_pickup_point'):status='pickup'
     elif source=='wb-statistics':
         external=str(raw['srid']);ref=external;created=raw.get('date');status='cancelled' if raw.get('isCancel') is True else 'ordered'
         matches=codes.get(str(raw.get('barcode')),set())
@@ -69,6 +72,7 @@ def normalized(platform,scheme,raw,account,lookups,source):
         external=str(raw['id']);ref=raw.get('rid') or external;created=raw.get('createdAt');raw_status=raw.get('wbStatus') or '';supplier_status=raw.get('supplierStatus') or ''
         if raw_status in WB_CANCEL or supplier_status in WB_CANCEL:status='cancelled'
         elif raw_status=='sold':status='delivered'
+        elif raw_status=='ready_for_pickup':status='pickup'
         elif raw_status in ('ready_for_pickup','sorted','on_way_to_client','accepted_by_client') or supplier_status=='complete':status='shipping'
         elif supplier_status=='confirm':status='assembling'
         elif supplier_status=='new':status='new'
@@ -79,7 +83,7 @@ def normalized(platform,scheme,raw,account,lookups,source):
         lines=[dict(item_id=next(iter(matches)) if len(matches)==1 else None,barcode=str((raw.get('skus') or [''])[0]),sku=str(raw.get('chrtId',raw.get('chrtID')) or ''),offer_id=str(raw.get('article') or ''),quantity=1,mapping='matched' if len(matches)==1 else 'ambiguous' if matches else 'missing')]
         due=handed=None
     require(external and len(external)<=200,'Нет номера заказа площадки',422)
-    return dict(platform=platform,account=account,scheme=scheme,external_id=external,source_ref=str(ref),created_at=timestamp(created,platform=='wb' and source=='wb-statistics'),shipment_due=timestamp(due),handed_at=timestamp(handed),status=status,raw_status=raw_status,supplier_status=supplier_status,lines=lines,source=source,parent=raw.get('parent_posting_number') if platform=='ozon' else None,order_number=str(raw.get('order_number') or raw.get('gNumber') or ''),order_id=str(raw.get('order_id') or raw.get('orderUid') or ''))
+    return dict(platform=platform,account=account,scheme=scheme,external_id=external,source_ref=str(ref),created_at=timestamp(created,platform=='wb' and source=='wb-statistics'),shipment_due=timestamp(due),handed_at=timestamp(handed),status=status,raw_status=raw_status,supplier_status=supplier_status,lines=lines,source=source,parent=raw.get('parent_posting_number') if platform=='ozon' else None,order_number=str(raw.get('order_number') or raw.get('gNumber') or ''),order_id=str(raw.get('order_id') or raw.get('orderUid') or ''),substatus=raw.get('substatus'))
 
 
 def ingest(engine,platform,scheme,account,rows,source,observed_at=None,only_new=False):

@@ -280,3 +280,27 @@ def test_order_missed_during_outage_is_counted_after_activation_only(setup):
  assert balance(engine)['free']==9 and balance(engine)['reserved']==0
  assert market(engine).data['accounting_state']=='shipped'
  reconcile(engine,'own');assert balance(engine)['free']==9
+
+
+def test_alternative_gtin_is_linked_by_exact_wb_variant_and_scans_as_same_item(setup):
+ from app.product_identity import refresh_wb_mappings
+ engine,_,cmd=setup
+ catalog=dict(at=now().isoformat(),cards=[dict(id=1,sizes=[dict(chrtID=10,skus=['001','04670249981666'])])])
+ result=refresh_wb_mappings(engine,catalog);assert result['counts']['unique']==1
+ ingest(engine,'wb','fbo','seller',[dict(srid='gtin-order',date=now().isoformat(),barcode='04670249981666',isCancel=False)],'wb-statistics')
+ assert market(engine).data['lines'][0]['item_id']=='s' and not market(engine).data['needs_mapping']
+ c=cmd('count.create',dict(location='own',mode='scanned',barcode='04670249981666'))
+ with Session(engine) as s:assert s.get(Entity,c['id']).data['items']['s']['count']=='1'
+ from app.sales import mappings
+ codes,_,covered=mappings(engine)
+ assert codes['04670249981666']==['s'] and codes['001']==['s'] and covered['wb']=={'s'}
+
+
+def test_conflicting_marketplace_barcode_is_never_guessed(setup):
+ from app.product_identity import refresh_wb_mappings,barcode_matches
+ engine,_,_=setup
+ refresh_wb_mappings(engine,dict(at=now().isoformat(),cards=[dict(id=1,sizes=[dict(chrtID=10,skus=['001','shared']),dict(chrtID=11,skus=['002','shared'])])]))
+ with Session(engine) as s:
+  rows=list(s.scalars(select(Entity).where(Entity.kind=='mapping')))
+  assert all(r.data['state']=='ambiguous' for r in rows)
+  assert not barcode_matches(s,'shared')

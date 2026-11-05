@@ -154,6 +154,10 @@ def mappings(engine):
             if d.get('state')!='unique':continue
             if d['platform']=='ozon' and not any(c.get('skus') for c in d['candidates']):continue
             covered[d['platform']].add(d['item_id'])
+            if d['platform']=='wb':
+                for candidate in d['candidates']:
+                    for code in candidate.get('market_barcodes',[]):
+                        if d['item_id'] not in codes.setdefault(str(code),[]):codes[str(code)].append(d['item_id'])
             if d['platform']=='ozon':
                 for candidate in d['candidates']:
                     for sku in candidate.get('skus',[]):skus[str(sku)].add(d['item_id'])
