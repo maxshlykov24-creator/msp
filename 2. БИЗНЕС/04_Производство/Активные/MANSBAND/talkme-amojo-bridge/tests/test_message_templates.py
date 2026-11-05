@@ -327,6 +327,15 @@ def test_manual_rejection_keeps_amo_text_and_same_content_is_not_resent(db):
     assert len(c.patches)==2 and c.patches[1]['content']=='Исправленный текст' and c.patches[1]['buttons'][0]['text']=='Сайт'
 
 
+def test_manual_amo_created_template_explains_missing_edit(db):
+    from fastapi import HTTPException
+    c=CRM();c.reject_status=400
+    c.reject_json={"title":"Bad Request","detail":"Invalid request items","errors":[{"code":"EntityNotFound","path":"id","detail":"Template with id 5 not found"}]}
+    d=manual_draft(db,c);m.check(d.id,{'version':1},db,c)
+    with pytest.raises(HTTPException) as exc:m.publish(d.id,m.Publish(version=1,actor='admin'),db,c)
+    assert exc.value.status_code==422 and "создан в amoCRM" in exc.value.detail and len(c.patches)==1
+
+
 def test_manual_patch_omits_empty_buttons(db):
     c=CRM();c.remote={**c.remote,'buttons':[],'attachment':None}
     d=manual_draft(db,c);m.check(d.id,{'version':1},db,c)

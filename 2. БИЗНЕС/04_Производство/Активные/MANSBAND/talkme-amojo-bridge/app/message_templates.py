@@ -1135,12 +1135,21 @@ def amo_message(resp):
     if isinstance(data,dict):
         for key in ("title","detail"):
             if isinstance(data.get(key),str) and data[key].strip():bits.append(data[key].strip())
-        errors=data.get("validation-errors")
-        if errors:bits.append(json.dumps(errors,ensure_ascii=False)[:300])
+        found=[]
+        def walk(node):
+            if isinstance(node,dict):
+                if isinstance(node.get("detail"),str) and node["detail"].strip():found.append(node["detail"].strip())
+                for value in node.values():walk(value)
+            elif isinstance(node,list):
+                for item in node:walk(item)
+        walk(data.get("errors") or data.get("validation-errors") or [])
+        if found:bits.append("; ".join(dict.fromkeys(found))[:300])
     return " ".join(bits).replace("\n"," ")[:500]
 
 
 def rejection_text(status,text):
+    if "template with id" in text.lower() and "not found" in text.lower():
+        return "Этот шаблон создан в amoCRM. Касса может менять только шаблоны, созданные в кассе. Измени этот текст в amoCRM."
     if status in (401,403):return "У интеграции нет прав администратора amoCRM"
     if status==404:return "Шаблон удалён в amoCRM"
     if text:return f"amoCRM не приняла запись: {text}"

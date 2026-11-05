@@ -17,7 +17,7 @@ type CrmState = { state: string; version: number; message: string; http_status?:
 type Doc = { id: string; kind: "rule" | "routing" | "manual"; version: number; published_version?: number; draft: Payload; active: Payload | null; checked: boolean; crm?: CrmState | null };
 type Field = { id: number; name: string; type: string; enums?: { id: number; value: string }[] };
 type Pipeline = { id: number; name: string; sort?: number; _embedded?: { statuses?: { id: number; name: string; sort?: number }[] } };
-type Remote = { id: number; name: string; content: string; source_hash: string; type: string };
+type Remote = { id: number; name: string; content: string; source_hash: string; type: string; external_id?: string | null };
 type Check = { sample_limit?: number; total?: number; samples?: { lead_id: number; text?: string; due_at?: string; channels?: string[]; reason?: string }[]; overlaps?: { id: string; name: string }[]; text?: string };
 type Journal = { state?: string; gift_lead_id?: number; id: number; rule_id: string; lead_id: number; due_at: string; label: string; reason: string; attempts: { channel: string; state: string; reason: string }[] };
 type Revision = { version: number; actor: string; action: string; at: string; payload: Payload | { document: Payload } };
@@ -224,6 +224,7 @@ export function MessageTemplates() {
           <fieldset disabled={!editable || busy || manualReadOnly} className="min-w-0 space-y-4 disabled:opacity-80">
             {(rule || manual) && <label className="block space-y-1"><span>Название</span><input className={input} value={(rule || manual)?.name ?? ""} onChange={e => edit({ name: e.target.value })} /></label>}
             {manual && <p className={`text-sm ${manualStatus.startsWith("Сейчас") ? "text-mute" : "text-amber-200"}`}>{manualStatus}</p>}
+            {manual && remoteNow && !remoteNow.external_id && <p className="text-sm text-amber-200">Этот шаблон создан в amoCRM. Касса может менять только шаблоны, созданные здесь. Этот текст меняется в amoCRM.</p>}
             {manual && remoteNow && (dirty || manual.delete || manual.source_hash !== remoteNow.source_hash || manual.name !== remoteNow.name || manual.content !== remoteNow.content) && <button type="button" className={button} disabled={busy} onClick={discardManual}>Загрузить текущий из amoCRM</button>}
             {rule && <>
               <div className="rounded-xl bg-ink-800 p-3 text-sm"><p className="mb-2 text-xs text-mute">Используется на этапах</p><div className="flex flex-wrap gap-2">{rule.statuses.length ? ruleStages(rule).map(s => <span key={`${s.pipeline.id}-${s.id}`} title={s.pipeline.name}><StageBadge stage={s.name} /></span>) : <span>{stageLabel(rule)}</span>}</div></div>
