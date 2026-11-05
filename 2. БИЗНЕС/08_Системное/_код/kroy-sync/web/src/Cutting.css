@@ -30,6 +30,7 @@
 .cut-steps strong{font-size:12px;font-weight:550;line-height:1.5}.cut-steps svg{margin-left:auto}.cut-steps>button.is-current{border-color:var(--accent);background:var(--surface);color:var(--accent)}.cut-steps>button.is-current>span{background:var(--accent-soft)}
 .cut-editor>.cut-notice{margin-bottom:24px}
 .cut-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px}
+.cut-span{grid-column:1 / -1}
 .cut-form-grid--three{grid-template-columns:repeat(3,minmax(0,1fr))}.cut-period-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
 .cut-subsection{display:grid;gap:16px;min-width:0}.cut-subsection>h4{padding-bottom:0}
 .cut-quantity-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:18px}
