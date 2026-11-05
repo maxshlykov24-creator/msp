@@ -76,9 +76,10 @@ def calculate(s, raw):
             platforms[platform] = dict(known=bool(w), sales=sales if w else None, returns=returns if w else None, at=w.data['at'] if w else None, net=sales-returns if w else None, reason=reason, source=w.data.get('source') if w else None, listed=iid not in w.data.get('not_listed_items',[]) if w else None, catalog_matches=w.data.get('catalog_matches',{}).get(iid,[]) if w else [])
         net = sum(v['sales']-v['returns'] for v in platforms.values()) if all(v['known'] for v in platforms.values()) else None
         future = sum((Decimal(c['quantity']) for c in coverage[iid] if c['included']), Decimal(0))
-        free = b.free if b and b.known else None
+        stock_assumed_zero = not (b and b.known)
+        free = b.free if not stock_assumed_zero else Decimal(0)
         target = int((Decimal(max(0, net))*p['horizon']/((date.fromisoformat(p['end'])-date.fromisoformat(p['start'])).days+1)).to_integral_value(rounding=ROUND_CEILING)) if net is not None else None
-        rows.append(dict(item_id=iid, platforms=platforms, net=net, free=str(free) if free is not None else None, future=str(future), coverage=coverage[iid], target=target, recommendation=max(0, int(Decimal(target)-free-future)) if target is not None and free is not None else None, balance_version=b.version if b else None))
+        rows.append(dict(item_id=iid, stock_assumed_zero=stock_assumed_zero, platforms=platforms, net=net, free=str(free) if free is not None else None, future=str(future), coverage=coverage[iid], target=target, recommendation=max(0, int(Decimal(target)-free-future)) if target is not None and free is not None else None, balance_version=b.version if b else None))
     body = dict(parameters=p, rows=rows, versions=sorted(versions))
     fingerprint_body = {**body, 'rows': [{**r, 'platforms': {k:{x:v for x,v in values.items() if x not in ('at','reason','source','catalog_matches')} for k,values in r['platforms'].items()}} for r in rows]}
     body['fingerprint'] = hashlib.sha256(json.dumps(fingerprint_body, sort_keys=True).encode()).hexdigest()

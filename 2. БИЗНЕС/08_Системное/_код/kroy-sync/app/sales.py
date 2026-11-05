@@ -60,7 +60,7 @@ def store_window(engine, data):
 
 
 def wb_events(raw,start,end,barcodes):
-    require(isinstance(raw,list) and len(raw)<80000,'Неполная выгрузка ВБ',422)
+    require(isinstance(raw,list),'Неполная выгрузка ВБ',422)
     events=[];unmatched=0
     for row in raw:
         dt=datetime.fromisoformat(row['date']);day=str(dt.astimezone(MSK).date() if dt.tzinfo else dt.date())
@@ -193,11 +193,16 @@ def sync(engine, env, start=None, end=None):
             if retry and datetime.fromisoformat(retry)>now():
                 results[platform]={**prior,'state':'ready_cached' if cached and not cached.get('identity_pending') else 'waiting','at':cached['at'] if cached else None};continue
             if platform=='wb':
-                if cached and not cached.get('identity_pending') and (now()-datetime.fromisoformat(cached['at'])).total_seconds()<3600:
-                    results[platform]=dict(state='ready_cached',at=cached['at'],reason='Используется свежая полная выгрузка');continue
-                raw=get_json('https://statistics-api.wildberries.ru/api/v1/supplier/sales?dateFrom='+start,{'Authorization':env['WB_TOKEN']})
-                events,unmatched=wb_events(raw,start,end,codes);events=[e for e in events if e['item_id'] in covered['wb']]
-                data=dict(platform='wb',start=start,end=end,at=now().isoformat(),complete=True,verified=True,covered_items=list(covered['wb']),events=events,source='WB supplier/sales',unmatched=unmatched)
+                from .order_sync import Client,_sync_wb_sales,Paused,FeedFailure
+                from .order_feed import sync_state
+                state=sync_state(engine);account=state.get('wb-identity',{}).get('account')
+                require(account,'Ожидается подтверждение кабинета ВБ',422)
+                try:_sync_wb_sales(engine,Client(engine,'wb',account,{'Authorization':env['WB_TOKEN']}),account,state.get('wb-sales',{}),now())
+                except Paused as e:
+                    results[platform]=dict(state='ready_cached' if cached and not cached.get('identity_pending') else 'waiting',at=cached['at'] if cached else None,reason=str(e),next_retry_at=e.retry_at);continue
+                cached=latest_window(engine,'wb',start,end)
+                results[platform]=dict(state='ready_cached' if cached and not cached.get('identity_pending') else 'waiting',at=cached['at'] if cached else None,reason='Расчёт из сохранённых продаж; загрузка ВБ не чаще раза в сутки')
+                continue
             else:
                 require(certificate and certificate.get('verified'),'Классификация Ozon ещё не сверена с отчётом',422)
                 headers={'Api-Key':env['OZON_API_KEY'],'Client-Id':env['OZON_CLIENT_ID']};raw=[];hashes=[]

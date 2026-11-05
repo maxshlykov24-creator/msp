@@ -366,3 +366,44 @@ def test_order_sales_reader_respects_existing_report_lock(setup,tmp_path,monkeyp
  with (tmp_path/'sales-reader.lock').open('a') as lock:
   fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
   with pytest.raises(Paused,match='другой читатель'):sync_wb_sales(engine,None,'seller',{},now())
+
+
+def test_report_spacing_blocks_locally_without_network(setup):
+ from app.order_feed import set_sync
+ from app.order_sync import Paused
+ engine,_,_=setup
+ for path,elapsed in [('/api/v1/supplier/sales',7201),('/api/v1/supplier/orders',10801)]:
+  set_sync(engine,'limit:wb:seller:'+path,last_request=(now()-timedelta(seconds=elapsed)).isoformat())
+  c=Client(engine,'wb','seller',{},request=lambda *_a,**_k:pytest.fail('Unexpected network request'),sleep=lambda _:pytest.fail('Long blocking sleep'))
+  with pytest.raises(Paused,match='расписанию'):c.get(path)
+
+
+def test_complete_sales_snapshot_is_reused_for_multiple_calculations(setup):
+ from app.order_sync import sync_wb_sales
+ from app.order_feed import sync_state
+ engine,_,_=setup;day=str(now().date()-timedelta(days=1));calls=[]
+ class Source:
+  def get(self,path,params):
+   calls.append(params['dateFrom']);return [dict(saleID='S-a',date=day+'T12:00:00',lastChangeDate=day+'T12:00:00',barcode='001',srid='a')]
+ sync_wb_sales(engine,Source(),'seller',{},now())
+ sync_wb_sales(engine,Source(),'seller',sync_state(engine)['wb-sales'],now())
+ assert len(calls)==1
+
+
+def test_report_checkpoint_survives_pause_without_rereading_first_page(setup):
+ from app.order_sync import wb_statistics,Paused
+ from app.order_feed import sync_state
+ engine,_,_=setup;pages=[];calls=[]
+ class Source:
+  def __init__(self):self.engine=engine
+  def get(self,path,params):
+   calls.append(params['dateFrom'])
+   if len(calls)==1:return [dict(srid='a',lastChangeDate='2026-10-01T10:00:00')]
+   if len(calls)==2:raise Paused('Wait',(now()+timedelta(hours=3)).isoformat())
+   return []
+ c=Source()
+ with pytest.raises(Paused):wb_statistics(c,'2026-09-01',page_size=1,on_page=lambda p:pages.extend(p),checkpoint='test-report')
+ assert sync_state(engine)['test-report']['pending']
+ wb_statistics(c,'2026-09-01',page_size=1,on_page=lambda p:pages.extend(p),checkpoint='test-report')
+ assert calls==['2026-09-01','2026-10-01T10:00:00','2026-10-01T10:00:00'] and len(pages)==1
+ assert not sync_state(engine)['test-report']['pending']

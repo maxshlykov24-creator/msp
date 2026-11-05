@@ -131,3 +131,24 @@ def test_catalog_links_do_not_invalidate_same_calculation(setup):
     with Session(engine) as s:after=calculate(s, {'location':'own','item_ids':['m']})
     assert after['fingerprint']==before['fingerprint']
     assert after['rows'][0]['platforms']['ozon']['catalog_matches'][0]['offer_id']=='test'
+
+
+@pytest.mark.parametrize('missing',[False,True])
+def test_unknown_or_missing_stock_is_assumed_zero_for_demand_only(setup,missing):
+    from app.db import Balance,Item,transaction
+    from sqlalchemy import select
+    from app.sales import store_window
+    engine,_,_=setup
+    with transaction(engine) as s:
+        if missing:s.add(Item(id='empty',name='Без остатка',model='Тест',color='',size='S',category='',kind='garment',unit='piece',barcodes=['empty'],photo='',source={}))
+        else:
+            b=s.scalar(select(Balance).where(Balance.item_id=='m',Balance.location=='own'));b.known=False
+    iid='empty' if missing else 'm'
+    with Session(engine) as s:p=calculate(s,dict(location='own',item_ids=[iid]))['parameters']
+    for platform in ('wb','ozon'):
+        store_window(engine,dict(platform=platform,start=p['start'],end=p['end'],at=datetime.now(MSK).isoformat(),complete=True,verified=True,covered_items=[iid],events=[dict(id=platform,item_id=iid,date=p['end'],kind='sale',quantity=6)]))
+    with Session(engine) as s:
+        row=calculate(s,dict(location='own',item_ids=[iid]))['rows'][0]
+        assert row['stock_assumed_zero'] and row['recommendation']==24 and Decimal(row['free'])==0
+        b=s.scalar(select(Balance).where(Balance.item_id==iid,Balance.location=='own'))
+        assert b is None if missing else b.known is False

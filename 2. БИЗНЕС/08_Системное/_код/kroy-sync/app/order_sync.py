@@ -16,6 +16,8 @@ ALLOWED={
  'wb':{'/api/v3/orders/new':'GET','/api/v3/orders':'GET','/api/v3/orders/status':'POST','/api/v1/supplier/orders':'GET','/api/v1/supplier/sales':'GET','/api/v1/seller-info':'GET','/content/v2/get/cards/list':'POST'},
  'ozon':{'/v4/posting/fbs/list':'POST','/v4/posting/fbs/unfulfilled/list':'POST','/v3/posting/fbo/list':'POST','/v3/posting/fbs/get':'POST','/v2/posting/fbo/get':'POST','/v1/returns/list':'POST'}}
 
+SKIP=object()
+
 class FeedFailure(RuntimeError):pass
 class Paused(FeedFailure):
     def __init__(self,message,retry_at):super().__init__(message);self.retry_at=retry_at
@@ -50,8 +52,9 @@ class Client:
                 shared=s.get(Entity,'cutting-sales-status');other=(shared.data.get('platforms',{}).get('wb',{}).get('next_retry_at')) if shared else None
             if other and (not retry or other>retry):retry=other
         if retry and datetime.fromisoformat(retry)>now():raise Paused('Площадка ограничила частоту запросов',retry)
-        last=state.get('last_request');spacing=61 if path in ('/api/v1/supplier/orders','/api/v1/supplier/sales') else 3.1 if self.platform=='wb' else 2.1
+        last=state.get('last_request');spacing=11100 if path=='/api/v1/supplier/orders' else 7500 if path=='/api/v1/supplier/sales' else 3.1 if self.platform=='wb' else 2.1
         delay=max(0,spacing-(now()-datetime.fromisoformat(last)).total_seconds()) if last else 0
+        if delay>60:raise Paused('Следующее обновление по расписанию',(now()+timedelta(seconds=delay)).isoformat())
         if delay:self.sleep(delay)
         host='https://api-seller.ozon.ru' if self.platform=='ozon' else 'https://content-api.wildberries.ru' if path=='/content/v2/get/cards/list' else 'https://common-api.wildberries.ru' if path=='/api/v1/seller-info' else 'https://statistics-api.wildberries.ru' if path in ('/api/v1/supplier/orders','/api/v1/supplier/sales') else 'https://marketplace-api.wildberries.ru'
         req=urllib.request.Request(host+path+('?' + urlencode(params) if params else ''),data=json.dumps(body or {}).encode() if method=='POST' else None,headers={**self.headers,'Content-Type':'application/json'},method=method)
@@ -65,14 +68,14 @@ class Client:
                     if path=='/api/v1/supplier/sales':
                         update_wb_status(self.engine,state='waiting',reason='Площадка ограничила частоту запросов',next_retry_at=until)
                     raise Paused('Площадка ограничила частоту запросов',until) from None
-                if e.code not in (500,502,503,504) or attempt==2:
+                if e.code not in (500,502,503,504) or attempt==2 or path in ('/api/v1/supplier/orders','/api/v1/supplier/sales'):
                     message=''
                     if e.code in (400,422):
                         try:message=': '+str(json.loads(e.read()).get('message',''))[:240]
                         except Exception:pass
                     raise FeedFailure('HTTP '+str(e.code)+' при чтении '+path+message) from None
             except (urllib.error.URLError,TimeoutError,OSError):
-                if attempt==2:raise FeedFailure('Нет связи с площадкой при чтении '+path) from None
+                if attempt==2 or path in ('/api/v1/supplier/orders','/api/v1/supplier/sales'):raise FeedFailure('Нет связи с площадкой при чтении '+path) from None
             self.sleep(2**attempt)
         raise FeedFailure('Чтение не завершено')
 
@@ -127,8 +130,13 @@ def wb_statuses(client,ids):
     return out
 
 
-def wb_statistics(client,start,path='/api/v1/supplier/orders',identity='srid',page_size=80000):
-    rows=[];seen={};cursor=start
+def wb_statistics(client,start,path='/api/v1/supplier/orders',identity='srid',page_size=80000,on_page=None,checkpoint=None):
+    engine=getattr(client,'engine',None)
+    progress=sync_state(engine).get(checkpoint,{}) if engine is not None and checkpoint else {}
+    # A paginated report can span cooldowns and restarts. Persist the page before
+    # advancing the cursor; never advertise a partial report as complete.
+    origin=progress.get('origin',start) if progress.get('pending') and progress.get('origin','')>=start[:4]+'-01-01' else start
+    rows=[];seen={};cursor=progress.get('cursor',origin) if progress.get('pending') and origin==progress.get('origin') else origin
     for _ in range(1000):
         batch=client.get(path,params={'dateFrom':cursor,'flag':0})
         if not isinstance(batch,list):raise FeedFailure('Неполный отчёт заказов ВБ')
@@ -137,10 +145,14 @@ def wb_statistics(client,start,path='/api/v1/supplier/orders',identity='srid',pa
             if not key:raise FeedFailure('Нет идентификатора строки отчёта ВБ')
             # Boundary repeats are allowed; retain the latest source revision.
             if key not in seen or str(r.get('lastChangeDate'))>str(seen[key].get('lastChangeDate')):seen[key]=r
-        if len(batch)<page_size:return list(seen.values())
+        if on_page:on_page(batch)
+        if len(batch)<page_size:
+            if engine is not None and checkpoint:set_sync(engine,checkpoint,pending=False,origin=origin,cursor=None,completed_at=now().isoformat())
+            return list(seen.values())
         nxt=batch[-1].get('lastChangeDate')
         if not nxt or nxt<=cursor:raise FeedFailure('Не продвинулся курсор статистики ВБ')
         cursor=nxt
+        if engine is not None and checkpoint:set_sync(engine,checkpoint,pending=True,origin=origin,cursor=cursor)
     raise FeedFailure('Лимит страниц статистики ВБ')
 
 
@@ -160,7 +172,8 @@ def ozon_returns(client):
     raise FeedFailure('Лимит страниц возвратов')
 
 
-def run(engine,env,history_steps=1,on_current=None,deep=True):
+def run(engine,env,history_steps=1,on_current=None,deep=True,reports=None):
+    reports=deep if reports is None else reports
     at=now();state=sync_state(engine);result={}
     identity=state.get('wb-identity',{});fingerprint=hashlib_account(env['WB_TOKEN'])
     if identity.get('token_fingerprint')!=fingerprint or not identity.get('account'):
@@ -173,10 +186,14 @@ def run(engine,env,history_steps=1,on_current=None,deep=True):
     accounts={'wb':identity.get('account'),'ozon':str(env['OZON_CLIENT_ID'])}
     clients={'wb':Client(engine,'wb',accounts['wb'],{'Authorization':env['WB_TOKEN']}),'ozon':Client(engine,'ozon',accounts['ozon'],{'Api-Key':env['OZON_API_KEY'],'Client-Id':env['OZON_CLIENT_ID']})}
     def phase(key,work):
+        previous=sync_state(engine).get(key,{})
         set_sync(engine,key,state='running',attempt_at=now().isoformat())
         try:
             if key.startswith('wb-') and not accounts['wb']:raise FeedFailure('Сначала нужно подтвердить кабинет ВБ')
-            value=work();set_sync(engine,key,state='ready',success_at=now().isoformat(),error=None,retry_at=None)
+            value=work()
+            if value is SKIP:
+                set_sync(engine,key,**previous);return value
+            set_sync(engine,key,state='ready',success_at=now().isoformat(),error=None,retry_at=None)
             if on_current and key in ('wb-new','wb-fbs','ozon-open','ozon-fbs'):on_current()
             return value
         except Exception as e:
@@ -192,7 +209,7 @@ def run(engine,env,history_steps=1,on_current=None,deep=True):
         return rows
     def catalog_wb():
         prior=state.get('wb-catalog',{})
-        if prior.get('success_at') and (at-datetime.fromisoformat(prior['success_at'])).total_seconds()<3600:return
+        if prior.get('success_at') and (at-datetime.fromisoformat(prior['success_at'])).total_seconds()<86400:return SKIP
         from .product_identity import refresh_wb_mappings
         cards=[];seen=set();cursors=set();cursor={'limit':100}
         for _ in range(1000):
@@ -222,12 +239,14 @@ def run(engine,env,history_steps=1,on_current=None,deep=True):
         set_sync(engine,'ozon-open',received=len(rows),tracked_missing=len(missing))
     phase('ozon-open',open_ozon)
     def fbs():
-        rows=wb_history(wb,at-timedelta(days=30),lambda batch:ingest(engine,'wb','fbs',account,batch,'wb-fbs',only_new=True)) if deep else []
+        prior=state.get('wb-fbs',{});history_due=deep and (not prior.get('history_refreshed_at') or (at-datetime.fromisoformat(prior['history_refreshed_at'])).total_seconds()>=86400)
+        rows=wb_history(wb,at-timedelta(days=30),lambda batch:ingest(engine,'wb','fbs',account,batch,'wb-fbs',only_new=True)) if history_due else []
+        if history_due:set_sync(engine,'wb-fbs',history_refreshed_at=at.isoformat())
         tracked=[]
         with transaction(engine) as s:
             for e in s.scalars(select(Entity).where(Entity.kind=='market_order',Entity.data['platform'].as_string()=='wb',Entity.data['scheme'].as_string()=='fbs')):
                 d=e.data
-                if d['source']=='wb-fbs' and d['account']==account and (d['status'] not in ('cancelled','returned','delivered') or (d.get('created_at') or '')>=(at-timedelta(days=30)).isoformat()):tracked.append(dict(id=int(d['external_id']),chrtId=d['lines'][0].get('sku') if d['lines'] else None,rid=d['source_ref'],createdAt=d['created_at'],skus=[l['barcode'] for l in d['lines'] if l.get('barcode')],article=d['lines'][0].get('offer_id','') if d['lines'] else ''))
+                if d['source']=='wb-fbs' and d['account']==account and d['status'] not in ('cancelled','returned','delivered'):tracked.append(dict(id=int(d['external_id']),chrtId=d['lines'][0].get('sku') if d['lines'] else None,rid=d['source_ref'],createdAt=d['created_at'],skus=[l['barcode'] for l in d['lines'] if l.get('barcode')],article=d['lines'][0].get('offer_id','') if d['lines'] else ''))
         merged={r['id']:r for r in tracked};merged.update({r['id']:r for r in rows});merged.update({r['id']:r for r in fresh or []})
         statuses=wb_statuses(wb,list(merged))
         ingest(engine,'wb','fbs',account,[{**r,**statuses[r['id']],'_status_verified':True} for r in merged.values()],'wb-fbs')
@@ -235,14 +254,18 @@ def run(engine,env,history_steps=1,on_current=None,deep=True):
     if deep:phase('wb-catalog',catalog_wb)
     phase('wb-fbs',fbs)
     def statistics():
-        last=state.get('wb-statistics',{}).get('success_at');start=(at-timedelta(days=90)).date().isoformat() if not last else min(at-timedelta(days=7),datetime.fromisoformat(last)-timedelta(days=1)).date().isoformat()
-        rows=wb_statistics(wb,start)
+        prior=state.get('wb-statistics',{});last=prior.get('success_at');year=max(at.astimezone(__import__('zoneinfo').ZoneInfo('Europe/Moscow')).date().replace(month=1,day=1).isoformat(),(at-timedelta(days=89)).date().isoformat())
+        if last and prior.get('history_from','9999')<=year and (at-datetime.fromisoformat(last)).total_seconds()<86400:return SKIP
+        start=year if prior.get('history_from','9999')>year or not last else max(year,(datetime.fromisoformat(last)-timedelta(days=1)).date().isoformat())
+        def save_page(batch):
+            for scheme,warehouse in [('fbo','Склад WB'),('fbs','Склад продавца')]:ingest(engine,'wb',scheme,account,[r for r in batch if r.get('warehouseType')==warehouse],'wb-statistics')
+        rows=wb_statistics(wb,start,on_page=save_page,checkpoint='report:wb-orders:'+account)
         for scheme,warehouse in [('fbo','Склад WB'),('fbs','Склад продавца')]:ingest(engine,'wb',scheme,account,[r for r in rows if r.get('warehouseType')==warehouse],'wb-statistics')
         unknown=sum(r.get('warehouseType') not in ('Склад WB','Склад продавца') for r in rows)
         if unknown:raise FeedFailure('Не определена схема '+str(unknown)+' заказов ВБ')
-        set_sync(engine,'wb-statistics',received=len(rows),history_from=(state.get('wb-statistics',{}).get('history_from') if not state.get('wb-statistics',{}).get('bootstrap_partial') else None) or start,bootstrap_partial=False,history_to=at.isoformat(),window_from=start)
-    if deep:phase('wb-statistics',statistics)
-    if deep:phase('wb-sales',lambda:sync_wb_sales(engine,wb,account,state.get('wb-sales',{}),at))
+        set_sync(engine,'wb-statistics',received=len(rows),history_from=year,bootstrap_partial=False,history_to=at.isoformat(),window_from=start)
+    if reports:phase('wb-statistics',statistics)
+    if reports:phase('wb-sales',lambda:sync_wb_sales(engine,wb,account,state.get('wb-sales',{}),at))
     account=oz_account
     if deep:
         for scheme in ('fbs','fbo'):
@@ -271,7 +294,8 @@ def run(engine,env,history_steps=1,on_current=None,deep=True):
             key='ozon-history-'+scheme
             def history(scheme=scheme,key=key):
                 prior=sync_state(engine).get(key,{});cursor=datetime.fromisoformat(prior['cursor']) if prior.get('cursor') else at-timedelta(days=31)
-                start=datetime.fromisoformat(prior['start']) if prior.get('start') else at-timedelta(days=365)
+                start=at.astimezone(__import__('zoneinfo').ZoneInfo('Europe/Moscow')).replace(month=1,day=1,hour=0,minute=0,second=0,microsecond=0)
+                cursor=max(cursor,start)
                 for _ in range(history_steps):
                     if cursor<=start:break
                     since=max(start,cursor-timedelta(days=31))
@@ -317,18 +341,21 @@ def _sync_wb_sales(engine,client,account,prior,at):
     from collections import defaultdict
     import hashlib
     prior={**prior,**sync_state(engine).get('wb-sales',{})}
-    history_from=prior.get('history_from') or (at-timedelta(days=90)).date().isoformat()
+    year=max(str(at.astimezone(MSK).date().replace(month=1,day=1)),str(at.astimezone(MSK).date()-timedelta(days=89)))
+    history_from=year
+    if prior.get('raw_complete_from') and prior['raw_complete_from']<=year and prior.get('raw_end')==str(at.astimezone(MSK).date()-timedelta(days=1)) and not prior.get('rebuild_required') and prior.get('raw_at') and (at-datetime.fromisoformat(prior['raw_at'])).total_seconds()<86400:return SKIP
     cached_rebuild=bool(prior.get('rebuild_required') and prior.get('raw_complete_from') and prior['raw_complete_from']<=history_from and prior.get('raw_end'))
     fetched_at=prior.get('raw_at') if cached_rebuild else now().isoformat()
     end=prior['raw_end'] if cached_rebuild else str(at.astimezone(MSK).date()-timedelta(days=1))
     if not cached_rebuild:
-        start=history_from if not prior.get('raw_complete_from') or prior.get('rebuild_required') else min(at-timedelta(days=7),datetime.fromisoformat(prior['success_at'])-timedelta(days=1)).date().isoformat()
-        raw=wb_statistics(client,start,'/api/v1/supplier/sales','saleID')
-        with transaction(engine) as s:
-            for r in raw:
+        start=history_from if not prior.get('raw_complete_from') or prior['raw_complete_from']>year or prior.get('rebuild_required') else max(year,(datetime.fromisoformat(prior['raw_at'])-timedelta(days=1)).date().isoformat())
+        def persist(batch):
+          with transaction(engine) as s:
+            for r in batch:
                 safe={k:r.get(k) for k in ('saleID','date','lastChangeDate','barcode','srid','warehouseType')};key='market-sale-raw:'+hashlib.sha256(json.dumps([account,safe['saleID']]).encode()).hexdigest();e=s.get(Entity,key);data=dict(account=account,row=safe)
                 if e:e.data=data;e.version+=1
                 else:s.add(Entity(id=key,kind='market_sale_raw',version=1,data=data))
+        wb_statistics(client,start,'/api/v1/supplier/sales','saleID',on_page=persist,checkpoint='report:wb-sales:'+account)
     with transaction(engine) as s:raw=[e.data['row'] for e in s.scalars(select(Entity).where(Entity.kind=='market_sale_raw',Entity.data['account'].as_string()==account))]
     codes,_,covered=mappings(engine)
     minimum=min((str(r['date'])[:10] for r in raw),default=history_from)

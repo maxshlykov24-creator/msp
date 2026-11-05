@@ -20,16 +20,16 @@ with (ROOT/'orders-reader.lock').open('a') as lock:
   state=sync_state(engine)
   if 'accounting-start' not in state:set_sync(engine,'accounting-start',at=now().isoformat())
   request=state.get('request',{});requested=request.get('requested_at','')>request.get('handled_at','')
-  if not watch or time.time()-last>=300 or requested:
+  if not watch or time.time()-last>=900:
    set_sync(engine,'cycle',state='running',started_at=now().isoformat())
    try:
     with transaction(engine) as s:
      snaps=[e.data for e in s.query(Entity).filter(Entity.kind=='snapshot')];location=next((d.get('location') for d in snaps if d.get('location')),None)
     last_deep=state.get('cycle',{}).get('deep_attempt_at')
     age=(now()-datetime.fromisoformat(last_deep)).total_seconds() if last_deep else 999999
-    deep=not watch or age>=1800 or requested and age>=300
+    deep=not watch or age>=21600
     if deep:set_sync(engine,'cycle',deep_attempt_at=now().isoformat())
-    result=run(engine,os.environ,history_steps=12 if '--backfill' in sys.argv else 1,deep=deep,on_current=(lambda:reconcile(engine,location)) if location else None)
+    result=run(engine,os.environ,history_steps=12 if '--backfill' in sys.argv else 1,deep=deep,reports=True,on_current=(lambda:reconcile(engine,location)) if location else None)
     if location:accounting=reconcile(engine,location)
     else:accounting={'error':'Не задан склад нашего учёта'}
     bad=any(v.get('state') in ('error','waiting') for k,v in result.items() if k not in ('cycle','request','wb-identity'))
