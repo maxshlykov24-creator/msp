@@ -8,3 +8,5 @@
 @media(max-width:600px){.sidebar nav{flex:var(--nav-items,4);display:grid;grid-template-columns:repeat(var(--nav-items,4),minmax(0,1fr))}.sidebar nav button{justify-self:center}.sidebar .profile{flex:1;max-width:none;width:auto}}
 @media(max-width:760px){.count-line>[data-label],.count-line>span[data-label]:not(:first-child){text-align:left}.count-document-heading{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:18px 12px}.count-document-heading>button{grid-column:1/-1;margin:0;width:fit-content;max-width:none;white-space:nowrap}.count-document-heading>.count-status{margin:0}}
 @media(prefers-reduced-motion:reduce){button{transition:none}}
+
+.count-camera-button{display:grid;place-items:center;flex:0 0 40px;width:40px;height:40px;padding:0!important;background:var(--surface-2);color:var(--muted);border-radius:10px}.count-camera-button:hover{color:var(--accent)}.count-scanner input{min-width:0}.count-scan-error{margin:-14px 0 20px;color:var(--warn);font-size:12px}.count-camera video{width:100%;max-height:55vh;background:#171315;border-radius:12px;object-fit:cover}.count-camera p{margin:14px 0 0!important}

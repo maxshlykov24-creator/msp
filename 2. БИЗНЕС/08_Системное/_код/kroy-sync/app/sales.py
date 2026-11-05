@@ -190,7 +190,7 @@ def sync(engine, env, start=None, end=None):
         cached=latest_window(engine,platform,start,end);prior=previous.get(platform,{})
         try:
             retry=prior.get('next_retry_at')
-            if retry and datetime.fromisoformat(retry)>now():
+            if platform!='wb' and retry and datetime.fromisoformat(retry)>now():
                 results[platform]={**prior,'state':'ready_cached' if cached and not cached.get('identity_pending') else 'waiting','at':cached['at'] if cached else None};continue
             if platform=='wb':
                 from .order_sync import Client,_sync_wb_sales,Paused,FeedFailure
@@ -199,9 +199,9 @@ def sync(engine, env, start=None, end=None):
                 require(account,'Ожидается подтверждение кабинета ВБ',422)
                 try:_sync_wb_sales(engine,Client(engine,'wb',account,{'Authorization':env['WB_TOKEN']}),account,state.get('wb-sales',{}),now())
                 except Paused as e:
-                    results[platform]=dict(state='ready_cached' if cached and not cached.get('identity_pending') else 'waiting',at=cached['at'] if cached else None,reason=str(e),next_retry_at=e.retry_at);continue
+                    results[platform]=dict(state='ready_cached' if cached and not cached.get('identity_pending') else 'waiting',at=cached['at'] if cached else None,reason=str(e),next_retry_at=e.retry_at,retry_buffered=True);continue
                 cached=latest_window(engine,'wb',start,end)
-                results[platform]=dict(state='ready_cached' if cached and not cached.get('identity_pending') else 'waiting',at=cached['at'] if cached else None,reason='Расчёт из сохранённых продаж; загрузка ВБ не чаще раза в сутки')
+                results[platform]=dict(state='ready_cached' if cached and not cached.get('identity_pending') else 'waiting',at=cached['at'] if cached else None,reason='Оперативные продажи Wildberries; итоговый отчёт не сверён')
                 continue
             else:
                 require(certificate and certificate.get('verified'),'Классификация Ozon ещё не сверена с отчётом',422)
@@ -294,3 +294,18 @@ def catalog_links(engine, catalog):
             for sku in product_skus:skus[sku].add(iid)
         ambiguous={iid for ids in skus.values() if len(ids)!=1 for iid in ids};covered-=ambiguous
         return {k:list(v) for k,v in skus.items()},covered,{i.id for i in items}-covered,dict(at=catalog['at'],all_products_matched=catalog.get('complete') and matched_products==len(catalog['items']) and not ambiguous,catalog_products=len(catalog['items']),matched_products=matched_products,visibility_scopes=catalog.get('visibility_scopes',[]))
+
+
+def invalidate_unverified_wb_windows(engine):
+    """Do not use old windows as complete when no terminal page was checked."""
+    changed=0
+    with transaction(engine) as s:
+        for e in s.scalars(select(Entity).where(Entity.kind=='sales_window',Entity.data['platform'].as_string()=='wb')):
+            d=dict(e.data)
+            if d.get('collection_proof') in ('empty_page','cutoff'):continue
+            affected=set(d.get('covered_items',[]))
+            if not affected:continue
+            blocked=dict(d.get('blocked_items',{}));blocked.update({iid:'Проверяем полноту выгрузки Wildberries' for iid in affected})
+            d.update(covered_items=[],blocked_items=blocked,identity_pending=sorted(set(d.get('identity_pending',[]))|affected),digest='incomplete:'+str(d.get('digest','')))
+            e.data=d;e.version+=1;changed+=1
+    return changed

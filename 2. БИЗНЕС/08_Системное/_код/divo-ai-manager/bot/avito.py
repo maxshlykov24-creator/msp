@@ -18,7 +18,9 @@ BASE = "https://api.avito.ru"
 
 
 class AvitoError(RuntimeError):
-    pass
+    def __init__(self, message: str, *, status_code: int | None = None):
+        super().__init__(message)
+        self.status_code = status_code
 
 
 class Avito:
@@ -59,7 +61,7 @@ class Avito:
         except ValueError:
             data = {"raw": resp.text[:300]}
         if resp.status_code >= 400:
-            raise AvitoError("%s %s %s" % (method, path, data))
+            raise AvitoError("%s %s: HTTP %s %s" % (method, path, resp.status_code, data), status_code=resp.status_code)
         return data
 
     @property

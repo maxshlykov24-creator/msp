@@ -2,7 +2,7 @@ import hashlib
 import os
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException, Request, Query
+from fastapi import Depends, FastAPI, HTTPException, Request, Query, Response
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -25,7 +25,7 @@ class Command(BaseModel):
 
 def create_app(engine=None):
     engine = engine or engine_for()
-    app = FastAPI(title='YUJI.CLO · Бренд одежды', docs_url=None, redoc_url=None)
+    app = FastAPI(title='YUJI.CLO', docs_url=None, redoc_url=None)
     bearer = HTTPBearer(auto_error=False)
 
     @app.middleware('http')
@@ -33,6 +33,11 @@ def create_app(engine=None):
         length = request.headers.get('content-length', '0')
         if not length.isdigit() or int(length) > 2_000_000:
             return JSONResponse({'detail': 'Слишком большой запрос'}, status_code=413)
+        origin=request.headers.get('origin')
+        if origin and request.method not in ('GET','HEAD','OPTIONS'):
+            from urllib.parse import urlsplit
+            if urlsplit(origin).netloc.lower()!=request.headers.get('host','').lower():
+                return JSONResponse({'detail':'Запрос с другого сайта отклонён'},status_code=403)
         response = await call_next(request)
         response.headers.setdefault('Cache-Control', 'no-store')
         response.headers['X-Content-Type-Options'] = 'nosniff'
@@ -40,9 +45,12 @@ def create_app(engine=None):
         response.headers['Content-Security-Policy'] = "default-src 'self'; img-src 'self' https: data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'"
         return response
 
-    def auth(token: HTTPAuthorizationCredentials = Depends(bearer)):
+    def auth(request: Request, token: HTTPAuthorizationCredentials = Depends(bearer)):
+        from .authentication import session_user
         if token is None:
-            raise HTTPException(401, 'Войди с личным ключом доступа')
+            user=session_user(engine,request.cookies.get('yuji_session'))
+            if user is None:raise HTTPException(401, 'Войди в аккаунт')
+            return user
         digest = hashlib.sha256(token.credentials.encode()).hexdigest()
         with Session(engine) as s:
             user = s.scalar(select(User).where(User.token_hash == digest, User.active.is_(True)))
@@ -60,6 +68,42 @@ def create_app(engine=None):
         with Session(engine) as s:
             s.execute(text('SELECT 1'))
         return {'ok': True, 'publication': 'disabled', 'environment': os.environ.get('KROY_ENV', 'development')}
+
+    @app.post('/api/auth/login')
+    def login_password(body: dict,request: Request,response: Response):
+        from .authentication import login
+        token=login(engine,body.get('login'),body.get('password'),request.client.host if request.client else '')
+        response.set_cookie('yuji_session',token,max_age=30*86400,path='/yuji/',httponly=True,secure=True,samesite='strict')
+        return {'ok':True}
+
+    @app.post('/api/auth/setup')
+    def password_setup(body: dict,request: Request,response: Response,user=Depends(auth)):
+        from .authentication import setup_password,create_session
+        setup_password(engine,user,body.get('password'),retire_key=True,login_name=body.get('login'))
+        token=create_session(engine,user.id)
+        response.set_cookie('yuji_session',token,max_age=30*86400,path='/yuji/',httponly=True,secure=True,samesite='strict')
+        return {'ok':True}
+
+    @app.post('/api/auth/staff-password')
+    def staff_password(body: dict,user=Depends(auth)):
+        from .authentication import setup_password,verify
+        if 'settings' not in PERMISSIONS[user.role]:raise HTTPException(403,'Нет права управления сотрудниками')
+        with Session(engine) as s:
+            target=s.get(User,body.get('id'));existing=s.get(Entity,'auth-password:'+str(body.get('id')))
+            if not target or not target.active:raise HTTPException(404,'Сотрудник не найден')
+            if existing:
+                if verify(body.get('password'),existing.data):return {'ok':True}
+                raise HTTPException(409,'Пароль уже установлен')
+            s.expunge(target)
+        setup_password(engine,target,body.get('password'))
+        return {'ok':True}
+
+    @app.post('/api/auth/logout')
+    def logout_password(request: Request,response: Response):
+        from .authentication import logout
+        logout(engine,request.cookies.get('yuji_session'))
+        response.delete_cookie('yuji_session',path='/yuji/',secure=True,httponly=True,samesite='strict')
+        return {'ok':True}
 
     @app.get('/api/me')
     def me(user=Depends(auth)):
@@ -94,6 +138,16 @@ def create_app(engine=None):
         with path.open('rb') as f: mime = image_type(f.read(16))
         if not mime: raise HTTPException(404, 'Фото недоступно')
         return FileResponse(path, media_type=mime, headers={'Cache-Control':'public, max-age=86400, immutable'})
+
+    @app.get('/api/counting/barcode')
+    def counting_barcode(code: str = Query(min_length=1,max_length=300), user=Depends(auth)):
+        if 'count' not in PERMISSIONS[user.role]: raise HTTPException(403, 'Нет права пересчёта')
+        from .product_identity import barcode_matches
+        with Session(engine) as s:
+            matches=barcode_matches(s,code.strip())
+            if len(matches)!=1 or matches[0].unit not in ('piece','roll'):
+                raise HTTPException(422, 'Штрихкод не найден или соответствует нескольким товарам')
+            return {'item_id':matches[0].id}
 
     @app.get('/api/catalog')
     def catalog(user=Depends(auth)):
@@ -206,7 +260,7 @@ def create_app(engine=None):
             # Access tokens and user secrets are deliberately outside the business export.
             return jsonable_encoder({'exported_at': now(), 'items': records(Item),
                                      'balances': records(Balance), 'documents': records(Document),
-                                     'movements': records(Movement), 'entities': records(Entity)}, custom_encoder={Decimal: str})
+                                     'movements': records(Movement), 'entities': [e for e in records(Entity) if not e['kind'].startswith('auth_')]}, custom_encoder={Decimal: str})
 
     @app.get('/api/status')
     def status(user=Depends(auth)):

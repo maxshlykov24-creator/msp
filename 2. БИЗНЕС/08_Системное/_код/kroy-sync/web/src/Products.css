@@ -20,3 +20,5 @@
 .workspace-header{margin-bottom:24px}
 @media(max-width:900px){.product-variants .product-row:hover,.product-variants .product-row:focus-visible{background:var(--accent-soft)}.product-variants .product-row:hover td,.product-variants .product-row:focus-visible td{background:transparent}}
 .modal:has(input[readonly]) form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.modal:has(input[readonly]) form>label{margin:0;min-width:0;font-size:11px;gap:8px}.modal:has(input[readonly]) form>label:nth-child(1),.modal:has(input[readonly]) form>label:nth-child(2),.modal:has(input[readonly]) form>label:nth-child(5),.modal:has(input[readonly]) form>.actions{grid-column:1/-1}.modal:has(input[readonly]) form>.actions{margin-top:4px}.modal:has(input[readonly]) input{font-size:12px}
+
+.catalog-meta{display:flex;align-items:center;gap:8px}.catalog-collapse{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;padding:0;background:transparent;color:var(--muted);border-radius:6px}.catalog-collapse:hover{background:var(--surface-2);color:var(--text)}

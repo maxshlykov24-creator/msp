@@ -7,7 +7,7 @@ import hashlib
 import json
 from collections import defaultdict
 from datetime import datetime, timezone
-from sqlalchemy import select, func, cast, Text
+from sqlalchemy import select, func, cast, Text, case, and_
 from .db import Entity, Item, Balance, now, transaction
 from .service import require
 
@@ -149,8 +149,11 @@ def sync_state(engine):
 
 def list_orders(s,platform='',scheme='',status='',query='',start='',end='',page=1,per_page=50,attention=False):
     q=select(Entity).where(Entity.kind=='market_order')
-    for key,value in [('platform',platform),('scheme',scheme),('status',status)]:
+    for key,value in [('platform',platform),('scheme',scheme)]:
         if value:q=q.where(Entity.data[key].as_string()==value)
+    if status:
+        grouped=case((and_(Entity.data['platform'].as_string()=='ozon',Entity.data['raw_status'].as_string()=='awaiting_packaging'),'new'),(and_(Entity.data['platform'].as_string()=='ozon',Entity.data['raw_status'].as_string().in_(['arbitration','client_arbitration'])),'shipping'),else_=Entity.data['status'].as_string())
+        q=q.where(grouped==status)
     if start:q=q.where(Entity.data['created_at'].as_string()>=timestamp(start+'T00:00:00',True))
     if end:
         from datetime import date,timedelta
@@ -169,4 +172,5 @@ def public_order(s,e):
     returns=[{'id':r.id,**r.data} for r in s.scalars(select(Entity).where(Entity.kind=='market_return',Entity.data['account'].as_string()==d['account'],Entity.data['posting_number'].as_string()==d['external_id']))]
     if d['platform']=='wb':
         returns=[{'id':r.id,**r.data,'status_label':'Возврат зарегистрирован ВБ','changed_at':r.data.get('order_at')} for r in s.scalars(select(Entity).where(Entity.kind=='market_sale',Entity.data['account'].as_string()==d['account'],Entity.data['order_ref'].as_string()==d['source_ref'],Entity.data['kind'].as_string()=='return'))]
-    return {'id':e.id,'version':e.version,**d,'returns':returns,'ledger':{'id':ledger.id,'version':ledger.version,**ledger.data} if ledger else None}
+    group='new' if d.get('platform')=='ozon' and d.get('raw_status')=='awaiting_packaging' else 'shipping' if d.get('platform')=='ozon' and d.get('raw_status') in ('arbitration','client_arbitration') else d['status']
+    return {'id':e.id,'version':e.version,**d,'display_status':group,'returns':returns,'ledger':{'id':ledger.id,'version':ledger.version,**ledger.data} if ledger else None}

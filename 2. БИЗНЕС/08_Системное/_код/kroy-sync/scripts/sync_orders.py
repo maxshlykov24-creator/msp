@@ -6,7 +6,7 @@ ROOT=Path(os.environ.get('KROY_APP_ROOT','/opt/kroy-app-stage'))
 sys.path.insert(0,'/opt/kroy-sync');import config
 sys.path.insert(0,str(ROOT))
 from app.db import engine_for,Entity,now,transaction
-from app.order_sync import run
+from app.order_sync import run,reports_due
 from app.order_feed import sync_state,set_sync
 from app.order_accounting import reconcile
 for line in (ROOT/'.env.app').read_text().splitlines():
@@ -20,16 +20,18 @@ with (ROOT/'orders-reader.lock').open('a') as lock:
   state=sync_state(engine)
   if 'accounting-start' not in state:set_sync(engine,'accounting-start',at=now().isoformat())
   request=state.get('request',{});requested=request.get('requested_at','')>request.get('handled_at','')
-  if not watch or time.time()-last>=900:
+  quick=not watch or time.time()-last>=900
+  due=watch and not quick and reports_due(state,now())
+  if quick or due:
    set_sync(engine,'cycle',state='running',started_at=now().isoformat())
    try:
     with transaction(engine) as s:
      snaps=[e.data for e in s.query(Entity).filter(Entity.kind=='snapshot')];location=next((d.get('location') for d in snaps if d.get('location')),None)
     last_deep=state.get('cycle',{}).get('deep_attempt_at')
     age=(now()-datetime.fromisoformat(last_deep)).total_seconds() if last_deep else 999999
-    deep=not watch or age>=21600
+    deep=quick and (not watch or age>=21600)
     if deep:set_sync(engine,'cycle',deep_attempt_at=now().isoformat())
-    result=run(engine,os.environ,history_steps=12 if '--backfill' in sys.argv else 1,deep=deep,reports=True,on_current=(lambda:reconcile(engine,location)) if location else None)
+    result=run(engine,os.environ,history_steps=12 if '--backfill' in sys.argv else 1,deep=deep,reports=True,current=quick,on_current=(lambda:reconcile(engine,location)) if location else None)
     if location:accounting=reconcile(engine,location)
     else:accounting={'error':'Не задан склад нашего учёта'}
     bad=any(v.get('state') in ('error','waiting') for k,v in result.items() if k not in ('cycle','request','wb-identity'))
@@ -39,7 +41,7 @@ with (ROOT/'orders-reader.lock').open('a') as lock:
     set_sync(engine,'cycle',state='error',error='Синхронизация прервана; данные сохранены',finished_at=now().isoformat())
     if not watch:raise
    finally:
-    if requested:set_sync(engine,'request',handled_at=request['requested_at'])
-    last=time.time()
+    if requested and quick:set_sync(engine,'request',handled_at=request['requested_at'])
+    if quick:last=time.time()
   if not watch:break
   time.sleep(5)

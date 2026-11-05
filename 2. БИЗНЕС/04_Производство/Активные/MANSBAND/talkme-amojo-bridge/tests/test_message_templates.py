@@ -385,3 +385,118 @@ def test_expired_unattempted_date_can_be_rescheduled_by_publication(db):
     d.draft={**d.draft,'trigger':{**d.draft['trigger'],'offset':2}};d.checked=m.digest([d.version,d.draft]);db.commit()
     m.publish(d.id,m.Publish(version=d.version,actor='admin'),db,c)
     assert j.state=='ready' and m.aware(j.due_at)==STAMP+timedelta(days=1)
+
+
+def recovery_event(stamp=STAMP, event_id='event-1'):
+    return {'id':event_id,'type':'lead_status_changed','entity_type':'lead',
+            'entity_id':17,'account_id':32417154,'created_at':int(stamp.timestamp()),
+            'value_before':[{'lead_status':{'id':76654894,'pipeline_id':9601214}}],
+            'value_after':[{'lead_status':{'id':77086494,'pipeline_id':9601214}}]}
+
+
+class EventCRM:
+    def __init__(self, pages):self.pages=pages;self.calls=[]
+    def get(self,path,**params):
+        assert path=='/api/v4/events' and params['limit']==100
+        self.calls.append(params)
+        result=self.pages[params['page']-1]
+        if isinstance(result,Exception):raise result
+        return result
+
+
+def recovery_setup(db,monkeypatch):
+    monkeypatch.setenv('TEMPLATES_EXECUTOR','live')
+    doc(db,rule(trigger={'type':'stage','delay_minutes':60,'repeat':'once'}))
+    c=EventCRM([])
+    assert m.recover_stage_events(db,c,STAMP-timedelta(minutes=1))==0
+    assert not c.calls
+    return c
+
+
+def test_event_recovery_missing_webhook_exact_time_and_overlap_dedup(db,monkeypatch):
+    c=recovery_setup(db,monkeypatch)
+    c.pages=[{'_embedded':{'events':[recovery_event()]}}]
+    assert m.recover_stage_events(db,c,STAMP)==1
+    j=db.scalar(select(m.Job))
+    assert m.aware(j.source_at)==STAMP and m.aware(j.due_at)==STAMP+timedelta(hours=1)
+    assert m.recover_stage_events(db,c,STAMP+timedelta(seconds=30))==0
+    assert m.ingest(db,form(STAMP),STAMP)==0
+    assert len(list(db.scalars(select(m.Job))))==1
+
+
+def test_event_recovery_preserves_accepted_attempt(db,monkeypatch):
+    c=recovery_setup(db,monkeypatch)
+    m.ingest(db,form(STAMP),STAMP);j=db.scalar(select(m.Job));j.state='pending'
+    db.add(m.Attempt(job_id=j.id,position=0,transport='telegram',state='pending',message_id='accepted',crm_id='unique'));db.commit()
+    c.pages=[{'_embedded':{'events':[recovery_event()]}}]
+    assert m.recover_stage_events(db,c,STAMP)==0
+    assert j.state=='pending' and len(list(db.scalars(select(m.Attempt))))==1
+
+
+def test_event_recovery_incomplete_page_never_advances_cursor(db,monkeypatch):
+    c=recovery_setup(db,monkeypatch)
+    before=dict(db.get(m.Operation,'stage-events-cursor-v1').result)
+    c.pages=[{'_embedded':{'events':[recovery_event()]},'_links':{'next':{'href':'next'}}},httpx.ReadTimeout('read')]
+    with pytest.raises(httpx.ReadTimeout):m.recover_stage_events(db,c,STAMP)
+    db.rollback()
+    assert db.get(m.Operation,'stage-events-cursor-v1').result==before
+    assert db.scalar(select(m.Job)) is None
+    c.pages[1]={}
+    assert m.recover_stage_events(db,c,STAMP)==1
+
+
+def test_event_recovery_orders_events_and_honors_activation(db,monkeypatch):
+    c=recovery_setup(db,monkeypatch)
+    old=recovery_event(STAMP-timedelta(days=4),'old')
+    c.pages=[{'_embedded':{'events':[recovery_event(STAMP+timedelta(seconds=2),'later'),old,recovery_event()]}}]
+    assert m.recover_stage_events(db,c,STAMP+timedelta(seconds=3))==1
+    assert m.aware(db.scalar(select(m.Job)).source_at)==STAMP+timedelta(seconds=2)
+
+
+def test_scan_outages_do_not_stop_already_queued_sends(db,transport,monkeypatch):
+    from contextlib import nullcontext
+    from app import reservation_reminders as rr
+    monkeypatch.setenv('TEMPLATES_EXECUTOR','live')
+    j=job(db,doc(db))
+    conn=SimpleNamespace(execute=lambda *args,**kw:SimpleNamespace(scalar=lambda:True))
+    monkeypatch.setattr(m,'get_engine',lambda:SimpleNamespace(connect=lambda:nullcontext(conn)))
+    monkeypatch.setattr(m,'get_session_factory',lambda:lambda:nullcontext(db))
+    transport.close=lambda:None
+    monkeypatch.setattr(rr,'Clients',lambda *args:transport)
+    def outage(*args):raise httpx.ReadTimeout('scan unavailable')
+    monkeypatch.setattr(m,'synchronize',outage)
+    monkeypatch.setattr(m,'recover_stage_events',outage)
+    monkeypatch.setattr(m,'last_scan',None);monkeypatch.setattr(m,'last_event_scan',None)
+    m.tick()
+    assert j.state=='pending' and len(transport.posts)==1
+
+
+def test_unknown_provider_records_safe_diagnostic_without_retry(db,transport):
+    transport.response=(503,{'error':'PROVIDER_UNAVAILABLE'})
+    j=job(db,doc(db));m.send(db,j,transport,STAMP);m.send(db,j,transport,STAMP)
+    a=db.scalar(select(m.Attempt))
+    assert j.state=='uncertain' and a.reason=='http_503:PROVIDER_UNAVAILABLE'
+    assert len(transport.posts)==1
+
+
+def test_render_failure_stays_blocked_across_ticks_and_recovers_after_field_fix(db,transport):
+    d=doc(db,rule(variants={'12':'Спасибо за покупку'}));j=job(db,d)
+    m.send(db,j,transport,STAMP);m.send(db,j,transport,STAMP)
+    assert j.state=='blocked' and j.snapshot is None and not transport.posts
+    transport.document['custom_fields_values'].append({'field_id':3158921,'values':[{'enum_id':12}]})
+    m.send(db,j,transport,STAMP)
+    assert j.state=='pending' and transport.posts[0]['text']=='Спасибо за покупку'
+
+
+def test_historical_partial_snapshot_never_posts_empty_body(db,transport):
+    d=doc(db);j=job(db,d);j.snapshot=m.snapshot(db,d);j.plan=[];j.rendered='';db.commit()
+    m.send(db,j,transport,STAMP);m.send(db,j,transport,STAMP)
+    assert j.state=='blocked' and not transport.posts
+
+
+@pytest.mark.parametrize('code',['INVALID_MESSAGE_DATA','WRONG_TRANSPORT'])
+def test_explicit_invalid_request_is_failed_without_channel_fanout(db,transport,code):
+    transport.response=(400,{'error':code})
+    j=job(db,doc(db));m.send(db,j,transport,STAMP);m.send(db,j,transport,STAMP)
+    assert j.state=='failed' and j.reason==code and len(transport.posts)==1
+    assert db.scalar(select(m.Attempt)).state=='error'

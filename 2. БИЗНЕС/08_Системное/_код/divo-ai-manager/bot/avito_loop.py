@@ -9,6 +9,8 @@ from __future__ import annotations
 import json
 import logging
 import re
+
+import httpx
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -545,16 +547,28 @@ async def poll_once(api: Avito, channel: AvitoChannel, schedule, pending: dict) 
     cursor: dict = dict(state.get("cursor") or {})
     try:
         chats = await api.chats(unread_only=False, limit=100)
-        offset = max(100, int(state.get("scan_offset") or 100))
-        if len(chats) == 100:
-            extra = await api.chats(unread_only=False, limit=100, offset=offset)
-            chats.extend(extra)
-            state["scan_offset"] = offset + 100 if len(extra) == 100 else 100
-        else:
-            state["scan_offset"] = 100
-    except AvitoError as exc:
-        log.warning("авито чаты: %s", exc)
+    except (AvitoError, httpx.HTTPError) as exc:
+        log.warning("авито новые чаты: %s", exc)
         return
+    # An optional archive page must never discard the successfully read head.
+    offset = max(100, int(state.get("scan_offset") or 100))
+    ceiling = int(state.get("scan_max_offset") or 0)
+    if ceiling and offset > ceiling:
+        offset = 100
+    if len(chats) == 100:
+        try:
+            extra = await api.chats(unread_only=False, limit=100, offset=offset)
+        except (AvitoError, httpx.HTTPError) as exc:
+            log.warning("авито архив offset=%s: %s; новые чаты продолжаю", offset, exc)
+            state["scan_offset"] = 100
+            if getattr(exc, "status_code", None) == 400 and offset > 100:
+                state["scan_max_offset"] = offset - 100
+        else:
+            chats.extend(extra)
+            following = offset + 100
+            state["scan_offset"] = following if len(extra) == 100 and (not ceiling or following <= ceiling) else 100
+    else:
+        state["scan_offset"] = 100
     changed = True
     boundary = state.setdefault("cursor_ids", {})
     for chat in chats:

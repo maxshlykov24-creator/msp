@@ -247,13 +247,22 @@ def resolve_plan(db, c, lead, contact, s, r, *, calendar=False, calendar_job=Non
         origins = {x[1] for x in latest if x[0] == stamp}
         mapped = {origin_transport(origin) for origin in origins}
         if len(mapped) != 1 or "unknown" in mapped:
-            raise ValueError("unknown_or_ambiguous_conversation_origin")
-        source = mapped.pop()
+            if routing is None:
+                raise ValueError("unknown_or_ambiguous_conversation_origin")
+            # Unknown transport does not identify an unknown recipient. Managed
+            # rules use the configured direct order for the verified contact;
+            # no social chat or previous transport is inferred from this origin.
+            source = None
+        else:
+            source = mapped.pop()
     elif talks:
         origins = {origin_transport(t.get("origin")) for t in talks.values()}
         if len(origins) != 1 or "unknown" in origins:
-            raise ValueError("no_unique_conversation_origin")
-        source = origins.pop()
+            if routing is None:
+                raise ValueError("no_unique_conversation_origin")
+            source = None
+        else:
+            source = origins.pop()
     channels_response = c.wz.get("/channels")
     channels_response.raise_for_status()
     channels = channels_response.json()

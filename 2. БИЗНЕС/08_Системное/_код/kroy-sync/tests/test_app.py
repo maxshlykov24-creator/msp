@@ -469,10 +469,8 @@ def test_scanned_count_unknown_and_initial_balance_and_retry(setup):
     assert cmd('count.create', p, op) == c
     with Session(engine) as s:
         assert s.get(Entity, c['id']).data['items']['new']['expected'] is None
-    c = cmd('count.scan', {'id': c['id'], 'version': c['version'], 'barcode': 'bad'})
-    with pytest.raises(DomainError, match='неразобранные'):
-        cmd('count.post', {'id': c['id'], 'version': c['version']})
-    c = cmd('count.resolve', {'id': c['id'], 'version': c['version'], 'index': 0, 'item_id': None})
+    with pytest.raises(DomainError, match='Штрихкод не найден'):
+        cmd('count.scan', {'id': c['id'], 'version': c['version'], 'barcode': 'bad'})
     cmd('count.post', {'id': c['id'], 'version': c['version']})
     assert balance(engine, 'new')['free'] == 1
     assert balance(engine)['free'] == 10
@@ -502,10 +500,11 @@ def test_scanned_count_empty_ambiguous_and_permissions(setup):
     with transaction(engine) as s:
         s.get(Item, 'm').barcodes = ['001']
         s.add(User(id='cutter-count', name='Cutter', role='cutter', active=True, token_hash='cutter-count'))
-    c = cmd('count.scan', {'id': c['id'], 'version': c['version'], 'barcode': '001'})
+    with pytest.raises(DomainError, match='Штрихкод не найден'):
+        cmd('count.scan', {'id': c['id'], 'version': c['version'], 'barcode': '001'})
     with Session(engine) as s:
         data = s.get(Entity, c['id']).data
-        assert not data['items'] and len(data['unknown']) == 1
+        assert not data['items'] and not data['unknown']
     with pytest.raises(DomainError, match='Нет права'):
         cmd('count.create', {'location': 'own', 'mode': 'scanned'}, actor=User(id='cutter-count', role='cutter'))
 

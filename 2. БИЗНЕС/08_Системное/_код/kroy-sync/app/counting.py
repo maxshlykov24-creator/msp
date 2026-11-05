@@ -43,6 +43,7 @@ def scan(s, d, barcode):
     from .product_identity import barcode_matches
     candidates = barcode_matches(s, barcode)
     if len(candidates) != 1 or (d.get('mode') != 'scanned' and candidates[0].id not in d['items']):
+        require(d.get('mode') != 'scanned', 'Штрихкод не найден или соответствует нескольким товарам', 422)
         require(len(d['unknown']) < 1000, 'Сначала разбери неизвестные коды', 422)
         d['unknown'].append({'barcode': barcode, 'reason': 'Код не найден или соответствует нескольким позициям'})
         return

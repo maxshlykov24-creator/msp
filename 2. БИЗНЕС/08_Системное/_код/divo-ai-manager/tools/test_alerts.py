@@ -3620,3 +3620,38 @@ def test_nov03_autoru_same_second_cursor():
             await loop.poll_once(api,Mock(),schedule,pending)
             assert pending['ar:same-second']==['Второй вопрос'] and schedule.call_count==1
     asyncio.run(run())
+
+
+def test_nov05_archive_failure_keeps_new_messages():
+    import asyncio, copy, time, httpx
+    from unittest.mock import patch, AsyncMock, Mock
+    from tools.rehearse import Sandbox
+    from bot import avito_loop as loop, crm, store
+    from bot.avito import AvitoError
+    async def run(error):
+        state = {'allow': ['fresh'], 'cursor': {}, 'scan_offset': 1100}
+        row = {'id': 'incoming', 'created': int(time.time()), 'direction': 'in', 'content': {'text': 'Когда можно приехать?'}}
+        head = [{'id': 'fresh', 'last_message': row}] + [{'id': 'a2u-system-%s' % i} for i in range(99)]
+        api = Mock(chats=AsyncMock(side_effect=lambda **kw: head if not kw.get('offset') else fail(error)), messages=AsyncMock(return_value=[row]))
+        with Sandbox(), patch.object(loop, 'load_state', side_effect=lambda: copy.deepcopy(state)), \
+             patch.object(loop, 'save_state', side_effect=lambda d: state.update(d)), \
+             patch.object(loop, 'remember_listing', AsyncMock()), \
+             patch.object(crm, 'capture_if_urgent', AsyncMock(return_value='')):
+            scheduled=Mock();pending={}
+            await loop.poll_once(api, None, scheduled, pending)
+            await loop.poll_once(api, None, scheduled, pending)
+            assert pending['av:fresh'] == ['Когда можно приехать?']
+            assert scheduled.call_count == 1
+            assert state['scan_offset'] == 100
+            assert state['cursor']['fresh'] == row['created']
+            if getattr(error, 'status_code', None) == 400:
+                assert state['scan_max_offset'] == 1000
+            else:
+                assert 'scan_max_offset' not in state
+            before=copy.deepcopy(state)
+            api.chats=AsyncMock(side_effect=AvitoError('head unavailable',status_code=503))
+            await loop.poll_once(api, None, scheduled, pending)
+            assert state == before and scheduled.call_count == 1
+    def fail(error): raise error
+    for error in [AvitoError('archive rejected',status_code=400), AvitoError('unavailable',status_code=503), httpx.ReadTimeout('archive timeout')]:
+        asyncio.run(run(error))

@@ -163,3 +163,17 @@ def test_ozon_catalog_includes_archived_identity(setup,tmp_path):
     assert covered=={'s','m'} and not absent and proof['all_products_matched']
     assert proof['visibility_scopes']==['ALL','ARCHIVED']
     assert collect_ozon_catalog({},tmp_path,lambda *_:pytest.fail('fresh identity should be cached'))==catalog
+
+
+def test_old_wb_window_is_not_used_without_end_of_report_proof(setup):
+ from app.sales import invalidate_unverified_wb_windows
+ engine,_,_=setup
+ with Session(engine) as s:p=calculate(s,dict(location='own',item_ids=['s']))['parameters']
+ for platform in ('wb','ozon'):
+  store_window(engine,dict(platform=platform,start=p['start'],end=p['end'],at=now().isoformat(),complete=True,verified=True,covered_items=['s'],events=[]))
+ with Session(engine) as s:assert calculate(s,dict(location='own',item_ids=['s']))['rows'][0]['recommendation'] is not None
+ assert invalidate_unverified_wb_windows(engine)==1
+ with Session(engine) as s:
+  row=calculate(s,dict(location='own',item_ids=['s']))['rows'][0]
+  assert row['recommendation'] is None and 'полноту' in row['platforms']['wb']['reason']
+ assert invalidate_unverified_wb_windows(engine)==0

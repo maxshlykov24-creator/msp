@@ -338,7 +338,7 @@ def test_raw_sales_can_be_rebuilt_after_alias_change_without_an_api_call(setup):
  refresh_wb_mappings(engine,dict(at=now().isoformat(),cards=[dict(id=1,sizes=[dict(chrtID=10,skus=['001'])])]))
  day=str(now().astimezone(MSK).date()-timedelta(days=1))
  class First:
-  def get(self,*a,**kw):return [dict(saleID='S-source',date=day+'T12:00:00',lastChangeDate=day+'T12:00:00',barcode='alternative',srid='purchase')]
+  def get(self,*a,**kw):return [] if 'T' in kw['params']['dateFrom'] else [dict(saleID='S-source',date=day+'T12:00:00',lastChangeDate=day+'T12:00:00',barcode='alternative',srid='purchase')]
  sync_wb_sales(engine,First(),'seller',{},now())
  refresh_wb_mappings(engine,dict(at=now().isoformat(),cards=[dict(id=1,sizes=[dict(chrtID=10,skus=['001','alternative'])])]))
  with Session(engine) as s:
@@ -384,10 +384,10 @@ def test_complete_sales_snapshot_is_reused_for_multiple_calculations(setup):
  engine,_,_=setup;day=str(now().date()-timedelta(days=1));calls=[]
  class Source:
   def get(self,path,params):
-   calls.append(params['dateFrom']);return [dict(saleID='S-a',date=day+'T12:00:00',lastChangeDate=day+'T12:00:00',barcode='001',srid='a')]
+   calls.append(params['dateFrom']);return [] if 'T' in params['dateFrom'] else [dict(saleID='S-a',date=day+'T12:00:00',lastChangeDate=day+'T12:00:00',barcode='001',srid='a')]
  sync_wb_sales(engine,Source(),'seller',{},now())
  sync_wb_sales(engine,Source(),'seller',sync_state(engine)['wb-sales'],now())
- assert len(calls)==1
+ assert len(calls)==2
 
 
 def test_report_checkpoint_survives_pause_without_rereading_first_page(setup):
@@ -407,3 +407,124 @@ def test_report_checkpoint_survives_pause_without_rereading_first_page(setup):
  wb_statistics(c,'2026-09-01',page_size=1,on_page=lambda p:pages.extend(p),checkpoint='test-report')
  assert calls==['2026-09-01','2026-10-01T10:00:00','2026-10-01T10:00:00'] and len(pages)==1
  assert not sync_state(engine)['test-report']['pending']
+
+
+def test_bereza_status_grouping_is_consistent_with_filter(setup):
+ engine,_,_=setup
+ rows=[dict(posting_number='group-new',status='awaiting_packaging',in_process_at=now().isoformat(),products=[dict(sku=999,quantity=1)]),dict(posting_number='group-ship',status='arbitration',in_process_at=now().isoformat(),products=[dict(sku=999,quantity=1)])]
+ ingest(engine,'ozon','fbs','seller',rows,'ozon-fbs')
+ with Session(engine) as s:
+  new=list_orders(s,status='new')['rows'];shipped=list_orders(s,status='shipping')['rows']
+  assert [(x['external_id'],x['display_status']) for x in new]==[('group-new','new')]
+  assert [(x['external_id'],x['display_status']) for x in shipped]==[('group-ship','shipping')]
+
+
+def test_429_uses_retry_deadline_without_counting_rejected_request_as_success(setup,monkeypatch):
+ from datetime import datetime,timezone
+ import io
+ import app.order_sync as sync
+ from app.order_feed import set_sync,sync_state
+ engine,_,_=setup;clock=[datetime(2026,11,5,11,16,tzinfo=timezone.utc)];monkeypatch.setattr(sync,'now',lambda:clock[0])
+ path='/api/v1/supplier/sales';key='limit:wb:seller:'+path
+ rejected=(clock[0]-timedelta(minutes=20)).isoformat();deadline=(clock[0]+timedelta(minutes=13)).isoformat()
+ set_sync(engine,key,last_request=rejected,retry_at=deadline,last_outcome='rate_limited')
+ set_sync(engine,'wb-sales',state='waiting')
+ with transaction(engine) as s:s.add(Entity(id='cutting-sales-status',kind='sales_status',version=1,data={'platforms':{'wb':{'next_retry_at':deadline}}}))
+ calls=[]
+ def fetch(*_a,**_k):calls.append(1);return io.BytesIO(b'[]')
+ client=sync.Client(engine,'wb','seller',{},request=fetch,sleep=lambda _:None)
+ with pytest.raises(sync.Paused) as paused:client.get(path)
+ assert paused.value.retry_at==(clock[0]+timedelta(minutes=18)).isoformat() and not calls
+ # The shared status can contain the computed deadline; it must not gain another five minutes on every check.
+ with transaction(engine) as s:s.get(Entity,'cutting-sales-status').data={'platforms':{'wb':{'next_retry_at':paused.value.retry_at,'retry_buffered':True}}}
+ with pytest.raises(sync.Paused) as repeated:client.get(path)
+ assert repeated.value.retry_at==paused.value.retry_at
+ clock[0]+=timedelta(minutes=18,seconds=1)
+ assert client.get(path)==[] and len(calls)==1
+ assert sync_state(engine)[key]['last_outcome']=='success'
+
+
+def test_reports_resume_only_after_their_due_time_without_current_order_reads(setup,monkeypatch):
+ import app.order_sync as sync
+ from app.order_feed import set_sync
+ engine,_,_=setup;now_at=now();state={'wb-sales':{'state':'waiting','retry_at':(now_at+timedelta(seconds=30)).isoformat()}}
+ assert not sync.reports_due(state,now_at) and sync.reports_due(state,now_at+timedelta(seconds=31))
+ assert not sync.reports_due({'wb-sales':{'state':'error','retry_at':now_at.isoformat()}},now_at)
+ paths=[];set_sync(engine,'wb-identity',account='seller',token_fingerprint=sync.hashlib_account('fixture'))
+ def get(self,path,body=None,params=None):
+  paths.append(path)
+  if path=='/api/v1/supplier/orders':return []
+  if path=='/api/v1/supplier/sales':return []
+  raise AssertionError('Unexpected current-order request '+path)
+ monkeypatch.setattr(sync.Client,'get',get)
+ sync.run(engine,{'WB_TOKEN':'fixture','OZON_CLIENT_ID':'1','OZON_API_KEY':'fixture'},deep=False,reports=True,current=False)
+ assert set(paths)=={'/api/v1/supplier/orders','/api/v1/supplier/sales'}
+
+
+def test_short_statistics_page_is_not_treated_as_the_end(setup):
+ from app.order_sync import wb_statistics
+ engine,_,_=setup;received=[]
+ class Source:
+  def __init__(self):self.engine=engine;self.calls=0
+  def get(self,path,params):
+   self.calls+=1
+   if self.calls==1:return [dict(srid='first',lastChangeDate='2026-10-01T10:00:00')]
+   if self.calls==2:return [dict(srid='second',lastChangeDate='2026-10-01T11:00:00')]
+   return []
+ source=Source();rows=wb_statistics(source,'2026-09-01',on_page=lambda p:received.extend(p),checkpoint='short-page')
+ assert source.calls==3 and {r['srid'] for r in rows}=={'first','second'} and len(received)==2
+
+
+def test_statistics_finishes_at_fixed_watermark_even_if_new_events_keep_arriving(setup,monkeypatch):
+ import app.order_sync as sync
+ from app.order_feed import sync_state
+ from datetime import datetime,timezone
+ engine,_,_=setup;instant=datetime(2026,11,5,11,0,tzinfo=timezone.utc);monkeypatch.setattr(sync,'now',lambda:instant)
+ class Source:
+  def __init__(self):self.engine=engine;self.calls=0
+  def get(self,path,params):
+   self.calls+=1
+   if self.calls==1:return [dict(srid='old',lastChangeDate='2026-11-05T13:59:00')]
+   if self.calls==2:return [dict(srid='new',lastChangeDate='2026-11-05T14:01:00')]
+   pytest.fail('Should stop once the fixed watermark is passed')
+ source=Source();rows=sync.wb_statistics(source,'2026-11-01',checkpoint='watermark')
+ assert len(rows)==2 and source.calls==2 and sync_state(engine)['watermark']['proof']=='cutoff'
+
+
+def test_paginated_wb_sales_resume_after_cooldown_and_feed_recommendation(setup,monkeypatch):
+ import io,json
+ import app.order_sync as sync
+ from app.product_identity import refresh_wb_mappings
+ from app.sales import store_window,MSK
+ from app.cutting import calculate
+ engine,_,_=setup;clock=[now()];monkeypatch.setattr(sync,'now',lambda:clock[0])
+ refresh_wb_mappings(engine,dict(at=clock[0].isoformat(),cards=[dict(id=1,sizes=[dict(chrtID=10,skus=['001'])])]))
+ day=str(clock[0].astimezone(MSK).date()-timedelta(days=1));calls=[]
+ def fetch(req,timeout):
+  calls.append(1);changed=(clock[0].astimezone(MSK)-timedelta(minutes=1) if len(calls)==1 else clock[0].astimezone(MSK)).replace(tzinfo=None).isoformat()
+  return io.BytesIO(json.dumps([dict(saleID='S-'+str(len(calls)),date=day+'T12:00:00',lastChangeDate=changed,barcode='001',srid='r'+str(len(calls)))]).encode())
+ client=sync.Client(engine,'wb','seller',{},request=fetch,sleep=lambda _:None)
+ with pytest.raises(sync.Paused):sync.sync_wb_sales(engine,client,'seller',{},clock[0])
+ assert len(calls)==1
+ with Session(engine) as s:assert not list(s.scalars(select(Entity).where(Entity.kind=='sales_window')))
+ cutoff=clock[0].isoformat();clock[0]+=timedelta(seconds=7501)
+ sync.sync_wb_sales(engine,client,'seller',{},clock[0]);assert len(calls)==2
+ with Session(engine) as s:
+  window=s.scalar(select(Entity).where(Entity.kind=='sales_window'));assert window.data['collection_proof']=='cutoff' and window.data['at']==cutoff
+  params=calculate(s,dict(location='own',item_ids=['s']))['parameters']
+ store_window(engine,dict(platform='ozon',start=params['start'],end=params['end'],at=cutoff,complete=True,verified=True,covered_items=['s'],events=[]))
+ from app.db import Balance
+ with transaction(engine) as s:s.scalar(select(Balance).where(Balance.item_id=='s',Balance.location=='own')).known=False
+ with Session(engine) as s:
+  row=calculate(s,dict(location='own',item_ids=['s']))['rows'][0];assert row['net']==2 and row['stock_assumed_zero'] and row['recommendation']==4
+
+
+def test_wb_retry_without_headers_uses_conservative_method_limit(setup):
+ import urllib.error
+ from app.order_sync import Client,Paused
+ engine,_,_=setup
+ def blocked(req,timeout):raise urllib.error.HTTPError(req.full_url,429,'limited',{},None)
+ for path,minimum in [('/api/v1/supplier/sales',7500),('/api/v1/supplier/orders',11100)]:
+  with pytest.raises(Paused) as caught:Client(engine,'wb','seller',{},request=blocked).get(path)
+  from datetime import datetime
+  assert (datetime.fromisoformat(caught.value.retry_at)-now()).total_seconds()>=minimum-2

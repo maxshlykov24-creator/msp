@@ -504,6 +504,54 @@ def ingest(db, form, stamp):
     db.commit();return count
 
 
+
+def event_form(event):
+    """Use the real CRM event time, never the mutable lead.updated_at."""
+    before = event["value_before"][0]["lead_status"]
+    after = event["value_after"][0]["lead_status"]
+    row = {"id": event["entity_id"], "status_id": after["id"],
+           "old_status_id": before["id"], "pipeline_id": after["pipeline_id"],
+           "account_id": event["account_id"], "last_modified": event["created_at"]}
+    return {f"leads[status][0][{key}]": [str(value)] for key, value in row.items()}
+
+
+def recover_stage_events(db, c, stamp):
+    """Durable fallback for dropped webhooks, sharing ingest's deduplication.
+
+    First activation starts now; historical recovery is an explicit operation.
+    An overlap also catches events indexed slightly after their occurrence.
+    Never advance the cursor after an incomplete/failed page or ingest.
+    """
+    key = "stage-events-cursor-v1"
+    cursor = db.get(Operation, key)
+    if cursor is None:
+        db.add(Operation(id=key, digest="v1", state="ready",
+                         result={"through": int(stamp.timestamp())}))
+        db.commit()
+        return 0
+    start = int(cursor.result["through"]) - 300
+    end = int(stamp.timestamp())
+    events = []
+    for page in range(1, 101):
+        data = c.get("/api/v4/events", page=page, limit=100, **{
+            "filter[entity]": "lead", "filter[type]": "lead_status_changed",
+            "filter[created_at][from]": start, "filter[created_at][to]": end})
+        rows = data.get("_embedded", {}).get("events", [])
+        events.extend(rows)
+        if not data.get("_links", {}).get("next") and len(rows) < 100:
+            break
+    else:
+        raise ValueError("Stage event history incomplete")
+    count = 0
+    for event in sorted(events, key=lambda e: (int(e["created_at"]), e["id"])):
+        if event.get("entity_type") != "lead" or event.get("type") != "lead_status_changed":
+            raise ValueError("Unexpected CRM event type")
+        count += ingest(db, event_form(event), stamp)
+    cursor.result = {"through": end, "checked_at": stamp.isoformat(), "events": len(events)}
+    db.commit()
+    return count
+
+
 def synchronize(db,c,stamp):
     from app.stage_notifications import calendar_date
     for doc in db.scalars(select(Document).where(Document.kind=="rule")):
@@ -576,8 +624,14 @@ def send(db,j,c,stamp):
         plan,key=make_plan(db,c,lead,r,routing)
         if j.recipient_key and key!=j.recipient_key: raise ValueError("Получатель изменился")
         if not j.snapshot:
-            j.snapshot=snapshot(db,doc);j.plan=plan;j.recipient_key=key;j.rendered=render(lead,r)
+            # Render before mutating the persistent claim: validation may fail.
+            # Otherwise a blocked job could retain a snapshot with an empty body
+            # and bypass rendering on the next tick.
+            body=render(lead,r)
+            j.snapshot=snapshot(db,doc);j.plan=plan;j.recipient_key=key;j.rendered=body
             db.commit()
+        if not j.rendered.strip():
+            raise ValueError("Пустой текст сообщения: требуется проверка шаблона")
         channels={x["channelId"]:x for x in c.wz.get("/channels").json()}
         for pos,route in enumerate(j.plan):
             prior=db.scalar(select(Attempt).where(Attempt.job_id==j.id,Attempt.position==pos))
@@ -611,8 +665,16 @@ def send(db,j,c,stamp):
                 if resp.status_code==201 and result.get("messageId"):
                     a.message_id=str(result["messageId"]);a.state,j.state="pending","pending";db.commit();return
                 code=str(result.get("error") or "")[:100]
+                if resp.status_code==400 and code in {"INVALID_MESSAGE_DATA","WRONG_TRANSPORT"}:
+                    # Explicit validation rejection: no message was accepted.
+                    # Retrying another channel would repeat the malformed request.
+                    a.state,a.reason,j.state,j.reason="error",code,"failed",code
+                    db.commit();return
                 if 400<=resp.status_code<500 and code in REJECTED|{"CHANNEL_MAX_PHONE_NOT_OCCUPIED"}:
                     a.state,a.reason,j.state="error",code,"ready";db.commit();started=True;continue
+                safe_code=code if re.fullmatch(r"[A-Za-z0-9_]+",code) else "unclassified"
+                a.reason=f"http_{resp.status_code}:{safe_code}"[:150]
+                log.warning("Managed provider result unknown: job=%s status=%s code=%s",j.id,resp.status_code,safe_code)
                 a.state,j.state,j.reason="unknown","uncertain","provider_result_unknown"
             except httpx.HTTPError:a.state,j.state,j.reason="unknown","uncertain","network_result_unknown"
             db.commit();return
@@ -622,9 +684,10 @@ def send(db,j,c,stamp):
 
 
 last_scan=None
+last_event_scan=None
 
 def tick():
-    global last_scan
+    global last_scan, last_event_scan
     if Settings().executor!="live":return
     from app.reservation_reminders import Clients,ReminderSettings
     with get_engine().connect() as conn,get_session_factory()() as db:
@@ -632,8 +695,16 @@ def tick():
         c=None
         try:
             c=Clients(db,ReminderSettings());reconcile(db)
+            if last_event_scan is None or (now()-last_event_scan).total_seconds()>=30:
+                last_event_scan=now()
+                try:recover_stage_events(db,c,now())
+                except Exception as exc:
+                    db.rollback();log.error("Managed event recovery failed: %s",type(exc).__name__)
             if last_scan is None or (now()-last_scan).total_seconds()>=30:
-                synchronize(db,c,now());last_scan=now()
+                last_scan=now()
+                try:synchronize(db,c,now())
+                except Exception as exc:
+                    db.rollback();log.error("Managed calendar scan failed: %s",type(exc).__name__)
             for j in list(db.scalars(select(Job).where(Job.state.in_(["ready","blocked"]),Job.due_at<=now()).order_by(Job.due_at).limit(100))):
                 try:send(db,j,c,now())
                 except Exception as exc:db.rollback();log.error("Managed message failed: %s",type(exc).__name__)

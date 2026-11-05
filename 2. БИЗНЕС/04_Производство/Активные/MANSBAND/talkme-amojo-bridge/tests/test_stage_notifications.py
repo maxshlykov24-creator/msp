@@ -848,3 +848,16 @@ def test_free_hold_late_activation_does_not_catch_up(db, cfg):
 def test_free_hold_disabled_by_default(db):
     sync_calendar(db, [free_hold_lead()], CalendarSettings(), CAL_NOW)
     assert not list(db.scalars(select(CalendarJob)))
+
+
+@pytest.mark.parametrize('incoming',[False,True])
+def test_managed_unknown_origin_uses_configured_direct_order_only(db,cfg,incoming):
+    c=Fake();c.talks=[{'talk_id':1,'contact_id':123,'origin':'amo.ext.32417154'}]
+    if incoming:
+        c.events=[{'created_at':100,'value_after':[{'message':{'talk_id':1,'origin':'amo.ext.32417154'}}]}]
+    contact={'id':123,'custom_fields_values':[{'field_id':1,'values':[{'value':'+79990000001'}]}]}
+    routes=resolve_plan(db,c,lead(),contact,cfg,ReminderSettings(),calendar=True,
+                        routing={'order':['max','whatsapp','telegram'],'previous_first':True,'social_fallback':True})
+    assert [p['transport'] for p in routes]==['max','whatsapp','telegram']
+    # No address or social chat can be invented from a conversation's origin.
+    assert all(p['recipient'] is None for p in routes)

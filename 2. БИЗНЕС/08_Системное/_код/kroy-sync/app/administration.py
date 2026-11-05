@@ -1,5 +1,6 @@
 """Catalog, staff and versioned settings. Called inside the shared transaction."""
 import copy
+import hashlib
 import re
 from datetime import date
 from sqlalchemy import select
@@ -29,7 +30,7 @@ def administer(s, doc, command, p, actor_id):
         return {'id': item.id, 'version': version + 1}
     if command == 'user.create':
         require(re.fullmatch(r'[a-zA-Z0-9_-]{1,64}', p['id']) is not None, 'Логин: латиница, цифры, дефис', 422)
-        require(s.get(User, p['id']) is None, 'Логин уже занят')
+        require(s.get(User, p['id']) is None and s.get(Entity,'auth-login:'+hashlib.sha256(p['id'].lower().encode()).hexdigest()) is None, 'Логин уже занят')
         require(p['role'] in PERMISSIONS and p.get('name'), 'Нужны имя и допустимая роль', 422)
         require(re.fullmatch(r'[0-9a-f]{64}', p['token_hash']) is not None, 'Некорректный хеш ключа', 422)
         require(s.scalar(select(User).where(User.token_hash == p['token_hash'])) is None, 'Ключ уже используется')

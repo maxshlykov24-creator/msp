@@ -1,5 +1,6 @@
 """Credentialed, strictly read-only marketplace collector with resumable history."""
 import json
+import math
 import os
 import time
 import urllib.request
@@ -23,19 +24,20 @@ class Paused(FeedFailure):
     def __init__(self,message,retry_at):super().__init__(message);self.retry_at=retry_at
 
 
-def retry_seconds(headers,at=None):
-    at=at or now();values=[]
+def retry_seconds(headers,at=None,default=180):
+    at=at or now();values=[];headers=headers or {}
     for k in ('Retry-After','X-Ratelimit-Retry','X-Ratelimit-Reset'):
         raw=headers.get(k)
         if not raw:continue
         try:
             v=float(raw)
+            if not math.isfinite(v):continue
             if v>1_000_000_000:v-=at.timestamp()
         except ValueError:
             try:v=(parsedate_to_datetime(raw)-at).total_seconds()
             except Exception:continue
         if v>0:values.append(v)
-    return max(values or [180])
+    return max(values or [default])
 
 
 class Client:
@@ -46,28 +48,43 @@ class Client:
         if not method:raise FeedFailure('Метод не входит в список разрешённого чтения')
         key='limit:'+self.platform+':'+self.account+':'+path
         state=sync_state(self.engine).get(key,{})
-        retry=state.get('retry_at')
+        own_retry=state.get('retry_at');shared_retry=None;shared_buffered=False
+        report=path in ('/api/v1/supplier/orders','/api/v1/supplier/sales')
         if path=='/api/v1/supplier/sales':
             with transaction(self.engine) as s:
-                shared=s.get(Entity,'cutting-sales-status');other=(shared.data.get('platforms',{}).get('wb',{}).get('next_retry_at')) if shared else None
-            if other and (not retry or other>retry):retry=other
-        if retry and datetime.fromisoformat(retry)>now():raise Paused('Площадка ограничила частоту запросов',retry)
-        last=state.get('last_request');spacing=11100 if path=='/api/v1/supplier/orders' else 7500 if path=='/api/v1/supplier/sales' else 3.1 if self.platform=='wb' else 2.1
-        delay=max(0,spacing-(now()-datetime.fromisoformat(last)).total_seconds()) if last else 0
-        if delay>60:raise Paused('Следующее обновление по расписанию',(now()+timedelta(seconds=delay)).isoformat())
+                shared=s.get(Entity,'cutting-sales-status');wb_status=shared.data.get('platforms',{}).get('wb',{}) if shared else {};shared_retry=wb_status.get('next_retry_at');shared_buffered=wb_status.get('retry_buffered',False)
+        spacing=11100 if path=='/api/v1/supplier/orders' else 7500 if path=='/api/v1/supplier/sales' else 3.1 if self.platform=='wb' else 2.1
+        at=now();candidates=[]
+        if own_retry:
+            # Only the raw 429 deadline needs a margin; shared deadlines already include it.
+            candidates.append((datetime.fromisoformat(own_retry)+timedelta(seconds=300 if report else 0),'Площадка ограничила частоту запросов'))
+        if shared_retry:candidates.append((datetime.fromisoformat(shared_retry)+timedelta(seconds=300 if report and not shared_buffered else 0),'Площадка ограничила частоту запросов'))
+        last=state.get('last_request')
+        # Migrated state without outcome: a retry deadline after the last attempt
+        # means that attempt was rejected by 429 and did not consume a new slot.
+        rejected=bool(report and own_retry and last and last<own_retry and state.get('last_outcome') in (None,'rate_limited'))
+        if last and not rejected:candidates.append((datetime.fromisoformat(last)+timedelta(seconds=spacing),'Следующее обновление по расписанию'))
+        if state.get('last_success_at'):candidates.append((datetime.fromisoformat(state['last_success_at'])+timedelta(seconds=spacing),'Следующее обновление по расписанию'))
+        eligible,reason=max(candidates,key=lambda x:x[0]) if candidates else (at,'')
+        delay=max(0,(eligible-at).total_seconds())
+        if delay>60:raise Paused(reason,eligible.isoformat())
         if delay:self.sleep(delay)
         host='https://api-seller.ozon.ru' if self.platform=='ozon' else 'https://content-api.wildberries.ru' if path=='/content/v2/get/cards/list' else 'https://common-api.wildberries.ru' if path=='/api/v1/seller-info' else 'https://statistics-api.wildberries.ru' if path in ('/api/v1/supplier/orders','/api/v1/supplier/sales') else 'https://marketplace-api.wildberries.ru'
         req=urllib.request.Request(host+path+('?' + urlencode(params) if params else ''),data=json.dumps(body or {}).encode() if method=='POST' else None,headers={**self.headers,'Content-Type':'application/json'},method=method)
         for attempt in range(3):
-            set_sync(self.engine,key,last_request=now().isoformat())
+            set_sync(self.engine,key,last_request=now().isoformat(),last_outcome='started')
             try:
-                with self.request(req,timeout=40) as response:return json.load(response)
+                with self.request(req,timeout=40) as response:data=json.load(response)
+                set_sync(self.engine,key,last_success_at=now().isoformat(),last_outcome='success',retry_at=None)
+                return data
             except urllib.error.HTTPError as e:
                 if e.code==429:
-                    until=(now()+timedelta(seconds=retry_seconds(e.headers))).isoformat();set_sync(self.engine,key,retry_at=until)
+                    fallback=10800 if path=='/api/v1/supplier/orders' else 7200 if path=='/api/v1/supplier/sales' else 180
+                    until=(now()+timedelta(seconds=retry_seconds(e.headers,default=fallback))).isoformat();set_sync(self.engine,key,retry_at=until,last_outcome='rate_limited')
+                    safe_until=(datetime.fromisoformat(until)+timedelta(seconds=300 if report else 0)).isoformat()
                     if path=='/api/v1/supplier/sales':
-                        update_wb_status(self.engine,state='waiting',reason='Площадка ограничила частоту запросов',next_retry_at=until)
-                    raise Paused('Площадка ограничила частоту запросов',until) from None
+                        update_wb_status(self.engine,state='waiting',reason='Площадка ограничила частоту запросов',next_retry_at=safe_until,retry_buffered=True)
+                    raise Paused('Площадка ограничила частоту запросов',safe_until) from None
                 if e.code not in (500,502,503,504) or attempt==2 or path in ('/api/v1/supplier/orders','/api/v1/supplier/sales'):
                     message=''
                     if e.code in (400,422):
@@ -136,23 +153,32 @@ def wb_statistics(client,start,path='/api/v1/supplier/orders',identity='srid',pa
     # A paginated report can span cooldowns and restarts. Persist the page before
     # advancing the cursor; never advertise a partial report as complete.
     origin=progress.get('origin',start) if progress.get('pending') and progress.get('origin','')>=start[:4]+'-01-01' else start
-    rows=[];seen={};cursor=progress.get('cursor',origin) if progress.get('pending') and origin==progress.get('origin') else origin
+    rows=[];seen={};resuming=progress.get('pending') and origin==progress.get('origin')
+    cursor=progress.get('cursor',origin) if resuming else origin
+    cutoff=progress.get('cutoff_at') if resuming else now().isoformat()
     for _ in range(1000):
         batch=client.get(path,params={'dateFrom':cursor,'flag':0})
         if not isinstance(batch,list):raise FeedFailure('Неполный отчёт заказов ВБ')
+        timestamps=[]
         for r in batch:
-            key=r.get(identity)
+            key=r.get(identity);changed=r.get('lastChangeDate')
             if not key:raise FeedFailure('Нет идентификатора строки отчёта ВБ')
-            # Boundary repeats are allowed; retain the latest source revision.
-            if key not in seen or str(r.get('lastChangeDate'))>str(seen[key].get('lastChangeDate')):seen[key]=r
+            if not changed:raise FeedFailure('Нет даты изменения строки отчёта ВБ')
+            try:timestamps.append(timestamp(changed,True))
+            except (ValueError,TypeError):raise FeedFailure('Некорректная дата изменения строки отчёта ВБ') from None
+            if key not in seen or str(changed)>str(seen[key].get('lastChangeDate')):seen[key]=r
+        if timestamps!=sorted(timestamps):raise FeedFailure('Нарушен порядок строк отчёта ВБ')
         if on_page:on_page(batch)
-        if len(batch)<page_size:
-            if engine is not None and checkpoint:set_sync(engine,checkpoint,pending=False,origin=origin,cursor=None,completed_at=now().isoformat())
+        # Stop only at an empty page or once an ordered page has passed the
+        # fixed start-of-read watermark. New sales cannot prolong the import forever.
+        proof='empty_page' if not batch else 'cutoff' if timestamps[-1]>cutoff else None
+        if proof:
+            if engine is not None and checkpoint:set_sync(engine,checkpoint,pending=False,origin=origin,cursor=None,cutoff_at=cutoff,proof=proof,completed_at=now().isoformat())
             return list(seen.values())
-        nxt=batch[-1].get('lastChangeDate')
-        if not nxt or nxt<=cursor:raise FeedFailure('Не продвинулся курсор статистики ВБ')
+        nxt=batch[-1]['lastChangeDate']
+        if nxt<=cursor:raise FeedFailure('Не продвинулся курсор статистики ВБ')
         cursor=nxt
-        if engine is not None and checkpoint:set_sync(engine,checkpoint,pending=True,origin=origin,cursor=cursor)
+        if engine is not None and checkpoint:set_sync(engine,checkpoint,pending=True,origin=origin,cursor=cursor,cutoff_at=cutoff)
     raise FeedFailure('Лимит страниц статистики ВБ')
 
 
@@ -172,7 +198,7 @@ def ozon_returns(client):
     raise FeedFailure('Лимит страниц возвратов')
 
 
-def run(engine,env,history_steps=1,on_current=None,deep=True,reports=None):
+def run(engine,env,history_steps=1,on_current=None,deep=True,reports=None,current=True):
     reports=deep if reports is None else reports
     at=now();state=sync_state(engine);result={}
     identity=state.get('wb-identity',{});fingerprint=hashlib_account(env['WB_TOKEN'])
@@ -186,19 +212,22 @@ def run(engine,env,history_steps=1,on_current=None,deep=True,reports=None):
     accounts={'wb':identity.get('account'),'ozon':str(env['OZON_CLIENT_ID'])}
     clients={'wb':Client(engine,'wb',accounts['wb'],{'Authorization':env['WB_TOKEN']}),'ozon':Client(engine,'ozon',accounts['ozon'],{'Api-Key':env['OZON_API_KEY'],'Client-Id':env['OZON_CLIENT_ID']})}
     def phase(key,work):
-        previous=sync_state(engine).get(key,{})
         set_sync(engine,key,state='running',attempt_at=now().isoformat())
         try:
             if key.startswith('wb-') and not accounts['wb']:raise FeedFailure('Сначала нужно подтвердить кабинет ВБ')
             value=work()
             if value is SKIP:
-                set_sync(engine,key,**previous);return value
+                set_sync(engine,key,state='ready',error=None,retry_at=None)
+                if key=='wb-sales':update_wb_status(engine,state='ready_cached',reason='Оперативные продажи Wildberries; итоговый отчёт не сверён',next_retry_at=None)
+                return value
             set_sync(engine,key,state='ready',success_at=now().isoformat(),error=None,retry_at=None)
             if on_current and key in ('wb-new','wb-fbs','ozon-open','ozon-fbs'):on_current()
             return value
         except Exception as e:
             message=str(e) if isinstance(e,FeedFailure) else 'Ошибка проверки данных; предыдущая выгрузка сохранена'
-            set_sync(engine,key,state='waiting' if isinstance(e,Paused) else 'error',error=message,retry_at=e.retry_at if isinstance(e,Paused) else None);return None
+            set_sync(engine,key,state='waiting' if isinstance(e,Paused) else 'error',error=message,retry_at=e.retry_at if isinstance(e,Paused) else None)
+            if key=='wb-sales' and isinstance(e,Paused):update_wb_status(engine,state='waiting',reason=message,next_retry_at=e.retry_at,retry_buffered=True)
+            return None
     wb=clients['wb'];account=accounts['wb']
     def current_wb():
         data=wb.get('/api/v3/orders/new');rows=data.get('orders')
@@ -224,7 +253,7 @@ def run(engine,env,history_steps=1,on_current=None,deep=True,reports=None):
             cursors.add(key);cursor={'limit':100,'updatedAt':key[0],'nmID':key[1]}
         else:raise FeedFailure('Лимит страниц карточек ВБ')
         result=refresh_wb_mappings(engine,dict(at=now().isoformat(),cards=cards));set_sync(engine,'wb-catalog',**result)
-    fresh=phase('wb-new',current_wb)
+    fresh=phase('wb-new',current_wb) if current else []
     oz=clients['ozon'];oz_account=accounts['ozon']
     def open_ozon():
         rows=postings(oz,'fbs',(at-timedelta(days=90)).isoformat(),(at+timedelta(days=30)).isoformat(),True)
@@ -237,7 +266,7 @@ def run(engine,env,history_steps=1,on_current=None,deep=True,reports=None):
             if row.get('posting_number')!=d['external_id']:raise FeedFailure('Не подтверждён номер открытого отправления')
             ingest(engine,'ozon','fbs',oz_account,[{**row,'_status_verified':True}],'ozon-fbs')
         set_sync(engine,'ozon-open',received=len(rows),tracked_missing=len(missing))
-    phase('ozon-open',open_ozon)
+    if current:phase('ozon-open',open_ozon)
     def fbs():
         prior=state.get('wb-fbs',{});history_due=deep and (not prior.get('history_refreshed_at') or (at-datetime.fromisoformat(prior['history_refreshed_at'])).total_seconds()>=86400)
         rows=wb_history(wb,at-timedelta(days=30),lambda batch:ingest(engine,'wb','fbs',account,batch,'wb-fbs',only_new=True)) if history_due else []
@@ -252,18 +281,20 @@ def run(engine,env,history_steps=1,on_current=None,deep=True,reports=None):
         ingest(engine,'wb','fbs',account,[{**r,**statuses[r['id']],'_status_verified':True} for r in merged.values()],'wb-fbs')
         set_sync(engine,'wb-fbs',received=len(merged),history_from=(at-timedelta(days=30)).isoformat() if deep else state.get('wb-fbs',{}).get('history_from'),history_to=at.isoformat() if deep else state.get('wb-fbs',{}).get('history_to'))
     if deep:phase('wb-catalog',catalog_wb)
-    phase('wb-fbs',fbs)
+    if current:phase('wb-fbs',fbs)
     def statistics():
         prior=state.get('wb-statistics',{});last=prior.get('success_at');year=max(at.astimezone(__import__('zoneinfo').ZoneInfo('Europe/Moscow')).date().replace(month=1,day=1).isoformat(),(at-timedelta(days=89)).date().isoformat())
         if last and prior.get('history_from','9999')<=year and (at-datetime.fromisoformat(last)).total_seconds()<86400:return SKIP
         start=year if prior.get('history_from','9999')>year or not last else max(year,(datetime.fromisoformat(last)-timedelta(days=1)).date().isoformat())
         def save_page(batch):
+            unknown=sum(r.get('warehouseType') not in ('Склад WB','Склад продавца') for r in batch)
+            if unknown:raise FeedFailure('Не определена схема '+str(unknown)+' заказов ВБ')
             for scheme,warehouse in [('fbo','Склад WB'),('fbs','Склад продавца')]:ingest(engine,'wb',scheme,account,[r for r in batch if r.get('warehouseType')==warehouse],'wb-statistics')
         rows=wb_statistics(wb,start,on_page=save_page,checkpoint='report:wb-orders:'+account)
         for scheme,warehouse in [('fbo','Склад WB'),('fbs','Склад продавца')]:ingest(engine,'wb',scheme,account,[r for r in rows if r.get('warehouseType')==warehouse],'wb-statistics')
         unknown=sum(r.get('warehouseType') not in ('Склад WB','Склад продавца') for r in rows)
         if unknown:raise FeedFailure('Не определена схема '+str(unknown)+' заказов ВБ')
-        set_sync(engine,'wb-statistics',received=len(rows),history_from=year,bootstrap_partial=False,history_to=at.isoformat(),window_from=start)
+        set_sync(engine,'wb-statistics',received=len(rows),history_from=year,bootstrap_partial=False,history_to=sync_state(engine).get('report:wb-orders:'+account,{}).get('cutoff_at',at.isoformat()),window_from=start)
     if reports:phase('wb-statistics',statistics)
     if reports:phase('wb-sales',lambda:sync_wb_sales(engine,wb,account,state.get('wb-sales',{}),at))
     account=oz_account
@@ -306,6 +337,13 @@ def run(engine,env,history_steps=1,on_current=None,deep=True,reports=None):
             phase(key,history)
     set_sync(engine,'cycle',finished_at=now().isoformat())
     return {k:v for k,v in sync_state(engine).items() if not k.startswith('limit:')}
+
+
+def reports_due(state,at):
+    for key in ('wb-statistics','wb-sales'):
+        value=state.get(key,{})
+        if value.get('state')=='waiting' and value.get('retry_at') and datetime.fromisoformat(value['retry_at'])<=at:return True
+    return False
 
 
 def hashlib_account(token):
@@ -353,9 +391,11 @@ def _sync_wb_sales(engine,client,account,prior,at):
           with transaction(engine) as s:
             for r in batch:
                 safe={k:r.get(k) for k in ('saleID','date','lastChangeDate','barcode','srid','warehouseType')};key='market-sale-raw:'+hashlib.sha256(json.dumps([account,safe['saleID']]).encode()).hexdigest();e=s.get(Entity,key);data=dict(account=account,row=safe)
-                if e:e.data=data;e.version+=1
+                if e:
+                    if str(safe.get('lastChangeDate') or '')>=str(e.data['row'].get('lastChangeDate') or ''):e.data=data;e.version+=1
                 else:s.add(Entity(id=key,kind='market_sale_raw',version=1,data=data))
         wb_statistics(client,start,'/api/v1/supplier/sales','saleID',on_page=persist,checkpoint='report:wb-sales:'+account)
+        fetched_at=sync_state(engine).get('report:wb-sales:'+account,{}).get('cutoff_at',fetched_at)
     with transaction(engine) as s:raw=[e.data['row'] for e in s.scalars(select(Entity).where(Entity.kind=='market_sale_raw',Entity.data['account'].as_string()==account))]
     codes,_,covered=mappings(engine)
     minimum=min((str(r['date'])[:10] for r in raw),default=history_from)
@@ -379,6 +419,6 @@ def _sync_wb_sales(engine,client,account,prior,at):
             if d['status']==state:continue
             history=d.get('history',[])+[dict(at=now().isoformat(),status=state,raw_status=last['kind'],source='wb-sales')]
             e.data={**d,'status':state,'sale_status':state,'history':history[-100:]};e.version+=1
-    store_window(engine,dict(platform='wb',start=history_from,end=end,at=fetched_at,complete=True,verified=True,covered_items=list(covered['wb']),events=[e for e in window_events if e['item_id'] in covered['wb']],source='WB supplier/sales',unmatched=unmatched))
-    set_sync(engine,'wb-sales',history_from=history_from,received=len(raw),history_to=end,raw_complete_from=history_from,raw_end=end,raw_at=fetched_at,rebuild_required=False)
-    update_wb_status(engine,state='ready_cached' if cached_rebuild else 'ready',at=fetched_at,reason='Продажи сверены с учётом всех подтверждённых штрихкодов',**({} if cached_rebuild else {'next_retry_at':None}))
+    store_window(engine,dict(platform='wb',start=history_from,end=end,at=fetched_at,complete=True,verified=True,covered_items=list(covered['wb']),events=[e for e in window_events if e['item_id'] in covered['wb']],source='WB supplier/sales',unmatched=unmatched,collection_proof=sync_state(engine).get('report:wb-sales:'+account,{}).get('proof','empty_page')))
+    set_sync(engine,'wb-sales',history_from=history_from,received=len(raw),history_to=end,raw_complete_from=history_from,raw_end=end,raw_at=fetched_at,rebuild_required=False,state='ready',success_at=now().isoformat(),error=None,retry_at=None)
+    update_wb_status(engine,state='ready_cached' if cached_rebuild else 'ready',at=fetched_at,reason='Оперативные продажи Wildberries; итоговый отчёт не сверён',**({} if cached_rebuild else {'next_retry_at':None}))
