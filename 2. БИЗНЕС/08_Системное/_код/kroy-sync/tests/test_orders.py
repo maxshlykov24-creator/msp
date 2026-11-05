@@ -528,3 +528,15 @@ def test_wb_retry_without_headers_uses_conservative_method_limit(setup):
   with pytest.raises(Paused) as caught:Client(engine,'wb','seller',{},request=blocked).get(path)
   from datetime import datetime
   assert (datetime.fromisoformat(caught.value.retry_at)-now()).total_seconds()>=minimum-2
+
+
+def test_wb_sales_batches_are_idempotent_and_keep_newest_revision(setup):
+ from app.order_sync import upsert_sales_rows
+ engine,_,_=setup
+ rows=[('raw:'+str(i),{'row':{'lastChangeDate':'2026-11-05T12:00:00','value':i}}) for i in range(1001)]
+ upsert_sales_rows(engine,rows,'market_sale_raw',newest=True)
+ upsert_sales_rows(engine,[('raw:0',{'row':{'lastChangeDate':'2026-11-06T12:00:00','value':'new'}}),('raw:0',{'row':{'lastChangeDate':'2026-11-04T12:00:00','value':'old'}})],'market_sale_raw',newest=True)
+ upsert_sales_rows(engine,rows,'market_sale_raw',newest=True)
+ with Session(engine) as s:
+  assert s.scalar(select(func.count()).select_from(Entity).where(Entity.kind=='market_sale_raw'))==1001
+  assert s.get(Entity,'raw:0').data['row']['value']=='new'

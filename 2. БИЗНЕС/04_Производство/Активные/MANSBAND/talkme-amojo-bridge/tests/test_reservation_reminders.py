@@ -232,3 +232,24 @@ def test_proxy_preserves_existing_subscriber(monkeypatch):
         {"content-type": "application/json", "authorization": "Bearer original"})
     assert stored == [{"test": True}]
     assert client.post('/wazzup/wrong', json={"test": True}).status_code == 403
+
+
+def test_callback_persisted_even_when_downstream_times_out(monkeypatch):
+    from app import stage_notifications
+    cfg=ReminderSettings(webhook_secret=SecretStr('hook'),forward_url=SecretStr('https://example.test'))
+    stored=[]
+    class Remote:
+        async def __aenter__(self):return self
+        async def __aexit__(self,*args):pass
+        async def post(self,*args,**kwargs):
+            assert stored
+            raise httpx.ReadTimeout('downstream')
+    class DB:
+        def close(self):pass
+    monkeypatch.setattr(module,'ReminderSettings',lambda:cfg)
+    monkeypatch.setattr(module.httpx,'AsyncClient',lambda **kw:Remote())
+    monkeypatch.setattr(module,'get_session_factory',lambda:DB)
+    monkeypatch.setattr(module,'record_events',lambda db,body:stored.append(body))
+    monkeypatch.setattr(stage_notifications,'record_messages',lambda *a:None)
+    response=TestClient(module.app).post('/wazzup/hook',json={'statuses':[]})
+    assert response.status_code==502 and stored==[{'statuses':[]}]

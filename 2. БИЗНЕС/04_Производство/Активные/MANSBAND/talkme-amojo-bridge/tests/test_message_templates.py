@@ -500,3 +500,11 @@ def test_explicit_invalid_request_is_failed_without_channel_fanout(db,transport,
     j=job(db,doc(db));m.send(db,j,transport,STAMP);m.send(db,j,transport,STAMP)
     assert j.state=='failed' and j.reason==code and len(transport.posts)==1
     assert db.scalar(select(m.Attempt)).state=='error'
+
+
+def test_telegram_phone_absent_is_explicit_rejection(db,transport):
+    transport.response=(400,{'error':'CHANNEL_TGAPI_PHONE_NOT_OCCUPIED'})
+    j=job(db,doc(db));m.send(db,j,transport,STAMP)
+    a=db.scalar(select(m.Attempt))
+    assert a.state=='error' and a.reason=='CHANNEL_TGAPI_PHONE_NOT_OCCUPIED'
+    assert j.state=='failed' and j.reason=='all_channels_exhausted'

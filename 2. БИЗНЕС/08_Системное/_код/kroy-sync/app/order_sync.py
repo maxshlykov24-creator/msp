@@ -353,6 +353,24 @@ def hashlib_account(token):
 def copy_data(e):return dict(e.data)
 
 
+def upsert_sales_rows(engine, rows, kind, newest=False, chunk_size=500):
+    """Commit bounded batches, so a large report cannot lock inventory for minutes."""
+    for offset in range(0,len(rows),chunk_size):
+        chunk={}
+        for key,data in rows[offset:offset+chunk_size]:
+            previous=chunk.get(key)
+            if not newest or previous is None or str(data['row'].get('lastChangeDate') or '')>=str(previous['row'].get('lastChangeDate') or ''):
+                chunk[key]=data
+        with transaction(engine) as s:
+            existing={e.id:e for e in s.scalars(select(Entity).where(Entity.id.in_(list(chunk))))}
+            for key,data in chunk.items():
+                e=existing.get(key)
+                if e:
+                    if newest and str(data['row'].get('lastChangeDate') or '')<str(e.data['row'].get('lastChangeDate') or ''):continue
+                    e.data=data;e.version+=1
+                else:s.add(Entity(id=key,kind=kind,version=1,data=data))
+
+
 def update_wb_status(engine,**fields):
     with transaction(engine) as s:
         e=s.get(Entity,'cutting-sales-status');data=dict(e.data) if e else {};platforms=dict(data.get('platforms',{}));platforms['wb']={**platforms.get('wb',{}),**fields};data['platforms']=platforms
@@ -388,12 +406,11 @@ def _sync_wb_sales(engine,client,account,prior,at):
     if not cached_rebuild:
         start=history_from if not prior.get('raw_complete_from') or prior['raw_complete_from']>year or prior.get('rebuild_required') else max(year,(datetime.fromisoformat(prior['raw_at'])-timedelta(days=1)).date().isoformat())
         def persist(batch):
-          with transaction(engine) as s:
-            for r in batch:
-                safe={k:r.get(k) for k in ('saleID','date','lastChangeDate','barcode','srid','warehouseType')};key='market-sale-raw:'+hashlib.sha256(json.dumps([account,safe['saleID']]).encode()).hexdigest();e=s.get(Entity,key);data=dict(account=account,row=safe)
-                if e:
-                    if str(safe.get('lastChangeDate') or '')>=str(e.data['row'].get('lastChangeDate') or ''):e.data=data;e.version+=1
-                else:s.add(Entity(id=key,kind='market_sale_raw',version=1,data=data))
+          rows=[]
+          for r in batch:
+            safe={k:r.get(k) for k in ('saleID','date','lastChangeDate','barcode','srid','warehouseType')};key='market-sale-raw:'+hashlib.sha256(json.dumps([account,safe['saleID']]).encode()).hexdigest()
+            rows.append((key,dict(account=account,row=safe)))
+          upsert_sales_rows(engine,rows,'market_sale_raw',newest=True)
         wb_statistics(client,start,'/api/v1/supplier/sales','saleID',on_page=persist,checkpoint='report:wb-sales:'+account)
         fetched_at=sync_state(engine).get('report:wb-sales:'+account,{}).get('cutoff_at',fetched_at)
     with transaction(engine) as s:raw=[e.data['row'] for e in s.scalars(select(Entity).where(Entity.kind=='market_sale_raw',Entity.data['account'].as_string()==account))]
@@ -402,12 +419,12 @@ def _sync_wb_sales(engine,client,account,prior,at):
     events,_=wb_events(raw,minimum,str(at.astimezone(MSK).date()),codes)
     window_events,unmatched=wb_events(raw,history_from,end,codes)
     identities={str(r.get('saleID')):r for r in raw}
+    normalized=[]
+    for event in events:
+        r=identities[event['id']];data={**event,'account':account,'order_ref':str(r.get('srid') or ''),'order_at':timestamp(r.get('date'),True)}
+        key='market-sale:'+hashlib.sha256(json.dumps([account,event['id']]).encode()).hexdigest();normalized.append((key,data))
+    upsert_sales_rows(engine,normalized,'market_sale')
     with transaction(engine) as s:
-        for event in events:
-            r=identities[event['id']];data={**event,'account':account,'order_ref':str(r.get('srid') or ''),'order_at':timestamp(r.get('date'),True)}
-            key='market-sale:'+hashlib.sha256(json.dumps([account,event['id']]).encode()).hexdigest();e=s.get(Entity,key)
-            if e:e.data=data;e.version+=1
-            else:s.add(Entity(id=key,kind='market_sale',version=1,data=data))
         by_ref=defaultdict(list)
         for event in events:
             r=identities[event['id']]

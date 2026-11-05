@@ -37,6 +37,7 @@ ORDER = ("telegram", "whatsapp", "max")
 SUCCESS = {"sent", "delivered", "read"}
 # These are explicit rejections, not transport timeouts or unknown server errors.
 REJECTED = {
+    "CHANNEL_TGAPI_PHONE_NOT_OCCUPIED",
     "BAD_CONTACT", "CHAT_NO_ACCESS", "CHANNEL_BLOCKED", "CHANNEL_WAPI_REJECTED",
     "CHANNEL_NO_MONEY", "MESSAGE_CHANNEL_UNAVAILABLE", "MESSAGES_NOT_TEXT_FIRST",
     "MESSAGES_IS_SPAM", "CHANNEL_LIMIT_EXCEEDED", "TEMPLATE_REJECTED",
@@ -554,6 +555,18 @@ async def webhook(secret: str, request: Request):
     if not isinstance(body, dict):
         raise HTTPException(400, "Expected object")
     callback_stats["received"] += 1
+    db = get_session_factory()()
+    try:
+        record_events(db, body)
+        from app.stage_notifications import record_messages
+        record_messages(db, body)
+    except Exception as exc:
+        db.rollback()
+        log.error("Reminder event persistence failed: %s", type(exc).__name__)
+        # Never break an existing successfully forwarded notification for our feature.
+        raise HTTPException(503)
+    finally:
+        db.close()
     forwarded = None
     url = s.forward_url.get_secret_value()
     if url:
@@ -570,19 +583,6 @@ async def webhook(secret: str, request: Request):
         callback_stats["last_at"] = utcnow().isoformat()
         counter = "forwarded_ok" if 200 <= forwarded.status_code < 300 else "forwarded_failed"
         callback_stats[counter] += 1
-    db = get_session_factory()()
-    try:
-        record_events(db, body)
-        from app.stage_notifications import record_messages
-        record_messages(db, body)
-    except Exception as exc:
-        db.rollback()
-        log.error("Reminder event persistence failed: %s", type(exc).__name__)
-        # Never break an existing successfully forwarded notification for our feature.
-        if forwarded is None:
-            raise HTTPException(503)
-    finally:
-        db.close()
     if forwarded is not None:
         return Response(content=forwarded.content, status_code=forwarded.status_code,
                         headers={"Content-Type": forwarded.headers.get("content-type", "application/json")})
