@@ -2,6 +2,7 @@ import os
 import secrets
 import threading
 from pathlib import Path
+from typing import Literal
 
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
@@ -50,11 +51,13 @@ def actor(request):
 class Login(BaseModel):
     employee: str = Field(min_length=1, max_length=80)
     station: str = Field(min_length=1, max_length=80)
+    role: Literal["shift", "picker", "station"] = "shift"
 
 
 class Wave(BaseModel):
     ids: list[str] = Field(max_length=20)
     cart: str = Field(min_length=1, max_length=100)
+    picker: str = Field(default="", max_length=80)
 
 
 class Action(BaseModel):
@@ -62,11 +65,36 @@ class Action(BaseModel):
     action: str
     code: str = Field(default="", max_length=1000)
     target: str = Field(default="", max_length=100)
+    request_id: str = Field(default="", max_length=80)
 
 
 class StationScan(BaseModel):
     wave: str
     code: str = Field(min_length=1, max_length=1000)
+    request_id: str = Field(default="", max_length=80)
+
+
+class PickScan(BaseModel):
+    wave: str
+    code: str = Field(min_length=1, max_length=1000)
+    request_id: str = Field(default="", max_length=80)
+
+
+class AcceptCart(BaseModel):
+    cart: str = Field(min_length=1, max_length=100)
+    request_id: str = Field(default="", max_length=80)
+
+
+class Claim(BaseModel):
+    wave: str
+    request_id: str = Field(default="", max_length=80)
+
+
+class Resolve(BaseModel):
+    job: str
+    decision: Literal["found", "missing"]
+    reason: str = Field(default="", max_length=200)
+    request_id: str = Field(default="", max_length=80)
 
 
 @app.get("/")
@@ -77,7 +105,7 @@ def index():
 @app.post("/api/login")
 def login(body: Login):
     token = secrets.token_urlsafe(32)
-    person = {"employee": body.employee.strip(), "station": body.station.strip()}
+    person = {"employee": body.employee.strip(), "station": body.station.strip(), "role": body.role}
     if not all(person.values()):
         raise ReadError("Имя и станция обязательны")
     sessions[token] = person

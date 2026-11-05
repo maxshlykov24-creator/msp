@@ -96,12 +96,21 @@ class MoySklad:
         orders = self.get("/entity/customerorder", limit=100, order="moment,desc", filter="state=" + ready_href)
         result = []
         skipped = 0
+        ekb = 0
         for order in orders.get("rows", []):
             a = self.attributes(order)
             store = stores.get(order.get("store", {}).get("meta", {}).get("href"), "")
             if projects.get(order.get('project', {}).get('meta', {}).get('href')) != 'WB FBS':
                 continue
-            if self.states.get(order.get('state', {}).get('meta', {}).get('href')) != READY or store not in ("Склад ФБС", "Склад Екатеринбург"):
+            if self.states.get(order.get('state', {}).get('meta', {}).get('href')) != READY:
+                continue
+            # Екатеринбург не смешиваем со складом пилота. Считаем только внутри просмотренной страницы.
+            if store == "Склад Екатеринбург":
+                ekb += 1
+                continue
+            if store != "Склад ФБС":
+                continue
+            if len(result) >= count:
                 continue
             label = a.get("Ссылка на этикетку", "")
             if not label:
@@ -115,18 +124,18 @@ class MoySklad:
             if not codes:
                 skipped += 1
                 continue
+            attrs = self.attributes(product)
             result.append({
                 "id": order["id"], "number": order["name"], "store": store,
                 "moment": order.get('moment', ''),
                 "product_id": product["id"], "product": product["name"],
                 "article": product.get("article", ""), "barcodes": codes,
+                "brand": attrs.get("Бренд", ""), "color": attrs.get("Цвет", ""),
                 "quantity": 1, "label_url": label, "status": READY,
                 "cell": "", "cell_verified": False, "marketplace": "wb",
                 "supply": None, "deadline": None,
             })
-            if len(result) >= count:
-                break
-        return {"orders": result, "scanned_orders": len(orders.get("rows", [])), "skipped": skipped}
+        return {"orders": result, "scanned_orders": len(orders.get("rows", [])), "skipped": skipped, "ekb_skipped": ekb}
 
 
 def fetch_label(url):
