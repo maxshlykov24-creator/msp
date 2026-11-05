@@ -327,6 +327,13 @@ def test_manual_rejection_keeps_amo_text_and_same_content_is_not_resent(db):
     assert len(c.patches)==2 and c.patches[1]['content']=='Исправленный текст' and c.patches[1]['buttons'][0]['text']=='Сайт'
 
 
+def test_manual_patch_omits_empty_buttons(db):
+    c=CRM();c.remote={**c.remote,'buttons':[],'attachment':None}
+    d=manual_draft(db,c);m.check(d.id,{'version':1},db,c)
+    m.publish(d.id,m.Publish(version=1,actor='admin'),db,c)
+    assert set(c.patches[0])=={'name','content','type'}
+
+
 def test_manual_lost_patch_retries_only_when_crm_is_unchanged(db):
     from fastapi import HTTPException
     c=CRM();c.patch_uncertain=True;d=manual_draft(db,c);m.check(d.id,{'version':1},db,c)

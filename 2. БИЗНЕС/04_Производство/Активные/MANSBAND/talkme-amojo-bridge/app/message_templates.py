@@ -1121,7 +1121,7 @@ def check(id:str,body:dict,db=Depends(session),c=Depends(client)):
     except ValueError as exc:raise HTTPException(422,str(exc))
 
 
-PATCH_SHAPE="full-v1"
+PATCH_SHAPE="full-v2"
 
 
 def content_key(p):
@@ -1150,8 +1150,10 @@ def rejection_text(status,text):
 def patch_body(p):
     original=p.get("original") if isinstance(p.get("original"),dict) else {}
     body={"name":p["name"],"content":p["content"]}
-    for key in ("type","is_editable","buttons","attachment"):
-        if key in original:body[key]=original[key]
+    if original.get("type"):body["type"]=original["type"]
+    if "is_editable" in original:body["is_editable"]=bool(original["is_editable"])
+    if original.get("buttons"):body["buttons"]=original["buttons"]
+    if original.get("attachment"):body["attachment"]=original["attachment"]
     if original.get("external_id"):body["external_id"]=original["external_id"]
     return body
 
