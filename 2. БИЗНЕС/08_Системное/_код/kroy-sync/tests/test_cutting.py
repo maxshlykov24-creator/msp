@@ -101,3 +101,33 @@ def test_issue_tolerance_and_stable_document_identity(setup):
     cmd('task.issue',p)
     with pytest.raises(DomainError,match='существует'):cmd('task.issue',p)
     assert balance(engine,'cloth')['reserved']==2
+
+
+def test_confirmed_zero_stock_still_produces_recommendation(setup):
+    from app.sales import store_window
+    engine, user, cmd = setup
+    with Session(engine) as s:
+        params = calculate(s, {'location': 'own', 'item_ids': ['m']})['parameters']
+    for platform, sales, returns in [('wb', 12, 1), ('ozon', 3, 2)]:
+        store_window(engine, dict(platform=platform, start=params['start'], end=params['end'], at=datetime.now(MSK).isoformat(),
+            complete=True, verified=True, covered_items=['m'], events=[
+                dict(id=platform+'-sale',item_id='m',date=params['end'],kind='sale',quantity=sales),
+                dict(id=platform+'-return',item_id='m',date=params['end'],kind='return',quantity=returns)]))
+    with Session(engine) as s:
+        row = calculate(s, {'location': 'own', 'item_ids': ['m']})['rows'][0]
+    assert Decimal(row['free']) == 0
+    assert row['net'] == 12 and row['target'] == 24 and row['recommendation'] == 24
+
+
+def test_catalog_links_do_not_invalidate_same_calculation(setup):
+    from app.sales import store_window
+    engine, _, _ = setup
+    with Session(engine) as s:
+        params = calculate(s, {'location':'own','item_ids':['m']})['parameters']
+    window=dict(platform='ozon',start=params['start'],end=params['end'],at=datetime.now(MSK).isoformat(),complete=True,verified=True,covered_items=['m'],events=[])
+    store_window(engine,window)
+    with Session(engine) as s:before=calculate(s, {'location':'own','item_ids':['m']})
+    store_window(engine,{**window,'catalog_matches':{'m':[{'product_id':'1','offer_id':'test','skus':['2']}]}})
+    with Session(engine) as s:after=calculate(s, {'location':'own','item_ids':['m']})
+    assert after['fingerprint']==before['fingerprint']
+    assert after['rows'][0]['platforms']['ozon']['catalog_matches'][0]['offer_id']=='test'

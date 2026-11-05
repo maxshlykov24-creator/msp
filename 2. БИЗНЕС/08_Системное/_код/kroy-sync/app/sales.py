@@ -196,6 +196,11 @@ def sync(engine, env, start=None, end=None):
                 catalog=collect_ozon_catalog(headers,env.get('KROY_SALES_CACHE','.runtime/sales-cache'))
                 skus,ozon_covered,not_listed,catalog_proof=catalog_links(engine,catalog)
                 normalized,blocked,reversed_units=ozon_entries(raw);unmatched=0;events=[]
+                catalog_matches=defaultdict(list)
+                for product in catalog['items']:
+                    ids={iid for source in product.get('sources') or [] for iid in skus.get(str(source.get('sku')),[])}
+                    if len(ids)==1:
+                        catalog_matches[next(iter(ids))].append(dict(product_id=str(product['id']),offer_id=product.get('offer_id'),skus=[str(v['sku']) for v in product.get('sources') or [] if v.get('sku')],archived=bool(product.get('is_archived') or product.get('is_autoarchived'))))
                 blocked_items={iid:'Не найдена исходная продажа для отмены начисления Ozon' for sku in blocked for iid in skus.get(sku,[])}
                 allowed=ozon_covered-set(blocked_items)
                 unknown_skus={r['sku'] for r in normalized if len(skus.get(r['sku'],[]))!=1}|{sku for sku in blocked if len(skus.get(sku,[]))!=1}
@@ -207,7 +212,7 @@ def sync(engine, env, start=None, end=None):
                     matches=skus.get(event['sku'],[])
                     if len(matches)!=1 or matches[0] not in allowed:unmatched+=event['quantity'];continue
                     events.append({k:v for k,v in event.items() if k!='sku'}|{'item_id':matches[0]})
-                data=dict(platform='ozon',start=start,end=end,at=now().isoformat(),complete=True,verified=True,covered_items=list(allowed),blocked_items=blocked_items,not_listed_items=sorted(proven_not_listed),catalog_proof={**catalog_proof,'unmatched_financial_skus':len(unknown_skus)},events=events,source=OZON_SOURCE,unmatched=unmatched,reconciliation=certificate,reversed_deliveries=reversed_units,source_hashes=hashes)
+                data=dict(platform='ozon',start=start,end=end,at=now().isoformat(),complete=True,verified=True,covered_items=list(allowed),blocked_items=blocked_items,not_listed_items=sorted(proven_not_listed),catalog_matches=dict(catalog_matches),catalog_proof={**catalog_proof,'unmatched_financial_skus':len(unknown_skus)},events=events,source=OZON_SOURCE,unmatched=unmatched,reconciliation=certificate,reversed_deliveries=reversed_units,source_hashes=hashes)
             store_window(engine,data)
             results[platform]=dict(state='ready',at=data['at'],start=start,end=end,events=len(data['events']),covered=len(data['covered_items']),unmatched=data['unmatched'])
         except RateLimited as e:
@@ -228,24 +233,29 @@ def collect_ozon_catalog(headers, cache_dir, get=get_json):
     path=Path(cache_dir)/'ozon-catalog.json';path.parent.mkdir(parents=True,exist_ok=True,mode=0o700)
     if path.exists():
         cached=json.loads(path.read_text())
-        if cached.get('complete') and (now()-datetime.fromisoformat(cached['at'])).total_seconds()<21600:return cached
-    listed=[];seen=set();cursor=''
-    for _ in range(1000):
-        result=get('https://api-seller.ozon.ru/v3/product/list',headers,dict(filter={'visibility':'ALL'},limit=1000,last_id=cursor)).get('result',{})
-        require(isinstance(result.get('items'),list) and type(result.get('total')) is int,'Неполный каталог Ozon',422)
-        for row in result['items']:
-            pid=str(row['product_id']);require(pid not in seen,'Повтор страницы каталога Ozon',422);seen.add(pid);listed.append(pid)
-        require(len(listed)<=result['total'],'Неверный итог каталога Ozon',422)
-        if len(listed)==result['total']:break
-        nxt=result.get('last_id','');require(nxt and nxt!=cursor and result['items'],'Курсор каталога Ozon не продвинулся',422);cursor=nxt
-    else:raise RuntimeError('Лимит страниц каталога Ozon')
+        if cached.get('catalog_schema')==2 and cached.get('complete') and (now()-datetime.fromisoformat(cached['at'])).total_seconds()<21600:return cached
+    listed=[];all_ids=set()
+    # ALL may omit archived products; inspect the archive separately as well.
+    for visibility in ('ALL', 'ARCHIVED'):
+        seen=set();cursor='';total=None
+        for _ in range(1000):
+            result=get('https://api-seller.ozon.ru/v3/product/list',headers,dict(filter={'visibility':visibility},limit=1000,last_id=cursor)).get('result',{})
+            require(isinstance(result.get('items'),list) and type(result.get('total')) is int,'Неполный каталог Ozon',422)
+            require(total is None or total==result['total'],'Каталог Ozon изменился во время загрузки',422);total=result['total']
+            for row in result['items']:
+                pid=str(row['product_id']);require(pid not in seen,'Повтор страницы каталога Ozon',422);seen.add(pid)
+                if pid not in all_ids:all_ids.add(pid);listed.append(pid)
+            require(len(seen)<=total,'Неверный итог каталога Ozon',422)
+            if len(seen)==total:break
+            nxt=result.get('last_id','');require(nxt and nxt!=cursor and result['items'],'Курсор каталога Ozon не продвинулся',422);cursor=nxt
+        else:raise RuntimeError('Лимит страниц каталога Ozon')
     items=[]
     for offset in range(0,len(listed),1000):
         batch=listed[offset:offset+1000]
         result=get('https://api-seller.ozon.ru/v3/product/info/list',headers,{'product_id':batch})
         require(isinstance(result.get('items'),list) and {str(r['id']) for r in result['items']}==set(batch) and len(result['items'])==len(batch),'Неполные карточки Ozon',422)
-        items.extend({k:r.get(k) for k in ('id','barcodes','sources')} for r in result['items'])
-    data=dict(at=now().isoformat(),complete=True,items=items)
+        items.extend({k:r.get(k) for k in ('id','offer_id','name','barcodes','sources','is_archived','is_autoarchived')} for r in result['items'])
+    data=dict(at=now().isoformat(),complete=True,catalog_schema=2,visibility_scopes=['ALL','ARCHIVED'],items=items)
     tmp=path.with_suffix('.tmp');tmp.write_text(json.dumps(data));tmp.chmod(0o600);tmp.replace(path);return data
 
 
@@ -263,4 +273,4 @@ def catalog_links(engine, catalog):
             iid=next(iter(matches));matched_products+=1;covered.add(iid)
             for sku in product_skus:skus[sku].add(iid)
         ambiguous={iid for ids in skus.values() if len(ids)!=1 for iid in ids};covered-=ambiguous
-        return {k:list(v) for k,v in skus.items()},covered,{i.id for i in items}-covered,dict(at=catalog['at'],all_products_matched=catalog.get('complete') and matched_products==len(catalog['items']) and not ambiguous,catalog_products=len(catalog['items']),matched_products=matched_products)
+        return {k:list(v) for k,v in skus.items()},covered,{i.id for i in items}-covered,dict(at=catalog['at'],all_products_matched=catalog.get('complete') and matched_products==len(catalog['items']) and not ambiguous,catalog_products=len(catalog['items']),matched_products=matched_products,visibility_scopes=catalog.get('visibility_scopes',[]))

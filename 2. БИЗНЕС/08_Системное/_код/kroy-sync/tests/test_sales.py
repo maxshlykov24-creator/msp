@@ -112,7 +112,7 @@ def test_full_sync_proves_unlisted_zero_and_combines_platforms(setup,tmp_path):
     store_window(engine,dict(platform='wb',start=str(start),end=str(end),at=now().isoformat(),complete=True,verified=True,covered_items=['s','m'],events=[dict(id='wb-sale',item_id='s',date=str(end),kind='sale',quantity=3),dict(id='wb-return',item_id='s',date=str(end),kind='return',quantity=1)]))
     for day,raw in [(start,accrual(1,7,day=str(start),sku=123)),(end,accrual(2,2,'-100',day=str(end),sku=123,delivery=False))]:
         (tmp_path/('ozon-'+str(day)+'.json')).write_text(json.dumps(dict(at=now().isoformat(),complete=True,date=str(day),accruals=[raw],source_hashes=['test'])))
-    (tmp_path/'ozon-catalog.json').write_text(json.dumps(dict(at=now().isoformat(),complete=True,items=[dict(id=1,barcodes=['001'],sources=[{'sku':123}])])))
+    (tmp_path/'ozon-catalog.json').write_text(json.dumps(dict(at=now().isoformat(),complete=True,catalog_schema=2,visibility_scopes=['ALL','ARCHIVED'],items=[dict(id=1,barcodes=['001'],sources=[{'sku':123}])])))
     result=sync(engine,{'KROY_SALES_CACHE':str(tmp_path),'OZON_API_KEY':'test','OZON_CLIENT_ID':'test'},str(start),str(end))
     assert result['ozon']['state']=='ready' and result['wb']['state']=='ready_cached'
     with Session(engine) as s:
@@ -149,3 +149,17 @@ def test_refresh_api_permission_and_progress(setup):
     assert response.status_code==200
     job=response.json();assert job['status']=='queued' and 'actor' not in job
     assert client.get('/api/cutting/sales-refresh/'+job['id'],headers={'Authorization':'Bearer test-only'}).json()['status']=='queued'
+
+
+def test_ozon_catalog_includes_archived_identity(setup,tmp_path):
+    from app.sales import collect_ozon_catalog,catalog_links
+    engine,_,_=setup
+    def get(url,headers,body):
+        if url.endswith('/product/list'):
+            return {'result':{'items':[{'product_id':1 if body['filter']['visibility']=='ALL' else 2}], 'total':1}}
+        return {'items':[{'id':i,'offer_id':str(i),'barcodes':['001' if i=='1' else '002'],'sources':[{'sku':int(i)*100}],'is_archived':i=='2'} for i in body['product_id']]}
+    catalog=collect_ozon_catalog({},tmp_path,get)
+    skus,covered,absent,proof=catalog_links(engine,catalog)
+    assert covered=={'s','m'} and not absent and proof['all_products_matched']
+    assert proof['visibility_scopes']==['ALL','ARCHIVED']
+    assert collect_ozon_catalog({},tmp_path,lambda *_:pytest.fail('fresh identity should be cached'))==catalog
