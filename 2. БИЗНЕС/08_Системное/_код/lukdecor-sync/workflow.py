@@ -410,8 +410,10 @@ class Workflow:
                 raise ReadError("Стикер не относится к этому заданию")
             db.execute("UPDATE jobs SET sticker_ok=1 WHERE id=?", (oid,))
         elif action == "box":
-            if j["state"] != "printing" or not j["sticker_ok"] or code != j["box"]:
+            if j["state"] != "printing" or not j["sticker_ok"]:
                 raise ReadError("Сначала проверь стикер, затем отсканируй свой короб")
+            if code != j["box"]:
+                raise ReadError("Не тот короб")
             db.execute("UPDATE jobs SET state='packed' WHERE id=?", (oid,))
         elif action == "transfer":
             if j["state"] != "printing" or not target.strip():

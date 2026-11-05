@@ -160,7 +160,7 @@ class CRM:
     def __init__(self):
         self.amo=self;self.posts=[];self.patches=[];self.deletes=[]
         self.remote={'id':5,'name':'Приветствие','content':'Привет {{contact.name}}','type':'amocrm','buttons':[{'type':'url','url':'https://example.test','text':'Сайт'}],'attachment':{'id':'asset'},'updated_at':100}
-        self.uncertain=False
+        self.uncertain=False;self.patch_uncertain=False;self.reject_status=None;self.reject_json={"title":"Validation error","detail":"недопустимый текст"}
         self.fields=[{'id':3810739,'type':'date','name':'Отложка до'},{'id':3810737,'type':'select','name':'Отложка','enums':[{'id':5452539,'value':'Бесплатная'}]}]
     def get(self,path,**params):
         if path=='/api/v4/leads/pipelines':return {'_embedded':{'pipelines':[{'id':9601214,'_embedded':{'statuses':[{'id':77086494}]}}]}}
@@ -176,7 +176,10 @@ class CRM:
         if self.uncertain:raise httpx.ReadTimeout('lost reply')
         return httpx.Response(200,request=httpx.Request('POST','https://example.test'),json={'_embedded':{'chat_templates':[self.remote]}})
     def patch(self,path,json):
-        self.patches.append(json);self.remote={**self.remote,**json,'updated_at':101}
+        self.patches.append(json)
+        if self.reject_status:return httpx.Response(self.reject_status,request=httpx.Request('PATCH','https://example.test'),json=self.reject_json)
+        if self.patch_uncertain:raise httpx.ReadTimeout('lost reply')
+        self.remote={**self.remote,**json,'updated_at':101}
         return httpx.Response(200,request=httpx.Request('PATCH','https://example.test'),json=self.remote)
     def delete(self,path):
         self.deletes.append(path);self.remote=None
@@ -196,7 +199,7 @@ def test_manual_patch_preserves_attachments_and_markers(db):
     out=m.publish(d.id,m.Publish(version=1,actor='admin'),db,c)
     assert out['remote_id']==5
     assert c.remote['attachment']=={'id':'asset'} and c.remote['buttons'][0]['text']=='Сайт'
-    assert set(c.patches[0])=={'name','content'}
+    assert set(c.patches[0])=={'name','content','type','buttons','attachment'}
     assert db.get(m.Document,d.id).active['source_hash']==m.remote_digest(c.remote)
 
 
@@ -305,6 +308,44 @@ def test_newer_event_does_not_resurrect_old_entry(db,monkeypatch):
     m.ingest(db,form(STAMP+timedelta(minutes=2)),STAMP+timedelta(minutes=2))
     m.ingest(db,form(STAMP),STAMP+timedelta(minutes=2))
     assert len(list(db.scalars(select(m.Job))))==1
+
+
+def test_manual_rejection_keeps_amo_text_and_same_content_is_not_resent(db):
+    from fastapi import HTTPException
+    c=CRM();c.reject_status=400;d=manual_draft(db,c);m.check(d.id,{'version':1},db,c)
+    with pytest.raises(HTTPException) as exc:m.publish(d.id,m.Publish(version=1,actor='admin'),db,c)
+    assert exc.value.status_code==422 and 'недопустимый текст' in exc.value.detail and len(c.patches)==1
+    m.draft(m.Change(id=d.id,kind='manual',version=1,payload={**d.draft,'content':d.draft['content']},actor='admin'),db,c)
+    d=db.get(m.Document,d.id);m.check(d.id,{'version':2},db,c)
+    with pytest.raises(HTTPException) as again:m.publish(d.id,m.Publish(version=2,actor='admin'),db,c)
+    assert again.value.status_code==422 and len(c.patches)==1
+    c.reject_status=None
+    changed={**d.draft,'content':'Исправленный текст','source_hash':m.remote_digest(c.remote)}
+    m.draft(m.Change(id=d.id,kind='manual',version=2,payload=changed,actor='admin'),db,c)
+    d=db.get(m.Document,d.id);m.check(d.id,{'version':3},db,c)
+    m.publish(d.id,m.Publish(version=3,actor='admin'),db,c)
+    assert len(c.patches)==2 and c.patches[1]['content']=='Исправленный текст' and c.patches[1]['buttons'][0]['text']=='Сайт'
+
+
+def test_manual_lost_patch_retries_only_when_crm_is_unchanged(db):
+    from fastapi import HTTPException
+    c=CRM();c.patch_uncertain=True;d=manual_draft(db,c);m.check(d.id,{'version':1},db,c)
+    with pytest.raises(HTTPException):m.publish(d.id,m.Publish(version=1,actor='admin'),db,c)
+    c.remote={**c.remote,'content':'Чужой текст'}
+    with pytest.raises(HTTPException) as foreign:m.publish(d.id,m.Publish(version=1,actor='admin'),db,c)
+    assert foreign.value.status_code==409 and len(c.patches)==1
+    c.remote={**c.remote,'content':'Привет {{contact.name}}'};c.patch_uncertain=False
+    m.publish(d.id,m.Publish(version=1,actor='admin'),db,c)
+    assert len(c.patches)==2 and c.remote['content']=='Новый текст'
+
+
+def test_saved_delete_flag_without_confirmation_does_not_delete(db):
+    from fastapi import HTTPException
+    c=CRM();d=manual_draft(db,c)
+    m.draft(m.Change(id=d.id,kind='manual',version=1,payload={**d.draft,'delete':True},actor='admin'),db,c)
+    d=db.get(m.Document,d.id);m.check(d.id,{'version':2},db,c)
+    with pytest.raises(HTTPException):m.publish(d.id,m.Publish(version=2,actor='admin'),db,c)
+    assert not c.deletes
 
 
 def test_unknown_create_cannot_be_bypassed_by_new_draft_version(db):

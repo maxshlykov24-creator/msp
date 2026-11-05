@@ -147,26 +147,37 @@ def sync_state(engine):
     with transaction(engine) as s:return {e.id.split(':',1)[1]:dict(e.data) for e in s.scalars(select(Entity).where(Entity.kind=='order_sync'))}
 
 
-def list_orders(s,platform='',scheme='',status='',query='',start='',end='',page=1,per_page=50,attention=False):
-    q=select(Entity).where(Entity.kind=='market_order')
+def shown_status():
+    return case((and_(Entity.data['platform'].as_string()=='ozon',Entity.data['raw_status'].as_string()=='awaiting_packaging'),'new'),(and_(Entity.data['platform'].as_string()=='ozon',Entity.data['raw_status'].as_string().in_(['arbitration','client_arbitration'])),'shipping'),else_=Entity.data['status'].as_string())
+
+
+def order_scope(platform='',scheme='',query='',start='',end='',attention=False):
+    filters=[Entity.kind=='market_order']
     for key,value in [('platform',platform),('scheme',scheme)]:
-        if value:q=q.where(Entity.data[key].as_string()==value)
-    if status:
-        grouped=case((and_(Entity.data['platform'].as_string()=='ozon',Entity.data['raw_status'].as_string()=='awaiting_packaging'),'new'),(and_(Entity.data['platform'].as_string()=='ozon',Entity.data['raw_status'].as_string().in_(['arbitration','client_arbitration'])),'shipping'),else_=Entity.data['status'].as_string())
-        if status=='open':q=q.where(grouped.in_(['new','assembling','ready']))
-        elif status=='closed':q=q.where(grouped.in_(['cancelled','returned']))
-        else:q=q.where(grouped==status)
-    if start:q=q.where(Entity.data['created_at'].as_string()>=timestamp(start+'T00:00:00',True))
+        if value:filters.append(Entity.data[key].as_string()==value)
+    if start:filters.append(Entity.data['created_at'].as_string()>=timestamp(start+'T00:00:00',True))
     if end:
         from datetime import date,timedelta
-        q=q.where(Entity.data['created_at'].as_string()<timestamp(str(date.fromisoformat(end)+timedelta(days=1))+'T00:00:00',True))
-    if query:q=q.where(cast(Entity.data,Text).ilike('%'+query.replace('\\','\\\\').replace('%','\\%').replace('_','\\_')+'%',escape='\\'))
-    if attention:q=q.where((Entity.data['needs_mapping'].as_boolean()==True)|(Entity.data['accounting_state'].as_string().in_(['shortage','needs_review','waiting_stock'])))
+        filters.append(Entity.data['created_at'].as_string()<timestamp(str(date.fromisoformat(end)+timedelta(days=1))+'T00:00:00',True))
+    if query:filters.append(cast(Entity.data,Text).ilike('%'+query.replace('\\','\\\\').replace('%','\\%').replace('_','\\_')+'%',escape='\\'))
+    if attention:filters.append((Entity.data['needs_mapping'].as_boolean()==True)|(Entity.data['accounting_state'].as_string().in_(['shortage','needs_review','waiting_stock'])))
+    return filters
+
+
+def list_orders(s,platform='',scheme='',status='',query='',start='',end='',page=1,per_page=50,attention=False):
+    filters=order_scope(platform,scheme,query,start,end,attention)
+    grouped=shown_status()
+    counts={row[0] or 'unknown':row[1] for row in s.execute(select(grouped,func.count()).where(*filters).group_by(grouped))}
+    counts['all']=sum(counts.values())
+    if status=='open':filters.append(grouped.in_(['new','assembling','ready']))
+    elif status=='closed':filters.append(grouped.in_(['cancelled','returned']))
+    elif status:filters.append(grouped==status)
+    q=select(Entity).where(*filters)
     total=s.scalar(select(func.count()).select_from(q.subquery()))
     result=[]
     for e in s.scalars(q.order_by(Entity.data['created_at'].as_string().desc(),Entity.id).offset((page-1)*per_page).limit(per_page)):
         result.append(public_order(s,e))
-    return dict(rows=result,total=total,page=page,per_page=per_page)
+    return dict(rows=result,total=total,page=page,per_page=per_page,counts=counts)
 
 
 def public_order(s,e):

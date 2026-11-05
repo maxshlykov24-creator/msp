@@ -13,7 +13,8 @@ type Rule = { action?: "text" | "certificate"; certificate_pdf?: { intro?: strin
 type Routing = { order: Channel[]; previous_first: boolean; social_fallback: boolean };
 type Manual = { remote_id?: number; name: string; content: string; source_hash?: string; original?: unknown; delete?: boolean };
 type Payload = Rule | Routing | Manual;
-type Doc = { id: string; kind: "rule" | "routing" | "manual"; version: number; draft: Payload; active: Payload | null; checked: boolean };
+type CrmState = { state: string; version: number; message: string; http_status?: number | null };
+type Doc = { id: string; kind: "rule" | "routing" | "manual"; version: number; published_version?: number; draft: Payload; active: Payload | null; checked: boolean; crm?: CrmState | null };
 type Field = { id: number; name: string; type: string; enums?: { id: number; value: string }[] };
 type Pipeline = { id: number; name: string; sort?: number; _embedded?: { statuses?: { id: number; name: string; sort?: number }[] } };
 type Remote = { id: number; name: string; content: string; source_hash: string; type: string };
@@ -116,12 +117,57 @@ export function MessageTemplates() {
     if (selected.kind === "manual") setRemote((await api.get<{ items: Remote[] }>(root + "/manual")).items);
     setNotice(executor === "live" || selected.kind === "manual" ? "Изменения опубликованы." : "Версия опубликована, но пока не подключена к отправке. Действующие сообщения не изменены.");
   });
+  const saveManual = () => void action(async () => {
+    if (!selected || selected.kind !== "manual") return;
+    const current = selected.draft as Manual;
+    let doc = selected;
+    if (dirty || doc.version === 0 || current.delete) {
+      doc = await api.post<Doc>(root + "/draft", { id: doc.id, kind: "manual", version: doc.version, payload: { ...current, delete: false } });
+      setSelected(doc); setDirty(false);
+    }
+    const saved = doc.draft as Manual;
+    const currentRemote = saved.remote_id ? remote.find(x => x.id === saved.remote_id) : undefined;
+    if (!dirty && currentRemote && saved.name === currentRemote.name && saved.content === currentRemote.content) {
+      await refresh();
+      setNotice("Текст уже такой в amoCRM, запись не отправлялась.");
+      return;
+    }
+    await api.post(root + "/check/" + doc.id, { version: doc.version });
+    const published = await api.post<Doc>(root + "/publish/" + doc.id, { version: doc.version, delete_confirmed: false });
+    setSelected(published); setChecked(null); await refresh();
+    setRemote((await api.get<{ items: Remote[] }>(root + "/manual")).items);
+    setNotice("Сохранено в amoCRM.");
+  });
+  const removeManual = () => void action(async () => {
+    if (!selected || selected.kind !== "manual" || !(selected.draft as Manual).remote_id) return;
+    if (!await ask("Удалить этот шаблон из amoCRM? В истории кассы текст останется.", "Удалить шаблон")) return;
+    const doc = await api.post<Doc>(root + "/draft", { id: selected.id, kind: "manual", version: selected.version, payload: { ...(selected.draft as Manual), delete: true } });
+    await api.post(root + "/check/" + doc.id, { version: doc.version });
+    await api.post(root + "/publish/" + doc.id, { version: doc.version, delete_confirmed: true });
+    setSelected(null); setDirty(false); await refresh();
+    setRemote((await api.get<{ items: Remote[] }>(root + "/manual")).items);
+    setNotice("Шаблон удалён из amoCRM.");
+  });
   const fields = catalog.fields;
   const rule = selected?.kind === "rule" ? selected.draft as Rule : null;
   const isGift = rule?.action === "certificate";
   const routing = selected?.kind === "routing" ? selected.draft as Routing : null;
   const manual = selected?.kind === "manual" ? selected.draft as Manual : null;
   const manualReadOnly = Boolean(manual?.remote_id && remote.find(x => x.id === manual.remote_id)?.type !== "amocrm");
+  const remoteNow = manual?.remote_id ? remote.find(x => x.id === manual.remote_id) : undefined;
+  const draftMatchesRemote = Boolean(remoteNow && manual && !dirty && manual.name === remoteNow.name && manual.content === remoteNow.content && !manual.delete);
+  const manualStatus = !manual ? "" : dirty ? "На экране есть правки, в CRM их ещё нет" : remoteNow && manual.source_hash && remoteNow.source_hash !== manual.source_hash ? "Шаблон изменили в amoCRM" : selected?.crm?.state === "rejected" && selected.crm.version === selected.version ? (selected.crm.message || "amoCRM не приняла текст") : selected?.crm?.state === "uncertain" ? "Прошлый запрос не получил ответ, повтор сам не отправляется" : manual.delete ? "Удаление подготовлено, в amoCRM шаблон ещё есть" : !manual.remote_id ? "В amoCRM этого шаблона ещё нет" : draftMatchesRemote ? "Сейчас так в amoCRM" : "Есть правки, в CRM их ещё нет";
+  const saveManualDisabled = busy || (!dirty && draftMatchesRemote && !manual?.delete && selected?.crm?.state !== "rejected" && selected?.crm?.state !== "uncertain");
+  const stepHint = !selected || selected.kind === "manual" ? "" : dirty || !selected.version ? "Сначала сохрани черновик." : !checked ? (selected.kind === "routing" ? "Порядок включится после проверки и публикации. Сначала проверь." : "Сначала проверь, кому уйдёт сообщение.") : "Проверка есть. Можно публиковать.";
+  const discardManual = () => void action(async () => {
+    if (!selected || !remoteNow) return;
+    if (!await ask("Загрузить текст из amoCRM? Правки на этом экране пропадут.", "Загрузить")) return;
+    const payload = { remote_id: remoteNow.id, name: remoteNow.name, content: remoteNow.content, source_hash: remoteNow.source_hash, delete: false };
+    if (selected.version === 0) { setSelected({ ...selected, draft: payload }); setDirty(false); setNotice("На экране текст из amoCRM."); return; }
+    const doc = await api.post<Doc>(root + "/draft", { id: selected.id, kind: "manual", version: selected.version, payload });
+    setSelected(doc); setDirty(false); setChecked(null); await refresh();
+    setNotice("На экране текст из amoCRM. В CRM ничего не записано.");
+  });
   const activeRouting = docs.find(x => x.kind === "routing")?.active as Routing | undefined;
   const stages = catalog.pipelines.filter(p => rule?.pipelines.includes(p.id)).flatMap(p => p._embedded?.statuses ?? []);
   const fieldSelect = (value: number | null, onChange: (n: number | null) => void, subset = fields) => <TemplateSelect className={input} value={value ?? ""} onChange={e => onChange(e.target.value ? Number(e.target.value) : null)}><option value="">Выбери поле</option>{subset.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</TemplateSelect>;
@@ -150,7 +196,7 @@ export function MessageTemplates() {
       {error ? <AlertCircle size={20} className="mt-0.5 shrink-0 text-red-300" /> : <CheckCircle2 size={20} className="mt-0.5 shrink-0 text-gold" />}<p className="min-w-0 flex-1 text-sm">{error || notice}</p><button aria-label="Закрыть уведомление" onClick={() => { setError(""); setNotice(""); }} className="rounded-lg p-1 text-mute hover:bg-ink-700"><X size={16} /></button>
     </div>}
     <Modal open={Boolean(dialog)} onClose={() => closeDialog(false)} title="Подтверждение"><p className="mb-6 text-sm leading-relaxed text-mute-soft">{dialog?.message}</p><div className="flex justify-end gap-2"><Button variant="outline" onClick={() => closeDialog(false)}>Отмена</Button><Button onClick={() => closeDialog(true)}>{dialog?.confirm}</Button></div></Modal>
-    {journal.some(j=>j.gift_lead_id && ["partial","unknown","blocked"].includes(j.state??"")) && <div role="alert" className="card flex flex-wrap items-center gap-3 border border-amber-500/40 p-4"><AlertCircle size={20}/><p className="flex-1 text-sm">Есть сертификаты с блокировкой или незавершённой доставкой. Проверь журнал перед повторной отправкой.</p><button className={button} onClick={()=>{setJournalOpen(true);void switchTab("rule");}}>Показать журнал</button></div>}
+    {tab === "rule" && journal.some(j=>j.gift_lead_id && ["partial","unknown","blocked"].includes(j.state??"")) && <div role="alert" className="card flex flex-wrap items-center gap-3 border border-amber-500/40 p-4"><AlertCircle size={20}/><p className="flex-1 text-sm">Есть сертификаты с блокировкой или незавершённой доставкой. Проверь журнал перед повторной отправкой.</p><button className={button} onClick={()=>setJournalOpen(true)}>Показать журнал</button></div>}
     {busy && <p role="status" className="text-mute">Обработка…</p>}
     <div className="grid gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
       <aside className="space-y-3">
@@ -168,7 +214,7 @@ export function MessageTemplates() {
           {visibleRules.map(d => <button key={d.id} className={`block w-full rounded-xl border p-3 text-left transition-colors hover:bg-ink-800 ${selected?.id === d.id ? "border-gold bg-gold/5" : "border-ink-600"}`} onClick={() => void open(d)}><span className="font-semibold">{(d.draft as Rule).name}</span><span className="mt-2 block text-xs text-mute-soft">{stageLabel(d.draft as Rule)}</span><span className="mt-2 flex flex-wrap items-center gap-2 text-xs text-mute"><span className="rounded-md bg-ink-700 px-2 py-0.5">{(d.draft as Rule).trigger.type === "date" ? "По дате" : "При переходе"}</span>{!d.active ? "Черновик" : !(d.active as Rule).enabled ? "Выключен" : executor !== "live" ? "Версия не подключена к отправке" : "Работает"}{d.active && JSON.stringify(d.active) !== JSON.stringify(d.draft) ? " · есть черновик" : ""}</span></button>)}
           {!visibleRules.length && <p className="py-4 text-sm text-mute">Нет шаблонов по выбранным фильтрам.</p>}
         </>}
-        {tab === "manual" && remote.filter(x => `${x.name} ${x.content}`.toLowerCase().includes(search.trim().toLowerCase())).sort((a, b) => a.name.localeCompare(b.name, "ru")).map(x => <button key={x.id} className={`${button} block w-full text-left`} onClick={() => { const d = docs.find(d => d.kind === "manual" && (d.draft as Manual).remote_id === x.id); open(d && JSON.stringify(d.active) !== JSON.stringify(d.draft) ? d : { id: d?.id ?? `manual-${x.id}`, kind: "manual", version: d?.version ?? 0, draft: { remote_id: x.id, name: x.name, content: x.content, source_hash: x.source_hash }, active: null, checked: false }); }}>{x.name}{x.type !== "amocrm" && <span className="block text-xs text-mute">Особый тип: только просмотр</span>}</button>)}
+        {tab === "manual" && remote.filter(x => `${x.name} ${x.content}`.toLowerCase().includes(search.trim().toLowerCase())).sort((a, b) => a.name.localeCompare(b.name, "ru")).map(x => { const d = docs.find(item => item.kind === "manual" && (item.draft as Manual).remote_id === x.id); const draft = d?.draft as Manual | undefined; const note = d?.crm?.state === "rejected" ? "amoCRM не приняла" : d?.crm?.state === "uncertain" ? "нет ответа от amoCRM" : draft?.delete ? "удаление не сохранено" : draft && (draft.name !== x.name || draft.content !== x.content) ? "есть несохранённое" : ""; return <button key={x.id} className={`${button} block w-full text-left`} onClick={() => { open(d && (draft?.delete || draft?.name !== x.name || draft?.content !== x.content || d.crm?.state === "rejected" || d.crm?.state === "uncertain") ? d : { id: d?.id ?? `manual-${x.id}`, kind: "manual", version: d?.version ?? 0, published_version: d?.published_version ?? 0, draft: { remote_id: x.id, name: x.name, content: x.content, source_hash: x.source_hash, delete: false }, active: d?.active ?? null, checked: false, crm: d?.crm ?? null }); }}>{x.name}{x.type !== "amocrm" && <span className="block text-xs text-mute">Особый тип: только просмотр</span>}{note && <span className="block text-xs text-amber-200">{note}</span>}</button>; })}
         {tab === "manual" && docs.filter(d => d.kind === "manual" && !(d.draft as Manual).remote_id && !d.active && (d.draft as Manual).name.toLowerCase().includes(search.trim().toLowerCase())).map(d => <button key={d.id} className={`${button} block w-full text-left`} onClick={() => open(d)}>{(d.draft as Manual).name} · черновик</button>)}
         {tab === "routing" && <p className="text-sm text-mute">Один порядок для всех автоматических сообщений. Изменения вступают в силу после проверки и публикации.</p>}
       </aside>
@@ -177,6 +223,8 @@ export function MessageTemplates() {
         {selected && <>
           <fieldset disabled={!editable || busy || manualReadOnly} className="min-w-0 space-y-4 disabled:opacity-80">
             {(rule || manual) && <label className="block space-y-1"><span>Название</span><input className={input} value={(rule || manual)?.name ?? ""} onChange={e => edit({ name: e.target.value })} /></label>}
+            {manual && <p className={`text-sm ${manualStatus.startsWith("Сейчас") ? "text-mute" : "text-amber-200"}`}>{manualStatus}</p>}
+            {manual && remoteNow && (dirty || manual.delete || manual.source_hash !== remoteNow.source_hash || manual.name !== remoteNow.name || manual.content !== remoteNow.content) && <button type="button" className={button} disabled={busy} onClick={discardManual}>Загрузить текущий из amoCRM</button>}
             {rule && <>
               <div className="rounded-xl bg-ink-800 p-3 text-sm"><p className="mb-2 text-xs text-mute">Используется на этапах</p><div className="flex flex-wrap gap-2">{rule.statuses.length ? ruleStages(rule).map(s => <span key={`${s.pipeline.id}-${s.id}`} title={s.pipeline.name}><StageBadge stage={s.name} /></span>) : <span>{stageLabel(rule)}</span>}</div></div>
               <label className="flex gap-2"><input type="checkbox" checked={rule.enabled} onChange={e => edit({ enabled: e.target.checked })} />Включить после публикации</label>
@@ -197,7 +245,6 @@ export function MessageTemplates() {
               <div className="space-y-3"><h2 className="font-semibold">Варианты по магазину</h2>{Object.entries(rule.variants).map(([key, value]) => <label className="block" key={key}>{key === "default" ? "Магазин не определён" : fields.find(f => f.id === rule.store_field)?.enums?.find(e => String(e.id) === key)?.value ?? key}<textarea className={`${input} min-h-32`} value={value} onChange={e => edit({ variants: { ...rule.variants, [key]: e.target.value } })} /><button className={button} onClick={() => edit({ variants: Object.fromEntries(Object.entries(rule.variants).filter(([k]) => k !== key)) })}>Убрать вариант</button></label>)}<TemplateSelect className={input} value="" onChange={e => { if (e.target.value) edit({ variants: { ...rule.variants, [e.target.value]: rule.content } }); }}><option value="">Добавить вариант</option>{(fields.find(f => f.id === rule.store_field)?.enums ?? []).filter(e => !rule.variants[String(e.id)]).map(e => <option key={e.id} value={e.id}>{e.value}</option>)}{!("default" in rule.variants) && <option value="default">Магазин не определён</option>}</TemplateSelect></div>
               <p className="rounded-xl bg-ink-800 p-3 text-sm">Каналы: {activeRouting?.previous_first ? "прежний Telegram, WhatsApp или MAX → " : ""}{(activeRouting?.order ?? ["telegram", "whatsapp", "max"]).map(c => channelNames[c]).join(" → ")}{activeRouting?.social_fallback ? " → исходный Instagram или Авито" : ""}. <button className="underline" onClick={() => switchTab("routing")}>Изменить общий порядок</button></p>
             </>}
-            {manual?.remote_id && <label className="flex gap-2 text-red-300"><input type="checkbox" checked={Boolean(manual.delete)} onChange={e => edit({ delete: e.target.checked })} />Подготовить удаление из amoCRM</label>}
             {routing && <><label className="flex gap-2"><input type="checkbox" checked={routing.previous_first} onChange={e => edit({ previous_first: e.target.checked })} />Начинать с прежнего Telegram, WhatsApp или MAX</label>{routing.order.map((channel, index) => <div key={channel} className="flex items-center gap-3 rounded-xl border border-ink-600 p-3"><span className="flex-1">{index + 1}. {channelNames[channel]}</span>{[-1, 1].map(delta => <button key={delta} className={button} disabled={index + delta < 0 || index + delta >= routing.order.length} onClick={() => { const order = [...routing.order]; [order[index], order[index + delta]] = [order[index + delta], order[index]]; edit({ order }); }}>{delta === -1 ? "Выше" : "Ниже"}</button>)}</div>)}<label className="flex gap-2"><input type="checkbox" checked={routing.social_fallback} onChange={e => edit({ social_fallback: e.target.checked })} />Использовать исходный Instagram или Авито после мессенджеров</label><p className="text-sm text-mute">Следующий канал — только после подтверждённого отказа. Таймаут и неизвестный результат останавливают цепочку.</p></>}
           </fieldset>
           {rule && <label className="block">ID сделки для предпросмотра (для PDF пусто — тестовый образец)<input className={input} type="number" min={1} value={leadId} onChange={e => { setLeadId(e.target.value); setChecked(null); }} placeholder="Пусто — проверить выборку" /></label>}
@@ -206,7 +253,9 @@ export function MessageTemplates() {
             if(!res.ok){const error=await res.json();throw new Error(error.message??"Не удалось подготовить PDF");}
             const url=URL.createObjectURL(await res.blob());const a=document.createElement("a");a.href=url;a.download="Mansband-preview.pdf";a.click();setTimeout(()=>URL.revokeObjectURL(url),60000);setNotice("Предпросмотр PDF подготовлен без выпуска номера и отправки.");
           })}>Скачать предпросмотр PDF</button></>}
-          <div className="flex flex-wrap gap-2">{editable && !manualReadOnly && <><button className={button} disabled={busy || !dirty && selected.version > 0} onClick={save}>Сохранить черновик</button><button className={button} disabled={busy || dirty || !selected.version} onClick={check}>Проверить без отправки</button><button className={`${button} bg-gold/20`} disabled={busy || dirty || !checked || Boolean(checked.overlaps?.length && !confirmOverlap)} onClick={publish}>Опубликовать</button></>}<button className={button} disabled={busy || !selected.version} onClick={() => void action(async () => setHistory((await api.get<{ items: Revision[] }>(root + "/history/" + selected.id)).items))}>История версий</button></div>
+          {stepHint && <p className="text-sm text-mute">{stepHint}</p>}
+          <div className="flex flex-wrap gap-2">{editable && !manualReadOnly && (manual ? <><button className={`${button} bg-gold/20`} disabled={saveManualDisabled} onClick={saveManual}>Сохранить в amoCRM</button>{manual.remote_id && <button className={`${button} text-red-300`} disabled={busy} onClick={removeManual}>Удалить из amoCRM</button>}</> : <><button className={button} disabled={busy || !dirty && selected.version > 0} onClick={save}>Сохранить черновик</button><button className={button} disabled={busy || dirty || !selected.version} onClick={check}>Проверить без отправки</button><button className={`${button} bg-gold/20`} disabled={busy || dirty || !checked || Boolean(checked.overlaps?.length && !confirmOverlap)} onClick={publish}>Опубликовать</button></>)}<button className={button} disabled={busy || !selected.version} onClick={() => void action(async () => setHistory((await api.get<{ items: Revision[] }>(root + "/history/" + selected.id)).items))}>История версий</button></div>
+          {manual && error && <p role="alert" className="text-sm text-red-300">{error}</p>}
           {editable && rule && checked && <div className="space-y-2 rounded-xl border border-ink-600 p-3"><h2 className="font-semibold">Тестовая отправка</h2><p className="text-sm text-mute">Отдельное сообщение с пометкой ТЕСТ. Укажи ID сделки для заполнения переменных и свой тестовый адресат.</p><TemplateSelect className={input} value={testChannel} onChange={e => { setTestChannel(e.target.value as Channel); setTestOperation(crypto.randomUUID()); }}>{Object.entries(channelNames).map(([v, label]) => <option value={v} key={v}>{label}</option>)}</TemplateSelect><input className={input} aria-label="Тестовый получатель" placeholder="Телефон или Telegram username" value={testDestination} onChange={e => { setTestDestination(e.target.value); setTestOperation(crypto.randomUUID()); }} /><button className={button} disabled={busy || dirty || (!isGift && !leadId) || !testDestination} onClick={() => void action(async () => { if (!await ask(`Отправить ТЕСТ через ${channelNames[testChannel]} получателю ${testDestination}?`, "\u041e\u0442\u043f\u0440\u0430\u0432\u0438\u0442\u044c \u0442\u0435\u0441\u0442")) return; const result = await api.post<{ job_id: number; state: string }>((isGift ? root + "/gift/test" : root + "/test/" + selected.id), { version: selected.version, lead_id: Number(leadId), transport: testChannel, destination: testDestination, operation_id: testOperation, confirmed: true }); setNotice(`Тестовое задание ${result.job_id}: ${result.state}. Повтор не запускается автоматически.`); setJournal((await api.get<{ items: Journal[] }>(root + "/journal")).items); })}>Отправить тест</button></div>}
           {checked && <div className="space-y-3 rounded-xl border border-ink-600 p-3"><h2 className="font-semibold">Проверка без отправки</h2>{checked.total !== undefined && <p>Подходящих сделок: {checked.total}. Ниже показано до {checked.sample_limit ?? 10} примеров.</p>}{checked.text && <p className="whitespace-pre-wrap">{checked.text}</p>}{Boolean(checked.overlaps?.length) && <label className="block text-amber-200"><input type="checkbox" disabled={!editable} checked={confirmOverlap} onChange={e => setConfirmOverlap(e.target.checked)} /> Подтверждаю намеренное пересечение: {checked.overlaps?.map(x => x.name).join(", ")}</label>}{checked.samples?.map(s => <div className="border-t border-ink-600 pt-2" key={s.lead_id}><p>Сделка {s.lead_id} · {s.due_at ? new Date(s.due_at).toLocaleString("ru-RU", { timeZone: "Europe/Moscow" }) + " МСК" : "новый переход"}</p>{s.reason && <p className="text-amber-200">{s.reason}</p>}<p className="text-xs text-mute">{s.channels?.join(" → ")}</p><p className="whitespace-pre-wrap">{s.text}</p></div>)}</div>}
           {history.length > 0 && <div className="space-y-2"><h2 className="font-semibold">История</h2>{history.map((h, i) => <div key={i} className="rounded-xl border border-ink-600 p-3"><p>Версия {h.version} · {h.actor} · {h.action} · {new Date(h.at).toLocaleString("ru-RU", { timeZone: "Europe/Moscow" })}</p>{editable && <button className={button} onClick={() => { const payload = "document" in h.payload ? h.payload.document : h.payload; if (selected.kind === "manual") { setError("Для ручного шаблона открой актуальную версию amoCRM и перенеси прежний текст, чтобы сохранить проверку конфликтов."); return; } edit(payload as Payload); }}>Восстановить в черновик</button>}</div>)}</div>}

@@ -968,14 +968,28 @@ def document(db,id):
     return d
 
 
-def dto(d):
-    return {"id":d.id,"kind":d.kind,"version":d.version,"published_version":d.published_version,"draft":d.draft,"active":d.active,
+def manual_crm(db,d):
+    if d.kind!="manual" or db is None:return None
+    ops=list(db.scalars(select(Operation).where(Operation.id.like(f"manual-{d.id}-%"))))
+    if not ops:return None
+    def ver(op):
+        tail=op.id.rsplit("-",1)[-1]
+        return int(tail) if tail.isdigit() else 0
+    op=max(ops,key=ver)
+    result=op.result or {}
+    return {"state":op.state,"version":ver(op),"message":str(result.get("message") or "")[:500],"http_status":result.get("http_status")}
+
+
+def dto(d,db=None):
+    data={"id":d.id,"kind":d.kind,"version":d.version,"published_version":d.published_version,"draft":d.draft,"active":d.active,
         "checked":bool(d.checked),"published_at":aware(d.published_at).isoformat() if d.published_at else None}
+    if d.kind=="manual":data["crm"]=manual_crm(db,d)
+    return data
 
 
 @router.get("")
 def listing(db=Depends(session)):
-    return {"executor":Settings().executor,"rules":[dto(d) for d in db.scalars(select(Document).order_by(Document.id))],
+    return {"executor":Settings().executor,"rules":[dto(d,db) for d in db.scalars(select(Document).order_by(Document.id))],
         "last_scan":last_scan.isoformat() if last_scan else None}
 
 
@@ -1048,7 +1062,7 @@ def draft(body:Change,db=Depends(session),c=Depends(client)):
             d.version+=1;d.draft=value;d.checked=""
         else:
             d=Document(id=body.id,kind=body.kind,version=1,draft=value,active=None);db.add(d)
-        audit(db,d,body.actor,"draft",value);db.commit();return dto(d)
+        audit(db,d,body.actor,"draft",value);db.commit();return dto(d,db)
     except ValueError as exc:raise HTTPException(422,str(exc))
 
 
@@ -1107,18 +1121,71 @@ def check(id:str,body:dict,db=Depends(session),c=Depends(client)):
     except ValueError as exc:raise HTTPException(422,str(exc))
 
 
+PATCH_SHAPE="full-v1"
+
+
+def content_key(p):
+    return digest({"name":p.get("name"),"content":p.get("content"),"delete":bool(p.get("delete"))})
+
+
+def amo_message(resp):
+    try:data=resp.json()
+    except ValueError:data=None
+    bits=[]
+    if isinstance(data,dict):
+        for key in ("title","detail"):
+            if isinstance(data.get(key),str) and data[key].strip():bits.append(data[key].strip())
+        errors=data.get("validation-errors")
+        if errors:bits.append(json.dumps(errors,ensure_ascii=False)[:300])
+    return " ".join(bits).replace("\n"," ")[:500]
+
+
+def rejection_text(status,text):
+    if status in (401,403):return "У интеграции нет прав администратора amoCRM"
+    if status==404:return "Шаблон удалён в amoCRM"
+    if text:return f"amoCRM не приняла запись: {text}"
+    return "amoCRM не приняла запись. Исправь текст и попробуй снова"
+
+
+def patch_body(p):
+    original=p.get("original") if isinstance(p.get("original"),dict) else {}
+    body={"name":p["name"],"content":p["content"]}
+    for key in ("type","is_editable","buttons","attachment"):
+        if key in original:body[key]=original[key]
+    if original.get("external_id"):body["external_id"]=original["external_id"]
+    return body
+
+
 def publish_manual(db,c,d,body):
     p=d.draft;remote_id=p.get("remote_id")
     op_id=f"manual-{d.id}-{d.version}";op=db.get(Operation,op_id)
     external_id="msp-"+hashlib.sha256(d.id.encode()).hexdigest()[:32]
-    if op:
-        if op.state=="done":return op.result
-        # A lost response never grants permission to repeat a create/delete/update.
+    key=content_key(p)
+    def located():
         rows=all_pages(c,"/api/v4/chats/templates","chat_templates")
-        found=[x for x in rows if (x.get("id")==remote_id if remote_id else x.get("external_id")==external_id)]
-        if (p.get("delete") and not found) or (len(found)==1 and found[0].get("name")==p["name"] and found[0].get("content")==p["content"]):
+        return [x for x in rows if (x.get("id")==remote_id if remote_id else x.get("external_id")==external_id)]
+    def blocked(row):
+        result=row.result or {}
+        return result.get("shape")==PATCH_SHAPE and result.get("content_key")==key and result.get("http_status") in (400,422) and not p.get("delete")
+    if op and op.state=="done":return op.result
+    retry=False
+    if op and op.state in ("uncertain","inflight"):
+        found=located()
+        applied=len(found)==1 and found[0].get("name")==p.get("name") and found[0].get("content")==p.get("content") and not p.get("delete")
+        if (p.get("delete") and not found) or applied:
             op.state="done";op.result={"remote_id":found[0]["id"] if found else remote_id,"deleted":bool(p.get("delete"))};db.commit();return op.result
-        raise HTTPException(409,"Результат прошлой записи неизвестен. Повтор запрещён до сверки")
+        if remote_id and not p.get("delete") and len(found)==1 and remote_digest(found[0])==p.get("source_hash"):retry=True
+        else:raise HTTPException(409,"Неизвестно, дошла ли прошлая запись. Повтор сам не отправляется.")
+    if op and op.state=="rejected" and not retry:
+        status=(op.result or {}).get("http_status")
+        shaped=(op.result or {}).get("shape")==PATCH_SHAPE
+        if status in (400,422) and shaped:raise HTTPException(422,(op.result or {}).get("message") or rejection_text(status,""))
+        if status==404:raise HTTPException(422,"Шаблон удалён в amoCRM")
+        if status in (401,403) or (status in (400,422) and not shaped):retry=True
+        else:raise HTTPException(409,"Неизвестно, дошла ли прошлая запись. Повтор сам не отправляется.")
+    if not retry:
+        same=next((row for row in db.scalars(select(Operation).where(Operation.id.like(f"manual-{d.id}-%"),Operation.state=="rejected")) if blocked(row)),None)
+        if same:raise HTTPException(422,(same.result or {}).get("message") or rejection_text(400,""))
     if not remote_id:
         previous=list(db.scalars(select(Operation).where(Operation.id.like(f"manual-{d.id}-%"),Operation.state.in_(["uncertain","inflight"]))))
         if previous:raise HTTPException(409,"Есть незавершённая запись этого шаблона. Сначала сверка с amoCRM")
@@ -1128,20 +1195,25 @@ def publish_manual(db,c,d,body):
         remote=c.get(f"/api/v4/chats/templates/{remote_id}")
         if remote_digest(remote)!=p["source_hash"]:raise HTTPException(409,"Шаблон изменился в amoCRM")
     if p.get("delete") and not body.delete_confirmed:raise HTTPException(409,"Подтверди удаление из amoCRM")
-    op=Operation(id=op_id,digest=digest(p),state="uncertain",result={});db.add(op)
+    if not op:
+        op=Operation(id=op_id,digest=digest(p),state="uncertain",result={});db.add(op)
+    op.state,op.digest,op.result="uncertain",digest(p),{}
     audit(db,d,body.actor,"manual_attempt",p);db.commit()
-    payload={"name":p["name"],"content":p["content"]}
+    payload=patch_body(p)
     try:
         if p.get("delete"):resp=c.amo.delete(f"/api/v4/chats/templates/{remote_id}")
         elif remote_id:resp=c.amo.patch(f"/api/v4/chats/templates/{remote_id}",json=payload)
         else:resp=c.amo.post("/api/v4/chats/templates",json=[{**payload,"external_id":external_id,"type":"amocrm","is_editable":True}])
         if resp.status_code in (400,401,403,404,422):
-            op.state="rejected";op.result={"http_status":resp.status_code};db.commit()
-            raise HTTPException(422,"amoCRM отклонила запись. Исправь черновик и проверь права интеграции")
+            text=rejection_text(resp.status_code,amo_message(resp))
+            op.state="rejected";op.result={"http_status":resp.status_code,"message":text,"content_key":key,"shape":PATCH_SHAPE};db.commit()
+            log.warning("Manual template rejected: doc=%s status=%s",d.id,resp.status_code)
+            raise HTTPException(422,text)
         resp.raise_for_status()
         if not remote_id:remote_id=resp.json()["_embedded"]["chat_templates"][0]["id"]
         op.result={"remote_id":remote_id,"deleted":bool(p.get("delete"))};op.state="done";db.commit();return op.result
-    except (httpx.HTTPError,KeyError,ValueError):raise HTTPException(502,"Результат записи требует сверки. Повторная отправка запроса не выполняется")
+    except HTTPException:raise
+    except (httpx.HTTPError,KeyError,ValueError):raise HTTPException(502,"Неизвестно, дошла ли прошлая запись. Повтор сам не отправляется.")
 
 
 @router.post("/publish/{id}",dependencies=[Depends(mutation_lock)])
@@ -1208,7 +1280,7 @@ def publish(id:str,body:Publish,db=Depends(session),c=Depends(client)):
                     gift_job.state="queued" if gift.active and gift.active.get("enabled") else "cancelled"
                     gift_job.reason="" if gift_job.state=="queued" else "Сценарий выключен"
                     gift_job.check_at=now()
-        db.commit();return {**dto(d),**result}
+        db.commit();return {**dto(d,db),**result}
     except ValueError as exc:raise HTTPException(422,str(exc))
 
 

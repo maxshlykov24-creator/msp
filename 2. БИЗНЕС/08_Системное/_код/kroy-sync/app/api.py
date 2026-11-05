@@ -200,7 +200,7 @@ def create_app(engine=None):
         if user.role=='cutter':raise HTTPException(403,'Нет доступа к заказам')
         from .order_feed import list_orders, STATES
         from datetime import date
-        if platform not in ('','wb','ozon') or scheme not in ('','fbs','fbo') or status and status not in STATES: raise HTTPException(422,'Проверь фильтры заказов')
+        if platform not in ('','wb','ozon') or scheme not in ('','fbs','fbo') or status and status not in STATES|{'open','closed'}: raise HTTPException(422,'Проверь фильтры заказов')
         try:
             if start:date.fromisoformat(start)
             if end:date.fromisoformat(end)

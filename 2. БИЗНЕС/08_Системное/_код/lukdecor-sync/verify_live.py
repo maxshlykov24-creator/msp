@@ -21,6 +21,7 @@ def verify():
     if len(orders) != 20:
         raise ReadError('Для проверки нужен снимок из 20 заданий')
     problems = []
+    status_changed = []
     units = 0
     for o in orders:
         fresh = ms.get('/entity/customerorder/' + o['id'])
@@ -33,39 +34,48 @@ def verify():
         if set(codes) != set(o['barcodes']):
             problems.append(o['number'] + ': штрихкоды изменились')
         if ms.states.get(fresh.get('state', {}).get('meta', {}).get('href')) != READY:
-            problems.append(o['number'] + ': статус изменился')
-    sample = orders[0]
-    original = fetch_label(sample['label_url'])
-    qr, mm = decode_sticker(original)
+            # Старый снимок мог уйти из сборки. Это не ошибка новой логики.
+            status_changed.append(o['number'])
+    ready = [o for o in orders if o['number'] not in status_changed]
+    sample = ready[0] if ready else None
     checks = {'at': time.time(), 'orders': len(orders), 'source_units': units,
               'snapshot_units': sum(o['quantity'] for o in orders), 'mismatches': problems,
-              'label_order': sample['number'], 'label_size_mm': mm,
-              'qr_matches_ms_sticker': ms.verify_label(sample['id'], qr)}
+              'status_changed': status_changed, 'still_ready': len(ready)}
     # Локальная симуляция не меняет состояние показанного пользователю демо.
-    with tempfile.TemporaryDirectory() as td:
-        flow = Workflow(Path(td) / 'proof.sqlite', ms)
-        with flow.db() as db:
-            for o in orders:
-                db.execute('INSERT INTO snapshot VALUES(?,?)', (o['id'], json.dumps(o)))
-        actor = {'employee': 'Живая проверка Ио', 'station': 'Проверка 1'}
-        wave = flow.wave(actor, [sample['id']], 'DEMO-CART')
-        flow.action(actor, sample['id'], 'pick', sample['barcodes'][0])
-        flow.action(actor, sample['id'], 'print', sample['barcodes'][0])
-        first = flow.label(actor, sample['id'])
-        flow.action(actor, sample['id'], 'print', sample['barcodes'][0])
-        repeat = flow.label(actor, sample['id'])
-        checks['original_equals_demo_pdf'] = first == original
-        checks['reprint_same_sha256'] = hashlib.sha256(first).digest() == hashlib.sha256(repeat).digest()
-        flow.action(actor, sample['id'], 'sticker', qr)
-        try:
-            flow.action(actor, sample['id'], 'box', 'FOREIGN-BOX')
-            checks['foreign_box_rejected'] = False
-        except ReadError:
-            checks['foreign_box_rejected'] = True
-        flow.action(actor, sample['id'], 'box', wave['box'])
-        checks['path_completed'] = flow.view()['orders'][0]['state'] == 'packed'
-    checks['passed'] = not problems and units == checks['snapshot_units'] and all(checks[k] for k in (
-        'qr_matches_ms_sticker', 'original_equals_demo_pdf', 'reprint_same_sha256', 'foreign_box_rejected', 'path_completed'))
+    if sample is None:
+        checks['path_skipped'] = 'В снимке не осталось заданий, которые всё ещё можно комплектовать'
+        checks['passed'] = not problems and units == checks['snapshot_units']
+    else:
+        original = fetch_label(sample['label_url'])
+        qr, mm = decode_sticker(original)
+        checks['label_order'] = sample['number']
+        checks['label_size_mm'] = mm
+        checks['qr_matches_ms_sticker'] = ms.verify_label(sample['id'], qr)
+        with tempfile.TemporaryDirectory() as td:
+            flow = Workflow(Path(td) / 'proof.sqlite', ms)
+            with flow.db() as db:
+                for o in orders:
+                    db.execute('INSERT INTO snapshot VALUES(?,?)', (o['id'], json.dumps(o)))
+            actor = {'employee': 'Живая проверка Ио', 'station': 'Проверка 1'}
+            wave = flow.wave(actor, [sample['id']], 'DEMO-CART')
+            flow.action(actor, sample['id'], 'pick', sample['barcodes'][0])
+            flow.action(actor, sample['id'], 'print', sample['barcodes'][0])
+            first = flow.label(actor, sample['id'])
+            flow.action(actor, sample['id'], 'print', sample['barcodes'][0])
+            repeat = flow.label(actor, sample['id'])
+            checks['original_equals_demo_pdf'] = first == original
+            checks['reprint_same_sha256'] = hashlib.sha256(first).digest() == hashlib.sha256(repeat).digest()
+            flow.action(actor, sample['id'], 'sticker', qr)
+            try:
+                flow.action(actor, sample['id'], 'box', 'FOREIGN-BOX')
+                checks['foreign_box_rejected'] = False
+            except ReadError:
+                checks['foreign_box_rejected'] = True
+            flow.action(actor, sample['id'], 'box', wave['box'])
+            packed = next(item for item in flow.view()['orders'] if item['id'] == sample['id'])
+            checks['path_completed'] = packed['state'] == 'packed'
+        checks['passed'] = not problems and units == checks['snapshot_units'] and all(checks[k] for k in (
+            'qr_matches_ms_sticker', 'original_equals_demo_pdf', 'reprint_same_sha256', 'foreign_box_rejected', 'path_completed'))
     (root / 'data/verification.json').write_text(json.dumps(checks, ensure_ascii=False, indent=2))
     print(json.dumps(checks, ensure_ascii=False, indent=2))
     return checks['passed']

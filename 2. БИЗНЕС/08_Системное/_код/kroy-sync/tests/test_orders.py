@@ -445,6 +445,9 @@ def test_bereza_status_grouping_is_consistent_with_filter(setup):
   new=list_orders(s,status='new')['rows'];shipped=list_orders(s,status='shipping')['rows']
   assert [(x['external_id'],x['display_status']) for x in new]==[('group-new','new')]
   assert [(x['external_id'],x['display_status']) for x in shipped]==[('group-ship','shipping')]
+  counts=list_orders(s,scheme='fbs')['counts']
+  assert counts['all']==2 and counts['new']==1 and counts['shipping']==1
+  assert list_orders(s,scheme='fbo')['total']==0
 
 
 def test_429_uses_retry_deadline_without_counting_rejected_request_as_success(setup,monkeypatch):
