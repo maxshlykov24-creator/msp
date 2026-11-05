@@ -1,5 +1,5 @@
 import React,{useEffect,useId,useLayoutEffect,useRef,useState} from 'react';
-import {createPortal} from 'react-dom';
+import {createPortal,flushSync} from 'react-dom';
 
 const paths:Record<string,React.ReactNode>={
  search:<><circle cx="11" cy="11" r="7"/><path d="m16 16 4 4"/></>,
@@ -26,7 +26,19 @@ const paths:Record<string,React.ReactNode>={
 };
 export function Icon({name,size=20}:{name:string;size?:number}){return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]||paths.catalog}</svg>}
 export function useTheme(){const[theme,setTheme]=useState(()=>{try{return localStorage.getItem('yuji.theme')==='dark'?'dark':'light'}catch{return 'light'}});useLayoutEffect(()=>{document.documentElement.dataset.theme=theme;document.querySelector('meta[name="theme-color"]')?.setAttribute('content',getComputedStyle(document.documentElement).getPropertyValue('--bg').trim());try{localStorage.setItem('yuji.theme',theme)}catch{}},[theme]);return {theme,setTheme}}
-export function ThemeToggle({theme,setTheme}:{theme:string;setTheme:(value:string)=>void}){return <div className="theme-pill" role="group" aria-label="Тема">{['light','dark'].map(t=><button key={t} aria-label={t==='light'?'Светлая тема':'Тёмная тема'} aria-pressed={theme===t} className={theme===t?'is-on':''} onClick={()=>setTheme(t)}><Icon name={t==='light'?'sun':'moon'} size={17}/></button>)}</div>}
+function revealTheme(next:string,current:string,setTheme:(value:string)=>void,origin:HTMLElement){
+ if(next===current)return;
+ const apply=()=>{document.documentElement.dataset.theme=next;setTheme(next)};
+ const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
+ const start=(document as Document&{startViewTransition?:(update:()=>void)=>{ready:Promise<void>}}).startViewTransition?.bind(document);
+ if(reduced||!start){apply();return}
+ const box=origin.getBoundingClientRect(),x=box.left+box.width/2,y=box.top+box.height/2,radius=Math.hypot(Math.max(x,innerWidth-x),Math.max(y,innerHeight-y));
+ try{
+  const transition=start(()=>{flushSync(apply)});
+  transition.ready.then(()=>{document.documentElement.animate({clipPath:[`circle(0px at ${x}px ${y}px)`,`circle(${radius}px at ${x}px ${y}px)`]},{duration:680,easing:'cubic-bezier(.22,1,.36,1)',pseudoElement:'::view-transition-new(root)'})}).catch(()=>{});
+ }catch{apply()}
+}
+export function ThemeToggle({theme,setTheme}:{theme:string;setTheme:(value:string)=>void}){return <div className="theme-pill" role="group" aria-label="Тема">{['light','dark'].map(t=><button key={t} aria-label={t==='light'?'Светлая тема':'Тёмная тема'} aria-pressed={theme===t} className={theme===t?'is-on':''} onClick={e=>revealTheme(t,theme,setTheme,e.currentTarget)}><Icon name={t==='light'?'sun':'moon'} size={17}/></button>)}</div>}
 
 type SelectOption={value:string;label:string;disabled?:boolean};
 export function Select({value,onChange,options,label,disabled=false,required=false}:{value:string;onChange:(value:string)=>void;options:SelectOption[];label:string;disabled?:boolean;required?:boolean}){
