@@ -212,6 +212,7 @@ def recipient_hash(kind, value):
 
 def record_outbound(db, body):
     """Durable evidence before forwarding callbacks. Edits/deletes cannot prove a send."""
+    if not body.get("messages"): return
     from app.reservation_reminders import SUCCESS
     for msg in body.get("messages") or []:
         if not isinstance(msg, dict) or msg.get("isEcho") is not True: continue
@@ -255,7 +256,14 @@ def confirmed_copy(db, j):
     from app.reservation_reminders import ReminderEvent, SUCCESS
     if not j.rendered.strip() or not j.plan: return None
     start = aware(j.source_at or j.due_at)
-    for e in db.scalars(select(OutboundEvidence).where(OutboundEvidence.body_hash == body_hash(j.rendered),
+    hashes = {body_hash(j.rendered)}
+    # The old SalesBot review contained both stores. Accept only that exact
+    # known text, and only when the current body is one of these two variants.
+    if j.rule_id == "legacy-review":
+        from app.stage_notifications import REVIEW_PREFIX, REVIEW_PYAT, REVIEW_BAUM
+        if body_hash(j.rendered) in {body_hash(REVIEW_PYAT), body_hash(REVIEW_BAUM)}:
+            hashes.add(body_hash(REVIEW_PYAT + "\n\n" + REVIEW_BAUM.removeprefix(REVIEW_PREFIX)))
+    for e in db.scalars(select(OutboundEvidence).where(OutboundEvidence.body_hash.in_(hashes),
             OutboundEvidence.at >= start, OutboundEvidence.at <= now()).order_by(OutboundEvidence.at)):
         if e.status == "changed": continue
         states = {e.status} | set(db.scalars(select(ReminderEvent.status).where(ReminderEvent.message_id == e.id)))
@@ -288,6 +296,33 @@ def attempt_trace(db, a, **details):
         db.add(op)
     op.result = {**op.result, **details}
     db.commit()
+
+
+def delivery_attention(db):
+    """Deterministic operational queue; absence of proof is never a delivery failure."""
+    items = []
+    for j in db.scalars(select(Job).where(Job.state.in_(["uncertain", "inflight", "pending", "blocked", "failed"]))):
+        if j.state == "failed" and db.scalar(select(Job.id).where(Job.rule_id==j.rule_id,
+                Job.lead_id==j.lead_id, Job.due_at>=j.due_at, Job.state.in_(["sent","delivered"])).limit(1)):
+            # Preserve the failed attempt in the journal, but an explicitly
+            # recovered task is no longer an operational incident.
+            continue
+        attempts = list(db.scalars(select(Attempt).where(Attempt.job_id == j.id)))
+        traces = [db.get(Operation, f"send-trace-{a.id}") for a in attempts]
+        starts = [datetime.fromisoformat(t.result["started_at"]) for t in traces if t and t.result.get("started_at")]
+        since = max(starts) if starts else aware(j.due_at)
+        age = max(0, int((now() - since).total_seconds()))
+        if j.state in {"inflight", "pending"} and age < 1800: continue
+        action = ("Сверить requestId/crmMessageId у Wazzup; повтор запрещён до подтверждения"
+                  if j.state in {"uncertain", "inflight", "pending"} else
+                  "Исправить данные сделки или шаблон" if j.state == "blocked" else
+                  "Устранить подтверждённую причину отказа")
+        items.append({"job_id":j.id, "lead_id":j.lead_id, "state":j.state, "reason":j.reason,
+                      "age_seconds":age, "next_action":action,
+                      "attempts":[{"crm_message_id":a.crm_id, "message_id":a.message_id,
+                                   "reason":a.reason, "trace":t.result if t else {}}
+                                  for a,t in zip(attempts,traces)]})
+    return {"ok":not items, "attention_count":len(items), "items":items}
 
 
 def entries(lead, field):
@@ -686,6 +721,11 @@ def reconcile(db):
     for a in db.scalars(select(Attempt).join(Job,Job.id==Attempt.job_id).where(Attempt.state.in_(["inflight","pending","unknown","sent"]),Job.state!="delivered")):
         j=db.get(Job,a.job_id)
         if not a.message_id:
+            trace=db.get(Operation,f"send-trace-{a.id}")
+            if trace and trace.result.get("http_status")==201 and trace.result.get("provider_message_id"):
+                a.message_id=trace.result["provider_message_id"]
+                a.state,j.state,j.reason="pending","pending",""
+        if not a.message_id:
             if a.state=="inflight":a.state,j.state,j.reason="unknown","uncertain","interrupted_send"
             continue
         events=list(db.scalars(select(ReminderEvent).where(ReminderEvent.message_id==a.message_id)))
@@ -744,8 +784,12 @@ def send(db,j,c,stamp):
         for pos,route in enumerate(j.plan):
             prior=db.scalar(select(Attempt).where(Attempt.job_id==j.id,Attempt.position==pos))
             if prior:
-                if prior.state not in ("skipped","error"):return
-                continue
+                if prior.state == "retry":
+                    trace = db.get(Operation, f"send-trace-{prior.id}")
+                    if not trace or now() < datetime.fromisoformat(trace.result["retry_at"]): return
+                else:
+                    if prior.state not in ("skipped","error"):return
+                    continue
             channel=channels.get(route["channelId"],{})
             available=bool(route["recipient"]) and channel.get("state")=="active"
             if channel.get("transport") != ("tgapi" if route["transport"]=="telegram" else route["transport"]):available=False
@@ -762,7 +806,9 @@ def send(db,j,c,stamp):
                 if current.astimezone(MSK).date()!=local.date() or not r.window_start<=current.astimezone(MSK).hour<r.window_end:raise ValueError("Окно отправки закрыто")
                 limit={"telegram":4096,"max":4096,"whatsapp":10000,"instagram":1000,"avito":1000}[route["transport"]]
                 if len(j.rendered)>limit:raise ValueError("Текст превышает лимит канала "+route["transport"])
-            a=Attempt(job_id=j.id,position=pos,transport=route["transport"],state="inflight" if available else "skipped",crm_id=f"rule-{j.id}-{pos}-{uuid.uuid4().hex}")
+            if apply_confirmed_copy(db, j): return
+            a=prior or Attempt(job_id=j.id,position=pos,transport=route["transport"],crm_id=f"rule-{j.id}-{pos}-{uuid.uuid4().hex}")
+            a.state="inflight" if available else "skipped"
             if not available:a.reason="no_recipient" if not route["recipient"] else "inactive_channel"
             db.add(a);j.state="inflight" if available else "ready";db.commit()
             if not available:continue
@@ -778,6 +824,7 @@ def send(db,j,c,stamp):
                 request_id=str(result.get("requestId") or "")
                 attempt_trace(db, a, http_status=resp.status_code, error_code=safe_code,
                               request_id=request_id if re.fullmatch(r"[A-Za-z0-9_-]{1,120}",request_id) else "",
+                              provider_message_id=str(result.get("messageId") or "")[:100] if resp.status_code==201 else "",
                               response_at=now().isoformat())
                 if resp.status_code==201 and result.get("messageId"):
                     a.message_id=str(result["messageId"]);a.state,j.state="pending","pending";db.commit();return
@@ -794,6 +841,15 @@ def send(db,j,c,stamp):
                 a.reason=f"http_{resp.status_code}:{safe_code}"[:150]
                 log.warning("Managed provider result unknown: job=%s status=%s code=%s",j.id,resp.status_code,safe_code)
                 a.state,j.state,j.reason="unknown","uncertain","provider_result_unknown"
+            except (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout) as exc:
+                # No HTTP request body could be submitted. Retry the same claim,
+                # bounded and delayed. Write/read timeouts are NOT safe retries.
+                trace=db.get(Operation,f"send-trace-{a.id}")
+                retries=int(trace.result.get("connect_failures",0))+1
+                a.reason=type(exc).__name__
+                a.state,j.state,j.reason=("retry","ready","connection_retry") if retries<5 else ("error","failed","connection_unavailable")
+                attempt_trace(db,a,exception=type(exc).__name__,connect_failures=retries,
+                              retry_at=(now()+timedelta(seconds=30*2**(retries-1))).isoformat())
             except httpx.HTTPError as exc:
                 a.state,j.state,j.reason="unknown","uncertain","network_result_unknown"
                 a.reason=type(exc).__name__
@@ -829,6 +885,17 @@ def tick():
             for j in list(db.scalars(select(Job).where(Job.state.in_(["ready","blocked"]),Job.due_at<=now()).order_by(Job.due_at).limit(100))):
                 try:send(db,j,c,now())
                 except Exception as exc:db.rollback();log.error("Managed message failed: %s",type(exc).__name__)
+            attention=delivery_attention(db)
+            summary={"checked_at":now().isoformat(),"attention_count":attention["attention_count"],
+                     "jobs":[{"job_id":x["job_id"],"state":x["state"],"reason":x["reason"]} for x in attention["items"]]}
+            key="delivery-watchdog-v1";watch=db.get(Operation,key)
+            fingerprint=digest(summary["jobs"])
+            if watch is None:
+                watch=Operation(id=key,digest="",state="ok",result={});db.add(watch)
+            if watch.digest!=fingerprint and attention["attention_count"]:
+                log.error("Message delivery requires attention: %s",summary["jobs"])
+            watch.digest,watch.state,watch.result=fingerprint,"attention" if attention["attention_count"] else "ok",summary
+            db.commit()
         finally:
             if c:c.close()
             conn.execute(text("SELECT pg_advisory_unlock(:key)"),{"key":LOCK})
@@ -922,17 +989,20 @@ def journal(db=Depends(session)):
     labels={"ready":"Запланировано","blocked":"Заблокировано","pending":"Принято провайдером",
         "inflight":"Передаётся провайдеру","sent":"Отправлено","delivered":"Доставлено",
         "cancelled":"Отменено","expired":"Пропущено","failed":"Ошибка","uncertain":"Результат неизвестен",
-        "skipped":"Пропущен","error":"Подтверждённый отказ","unknown":"Результат неизвестен"}
+        "skipped":"Пропущен","error":"Подтверждённый отказ","unknown":"Результат неизвестен", "retry":"Повтор подключения запланирован"}
     reasons={"conditions_changed":"Изменились условия", "conditions_changed_before_post":"Условия изменились перед отправкой",
         "date_changed":"Дата изменена", "disabled":"Сценарий выключен", "scheduled_window_passed":"Плановое время пропущено",
         "all_channels_exhausted":"Нет доступного канала после подтверждённых отказов или пропусков",
         "provider_result_unknown":"Ответ провайдера требует проверки", "network_result_unknown":"Связь прервалась; результат требует проверки",
         "interrupted_send":"Работа прервалась после начала отправки", "new_stage_entry":"Новый вход на этап заменил ожидание",
         "explicit_test":"Тестовая отправка", "confirmed_delivery_error":"Провайдер подтвердил отказ",
-        "test_result_requires_review":"Проверь результат теста", "no_recipient":"Нет адресата для канала", "inactive_channel":"Канал недоступен"}
+        "test_result_requires_review":"Проверь результат теста", "no_recipient":"Нет адресата для канала", "inactive_channel":"Канал недоступен",
+        "confirmed_outgoing_copy":"Подтверждено исходящим сообщением Wazzup; повтор не нужен",
+        "connection_retry":"Запрос не передан; повтор подключения запланирован",
+        "connection_unavailable":"Запрос не передан: пять неудачных подключений"}
     def reason(code):return reasons.get(code,code)
     from app.certificate_gift import journal as gift_journal
-    return {"items":gift_journal(db)+[{"id":j.id,"rule_id":j.rule_id,"lead_id":j.lead_id,"due_at":aware(j.due_at).isoformat(),
+    return {"attention":delivery_attention(db), "items":gift_journal(db)+[{"id":j.id,"rule_id":j.rule_id,"lead_id":j.lead_id,"due_at":aware(j.due_at).isoformat(),
         "state":j.state,"label":labels.get(j.state,j.state),"reason":reason(j.reason),
         "attempts":[{"channel":a.transport,"state":labels.get(a.state,a.state),"reason":reason(a.reason)} for a in db.scalars(select(Attempt).where(Attempt.job_id==j.id))]}
         for j in db.scalars(select(Job).order_by(Job.id.desc()).limit(200))]}

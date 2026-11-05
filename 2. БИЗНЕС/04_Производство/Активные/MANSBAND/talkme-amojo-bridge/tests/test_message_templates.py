@@ -508,3 +508,114 @@ def test_telegram_phone_absent_is_explicit_rejection(db,transport):
     a=db.scalar(select(m.Attempt))
     assert a.state=='error' and a.reason=='CHANNEL_TGAPI_PHONE_NOT_OCCUPIED'
     assert j.state=='failed' and j.reason=='all_channels_exhausted'
+
+
+def echo(**patch):
+    return {'messageId':'echo-1','channelId':'tg','chatType':'telegram','chatId':'tg-user',
+            'contact':{'phone':'79990000001'},'text':'Здравствуйте 17','isEcho':True,
+            'dateTime':STAMP.isoformat(),'status':'sent',**patch}
+
+
+def test_manual_echo_before_dispatch_prevents_post(db,transport):
+    j=job(db,doc(db));m.record_outbound(db,{'messages':[echo()]})
+    m.send(db,j,transport,STAMP)
+    assert not transport.posts and j.state=='sent' and j.reason=='confirmed_outgoing_copy'
+    assert db.get(m.Operation,f'outgoing-proof-{j.id}').result['message_id']=='echo-1'
+
+
+def test_lost_response_resolved_by_echo_and_late_callback(db,transport):
+    j=job(db,doc(db));transport.response=httpx.ReadTimeout('lost')
+    m.send(db,j,transport,STAMP);a=db.scalar(select(m.Attempt))
+    assert a.state=='unknown' and not a.message_id
+    m.record_outbound(db,{'messages':[echo()]});m.reconcile(db)
+    assert j.state=='sent' and a.state=='unknown'  # Do not invent who sent it.
+    db.add(ReminderEvent(key='late-echo',message_id='echo-1',status='read'));db.commit()
+    m.reconcile(db);m.send(db,j,transport,STAMP)
+    assert j.state=='delivered' and len(transport.posts)==1
+
+
+@pytest.mark.parametrize('patch',[
+    {'contact':{'phone':'79990000002'}}, {'channelId':'other'}, {'chatType':'whatsapp'},
+    {'text':'Здравствуйте 18'}, {'isEcho':False}, {'isEdited':True}, {'isDeleted':True},
+    {'status':'error'}, {'dateTime':(STAMP-timedelta(seconds=1)).isoformat()},
+    {'dateTime':'2026-10-30T10:00:00'}, {'dateTime':'bad'}])
+def test_unrelated_or_unproven_echo_never_suppresses_send(db,transport,patch):
+    j=job(db,doc(db));m.record_outbound(db,{'messages':[echo(**patch)]})
+    m.send(db,j,transport,STAMP)
+    assert j.state=='pending' and len(transport.posts)==1
+
+
+def test_callback_replay_does_not_downgrade_or_restore_deleted_message(db,transport):
+    m.record_outbound(db,{'messages':[echo(status='read'),echo(status='sent')]})
+    assert db.get(m.OutboundEvidence,'echo-1').status=='read'
+    m.record_outbound(db,{'messages':[echo(isDeleted=True),echo()]})
+    assert db.get(m.OutboundEvidence,'echo-1').status=='changed'
+
+
+def test_known_both_store_review_suppresses_duplicate(db,transport):
+    from app.stage_notifications import REVIEW_PREFIX,REVIEW_PYAT,REVIEW_BAUM
+    d=doc(db,rule(content=REVIEW_PYAT));d.id='legacy-review';db.commit();j=job(db,d)
+    m.record_outbound(db,{'messages':[echo(text=REVIEW_PYAT+'\n\n'+REVIEW_BAUM.removeprefix(REVIEW_PREFIX))]})
+    m.send(db,j,transport,STAMP)
+    assert j.state=='sent' and not transport.posts
+
+
+def test_pre_success_manual_message_does_not_suppress_stage_rule(db,transport):
+    j=job(db,doc(db));j.source_at=STAMP+timedelta(seconds=1);db.commit()
+    m.record_outbound(db,{'messages':[echo()]});m.send(db,j,transport,STAMP)
+    assert len(transport.posts)==1
+
+
+def test_connection_failure_retries_same_claim_after_backoff(db,transport,monkeypatch):
+    j=job(db,doc(db));transport.response=httpx.ConnectTimeout('not connected')
+    m.send(db,j,transport,STAMP);m.send(db,j,transport,STAMP)
+    a=db.scalar(select(m.Attempt));crm_id=a.crm_id
+    assert len(transport.posts)==1 and a.state=='retry' and j.state=='ready'
+    monkeypatch.setattr(m,'now',lambda:STAMP+timedelta(seconds=31))
+    transport.response=(201,{'messageId':'m1'});m.send(db,j,transport,STAMP+timedelta(seconds=31))
+    assert len(transport.posts)==2 and j.state=='pending'
+    assert len(list(db.scalars(select(m.Attempt))))==1 and a.crm_id==crm_id
+
+
+@pytest.mark.parametrize('exc',[httpx.ReadTimeout('lost'),httpx.WriteTimeout('partial'),httpx.RemoteProtocolError('lost')])
+def test_possible_submitted_request_never_retries(db,transport,exc):
+    j=job(db,doc(db));transport.response=exc
+    m.send(db,j,transport,STAMP);m.send(db,j,transport,STAMP+timedelta(hours=1))
+    assert j.state=='uncertain' and len(transport.posts)==1
+    trace=db.get(m.Operation,f'send-trace-{db.scalar(select(m.Attempt)).id}')
+    assert trace.result['exception']==type(exc).__name__
+    assert m.delivery_attention(db)['attention_count']==1
+
+
+def test_saved_http_response_recovers_after_crash(db,transport):
+    j=job(db,doc(db));m.send(db,j,transport,STAMP);a=db.scalar(select(m.Attempt))
+    a.message_id='';a.state='inflight';j.state='inflight';db.commit()
+    db.add(ReminderEvent(key='proof',message_id='m1',status='delivered'));db.commit()
+    m.reconcile(db)
+    assert a.message_id=='m1' and j.state=='delivered' and len(transport.posts)==1
+
+
+def test_pending_watchdog_waits_then_exposes_request_ids(db,transport,monkeypatch):
+    j=job(db,doc(db));m.send(db,j,transport,STAMP)
+    assert not m.delivery_attention(db)['items']
+    monkeypatch.setattr(m,'now',lambda:STAMP+timedelta(minutes=31))
+    item=m.delivery_attention(db)['items'][0]
+    assert item['state']=='pending' and item['attempts'][0]['message_id']=='m1'
+    assert 'повтор запрещён' in item['next_action']
+
+
+def test_explicit_recovery_clears_attention_not_original_history(db,transport):
+    j=job(db,doc(db));j.state='failed';j.reason='INVALID_MESSAGE_DATA';db.commit()
+    db.add(m.Job(rule_id=j.rule_id,lead_id=j.lead_id,occurrence='recovery',due_at=STAMP,state='delivered'))
+    db.commit()
+    assert not m.delivery_attention(db)['items'] and j.state=='failed'
+
+
+def test_connection_retries_are_bounded(db,transport,monkeypatch):
+    j=job(db,doc(db));transport.response=httpx.ConnectError('offline')
+    for seconds in (0,31,92,213,454):
+        stamp=STAMP+timedelta(seconds=seconds)
+        monkeypatch.setattr(m,'now',lambda:stamp)
+        m.send(db,j,transport,stamp)
+    m.send(db,j,transport,stamp)
+    assert len(transport.posts)==5 and j.state=='failed' and j.reason=='connection_unavailable'

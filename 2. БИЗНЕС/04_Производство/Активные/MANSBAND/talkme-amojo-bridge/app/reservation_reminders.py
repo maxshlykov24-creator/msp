@@ -511,7 +511,13 @@ app.include_router(template_router)
 
 @app.get("/health")
 def health():
-    return {"ok": True, "mode": ReminderSettings().mode}
+    from app.message_templates import Operation
+    with get_session_factory()() as db:
+        watch=db.get(Operation,"delivery-watchdog-v1")
+        report=watch.result if watch else {}
+    return {"ok": True, "mode": ReminderSettings().mode,
+            "delivery_attention_count":report.get("attention_count"),
+            "delivery_checked_at":report.get("checked_at")}
 
 
 @app.get("/internal/status")
@@ -525,11 +531,13 @@ def status(x_reminder_key: str = Header(default="")):
         attempts = list(db.scalars(select(ReminderAttempt)))
         from app.certificate_mail import summary as mail_summary
         from app.stage_notifications import summary as stage_summary
+        from app.message_templates import delivery_attention
 
         return {"mode": s.mode, "ready": s.live_ready(), "hour_msk": s.hour,
             "last_scan": last_scan, "callback_forwarding": callback_stats,
             "certificate_mail": mail_summary(db),
             "stage_notifications": stage_summary(db),
+            "message_delivery": delivery_attention(db),
             "jobs": [{"lead_id": j.lead_id, "until": j.until.isoformat(), "state": j.state,
                       "reason": j.reason} for j in jobs],
             "attempts": [{"job_id": a.job_id, "transport": a.transport, "state": a.state,
