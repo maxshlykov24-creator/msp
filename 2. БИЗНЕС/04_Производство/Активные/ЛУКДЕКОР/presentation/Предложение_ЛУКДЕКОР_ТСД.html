@@ -1562,7 +1562,8 @@
     })();
 
     function build(){
-      dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+      /* Частицы размыты, Retina им не нужна: холст в 1x в 2,25 раза дешевле на каждый кадр */
+      dpr = 1;
       w = window.innerWidth; h = window.innerHeight;
       cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
       cv.style.width = w + "px"; cv.style.height = h + "px";
