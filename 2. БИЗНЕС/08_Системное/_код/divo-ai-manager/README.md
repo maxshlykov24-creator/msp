@@ -493,3 +493,12 @@ Deployed visit policy changes: contact is not required to answer or acknowledge 
 Official GET /api/v4/contacts/chats returned zero chats for contacts in leads 47175090 and 47174258. The previously tried nested /contacts/{id}/chats endpoint was incorrect; its 404 was not evidence. No chat binding repaired yet.
 
 Remaining approved work: verified provider-to-CRM binding and manager delivery path, webhook role and delivery semantics, independent queues and stale-state protection, full inbound reconciliation and selective recovery, monitoring, authorized test chats and a full working day observation. User asked to identify test chats. Current stage does not constitute completion of the stability plan or proof of conversational quality on live traffic.
+
+
+## 2026-11-06: новые параметры интеграции Авто.ру
+
+В 13:47 МСК проверены настройки виджета Авто.ру [Интегратор 2.0] в amoCRM и кабинет msk8713. Chat ID 5112793 и webhook из предоставленного владельцем скриншота уже совпадают в обеих системах. Повторный независимый GET /settings/chats/ с VPS вернул HTTP 200 и те же значения в серверной конфигурации custom. Чаты и пользовательский агрегатор включены. Повторная запись настроек и рестарт не требовались; код, модель и Haiku не менялись.
+
+Прямая проверка действующими настройками бота: чтение 120 комнат успешно, API ACTIVE вернул 21 объявление. divo-ai-bot active/running, NRestarts=0, health Авто.ру пустой; в просмотренном окне 1500 строк журнала нет ошибок уровня «авто.ру чаты». Это проверка доступности, а не доказательство доставки нового ответа и маршрута менеджера.
+
+Для пользовательского теста выбрано активное объявление Audi e-tron 2021: https://auto.ru/cars/used/sale/audi/e_tron/1160353984-c4a92220/ . Следующий шаг: сообщение владельца с аккаунта покупателя, затем сверка provider message ID, ответа агента и фактического чата в amoCRM. Существующая переписка сотрудника может удерживать старый чат на паузе; глобальные паузы и курсоры не сбрасывались.
