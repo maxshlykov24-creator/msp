@@ -1498,6 +1498,23 @@ def autoru_note_text(who: str, text: str) -> str:
 def _note_lead(chat_id: str, doc: dict) -> int | None:
     channel = "Авто.ру" if chat_id.startswith("ar:") else "Авито"
     src = doc.get("autoru" if channel == "Авто.ру" else "avito") or {}
+    # Owner-confirmed destination is only for notes, never customer identity,
+    # contact/phone reuse, sales creation or manager assignment.
+    target = (doc.get("crm") or {}).get("note_target") or {}
+    if (target.get("source") == "owner_confirmed_case" and target.get("chat_id") == chat_id
+            and target.get("talk_id") and target.get("contact_id")
+            and target.get("item_id") == amo_client.listing_item_id(src.get("url", ""))):
+        code, talk = amo_client.request("/api/v4/talks/%s" % int(target["talk_id"]))
+        if code != 200 or not talk or talk.get("entity_type") != "lead":
+            return None
+        if int(talk.get("contact_id") or 0) != int(target["contact_id"]):
+            return None
+        lead = amo_client.get_lead(int(talk["entity_id"]))
+        contacts = {int(c["id"]) for c in (lead.get("_embedded") or {}).get("contacts", [])}
+        if (not lead.get("is_deleted") and int(target["contact_id"]) in contacts
+                and amo_client.listing_item_id(amo_client.lead_listing_url(lead)) == target["item_id"]):
+            return int(lead["id"])
+        return None
     lead = _verified_marketplace_lead({"channel": channel, "chat_id": chat_id, "url": src.get("url", "")}, doc)
     return int(lead["id"]) if lead else None
 
@@ -1517,10 +1534,10 @@ def mirror_autoru_line(chat_id: str | int, who: str, text: str, msg_id: str = ""
     if state.get("creation"):
         state["transcript_synced_at"] = 0
     dedupe = str(msg_id or "") or secrets.token_hex(16)
-    if dedupe in state.get("autoru_noted", []):
+    if any(k in state.get("autoru_noted", []) for k in (dedupe, "transcript:" + dedupe)):
         return
     pending = state.setdefault("note_pending", [])
-    if not any(row["id"] == dedupe for row in pending):
+    if not any(row["id"] in (dedupe, "transcript:" + dedupe) for row in pending):
         pending.append({"id": dedupe, "text": autoru_note_text(who, text)})
     store.save_doc(key, doc)
 
@@ -1623,7 +1640,14 @@ async def _flush_notes_locked(chat_id: str) -> None:
             if not matches:
                 raise RuntimeError("CRM note not confirmed")
             note_id = int(matches[-1]["id"])
-            row["note_id"] = note_id
+            # POST/GET may have yielded while another incoming queued a note.
+            doc = store.load_doc(chat_id)
+            state = doc.setdefault("crm", {})
+            current_row = next((r for r in state.get("note_pending", []) if r["id"] == row["id"]), None)
+            if current_row is None:
+                raise RuntimeError("CRM note event disappeared during write")
+            current_row["note_id"] = note_id
+            row = current_row
             store.save_doc(chat_id, doc)
             check_code, checked = await asyncio.to_thread(amo_client.request,
                 "/api/v4/leads/%s/notes/%s" % (lead_id, note_id))
