@@ -51,8 +51,14 @@ def listing_from_offer(offer: dict) -> dict:
     price = price_info.get("price") or price_info.get("rur_price") or 0
     url = offer.get("url") or offer.get("mobile_url") or ""
     title = " ".join(str(x) for x in (mark, model, year) if x).strip()
+    mileage = (offer.get("state") or {}).get("mileage")
+    if isinstance(mileage, (int, float)) and not isinstance(mileage, bool) and mileage >= 0:
+        title += ", %s км" % f"{int(mileage):,}".replace(",", " ")
     return {
         "item_id": str(offer.get("id") or ""),
+        "vin": str(docs.get("vin") or "").strip().upper(),
+        "availability": str(offer.get("availability") or ""),
+        "offer_status": str(offer.get("status") or ""),
         "title": title,
         "price": _price_str(price),
         "url": url,
@@ -285,6 +291,7 @@ class Autoru:
             )
             for offer in data.get("offers") or []:
                 item = listing_from_offer(offer)
+                item["checked_at"] = now
                 if item.get("item_id"):
                     out[str(item["item_id"])] = item
             pag = data.get("pagination") or {}

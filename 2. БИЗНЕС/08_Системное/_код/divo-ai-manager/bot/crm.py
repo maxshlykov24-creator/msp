@@ -268,7 +268,7 @@ def snapshot(chat_id: str | int, history: list[dict], reason: str) -> dict:
         "чат",
     }
     if attached:
-        card = avito_match.match_card(title, listing.get("price") or "")
+        card = avito_match.match_listing(listing)
     car = ""
     vin = brand = model = year = km = ""
     price = 0

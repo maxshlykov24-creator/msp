@@ -2338,7 +2338,7 @@ def test_vat_from_listing_without_cme_flag():
         "6 400 000 ₽",
         stock=text,
     )
-    assert "7 400 000" in focus
+    assert "7 400 000" not in focus
     no_price = dict(vals)
     no_price["Цена продажи"] = ""
     warehouse = card([no_price[h] for h in HEADER])
@@ -2347,7 +2347,7 @@ def test_vat_from_listing_without_cme_flag():
         "6 400 000 ₽",
         stock=warehouse,
     )
-    assert "7 400 000" in focus_listing
+    assert "7 400 000" not in focus_listing
     hedge = (
         "По этой машине готовой цены с НДС у меня нет под рукой, уточню. "
         "Скиньте, пожалуйста, номер телефона, наберу и посчитаем"
@@ -2929,9 +2929,12 @@ def test_oct14_real_jolion_and_vat():
             {"role": "user", "content": "Есть фото ДТП?"},
             {"role": "assistant", "content": "Давайте созвонимся, напишите номер телефона"}], "nudge": {}}
         r = await replay(doc, "Ответьте просто на вопросы для начала", raw="Напишите номер телефона")
-        assert not r["sent"] and r["capture"] == 1
+        assert r["sent"] and r["capture"] == 1 and not r["paused"]
         doc = {"messages": [], "avito": {"title": "Land Rover Defender 3.0 AT, 2021, 75 800 км", "price": "7 450 000 ₽"}}
-        r = await replay(doc, "Здравствуйте. Цена с НДС указана?", raw="Да, с НДС, 8 600 000")
+        from unittest.mock import patch
+        from bot import avito_match
+        with patch.object(avito_match, "match_listing", return_value={"raw": "Цена на юрлицо с НДС: 8 600 000 руб.", "price": 7450000}):
+            r = await replay(doc, "Здравствуйте. Цена с НДС указана?", raw="Да, с НДС, 8 600 000")
         assert "Нет" in " ".join(r["sent"])
         assert "7 450 000" in " ".join(r["sent"]) and "8 600 000" in " ".join(r["sent"])
     asyncio.run(run())
@@ -3068,7 +3071,7 @@ def test_oct14_report_handoff_and_legal_context():
         for question in ("Направте тогда автотеку тут в сообщении",
                          "Автотека есть, просто если юрлицо уйдет в банкротство"):
             result = await replay({"messages": []}, question, raw="Напишите номер телефона")
-            assert not result["sent"] and result["capture"] == 1
+            assert result["sent"] and result["capture"] == 1 and not result["paused"]
     asyncio.run(run())
     from tools.rehearse import Sandbox
     from bot import crm
@@ -3719,4 +3722,86 @@ def test_nov05_existing_escaped_note_is_not_posted_again():
                 await crm.flush_notes(cid)
                 assert not store.load_doc(cid)["crm"]["note_pending"]
                 post.assert_not_called()
+    asyncio.run(run())
+
+
+def test_nov06_provider_vehicle_identity_and_freshness():
+    import time
+    from datetime import datetime, timezone, timedelta
+    from bot import autoru, avito_match as am
+    stamp = datetime.now(timezone(timedelta(hours=3))).strftime("%Y-%m-%d %H:%M")
+    stock = "> Обновлено: " + stamp + " МСК\n## Audi e-tron 2021\n- VIN: WAUZZZGE8NB003806\n- Марка: Audi\n- Пробег: 28 110 км\n- Цена в объявлении: 5 050 000 руб.\n- Автотека: https://example.invalid/report\n"
+    offer = {"id": "offer", "car_info": {"mark": "Audi", "model": "e-tron"},
+             "documents": {"year": 2021, "vin": "WAUZZZGE8NB003806"},
+             "state": {"mileage": 28110}, "price_info": {"price": 5050000},
+             "status": "ACTIVE", "availability": "IN_STOCK"}
+    src = autoru.listing_from_offer(offer)
+    src["checked_at"] = time.time()
+    assert "28 110 км" in src["title"]
+    assert am.match_listing(src, stock=stock)
+    assert am.availability_evidence(src, stock=stock)
+    assert not am.match_listing(dict(src, vin="WAUZZZGE8NB003807"), stock=stock)
+    assert not am.match_listing(src, stock=stock + stock)
+    for changed in ({"checked_at": time.time()-601}, {"availability": "ON_ORDER"}, {"offer_status": "SOLD"}):
+        assert not am.availability_evidence(dict(src, **changed), stock=stock)
+    assert not am.availability_evidence(src, stock=stock.replace(stamp, "2020-01-01 12:00"))
+
+
+def test_nov06_existing_room_refresh_keeps_state():
+    import asyncio
+    from bot import autoru_loop as ar, store
+    from tools.rehearse import Sandbox
+    async def run():
+        with Sandbox():
+            cid = "ar:refresh"
+            store.save_doc(cid, {"autoru": {"title": "old", "price": "old", "customer_id": "buyer"},
+                                 "messages": [{"role": "user", "content": "В наличии?"}],
+                                 "crm": {"lead_id": 123, "note_pending": [{"id": "keep"}]}})
+            room = {"id": "refresh", "me": "seller", "subject": {"offer": {"source": {"id": "offer"}}}}
+            catalog = {"offer": {"title": "Audi e-tron 2021, 28 110 км", "price": "5 050 000 ₽", "vin": "WAUZZZGE8NB003806", "checked_at": 123}}
+            await ar.remember_listing(cid, room, catalog)
+            d = store.load_doc(cid)
+            assert d["autoru"]["price"] == "5 050 000 ₽" and d["autoru"]["checked_at"] == 123
+            assert d["autoru"]["customer_id"] == "buyer" and d["crm"]["note_pending"] == [{"id": "keep"}]
+            assert d["messages"][0]["content"] == "В наличии?"
+    asyncio.run(run())
+
+
+def test_nov06_clarification_preserves_reply_and_continuation():
+    import asyncio
+    from tools.rehearse import replay
+    async def run():
+        r = await replay({"messages": []}, "Какая комплектация?", raw="Добрый день! Точный список опций уточню у коллеги.")
+        assert r["capture"] == 1 and not r["paused"]
+        assert "Добрый" in " ".join(r["sent"]) and "опций" in " ".join(r["sent"])
+        assert "[[" not in " ".join(r["sent"])
+        again = await replay({"messages": r["history"]}, "До скольки работаете?", raw="Работаем ежедневно с 10:00 до 20:00.")
+        assert "20:00" in " ".join(again["sent"]) and not again["paused"] and again["capture"] == 0
+        person = await replay({"messages": []}, "Соедините с живым менеджером", raw="Хорошо")
+        assert person["paused"] and person["capture"] == 1
+    asyncio.run(run())
+
+
+def test_nov06_availability_does_not_need_model_or_manager():
+    import asyncio
+    from unittest.mock import patch, AsyncMock
+    from tools.rehearse import replay
+    from bot import avito_match as am, llm
+    async def run():
+        doc = {"messages": [], "autoru": {"title": "Audi e-tron 2021", "item_id": "offer"}}
+        with patch.object(am, "availability_evidence", return_value=True), patch.object(llm, "reply", AsyncMock(side_effect=AssertionError("model not needed"))):
+            r = await replay(doc, "Добрый день!\nМашина в наличии?")
+        assert r["capture"] == 0 and not r["paused"]
+        assert "в наличии" in " ".join(r["sent"]) and any(w in " ".join(r["sent"]) for w in ("Добрый", "Доброе", "Доброй", "Здравствуйте"))
+    asyncio.run(run())
+
+
+def test_nov06_measurements_are_not_paint_history():
+    import asyncio
+    from tools.rehearse import replay
+    async def run():
+        r = await replay({"messages": []}, "Есть замеры толщиномером?", raw="Окрасов нет")
+        assert r["capture"] == 1 and not r["paused"]
+        assert "замер" in " ".join(r["sent"]).lower()
+        assert "окрасов нет" not in " ".join(r["sent"]).lower()
     asyncio.run(run())

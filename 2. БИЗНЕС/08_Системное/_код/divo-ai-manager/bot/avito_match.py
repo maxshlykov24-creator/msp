@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import re
+import time
+from datetime import datetime, timezone, timedelta
 
 from bot.config import settings
 
@@ -171,6 +173,36 @@ def match_card(title: str, price_string: str = "", stock: str = "") -> dict | No
     return None
 
 
+def match_listing(src: dict, stock: str = "") -> dict | None:
+    """A provider VIN is authoritative; conflicting VIN must never fall back to a name."""
+    vin = str(src.get("vin") or "").strip().upper()
+    if vin:
+        if not re.fullmatch(r"[A-HJ-NPR-Z0-9]{17}", vin):
+            return None
+        found = [c for c in _cards(_stock_text(stock))
+                 if str(c.get("VIN") or "").strip().upper() == vin]
+        return found[0] if len(found) == 1 else None
+    return match_card(src.get("title") or "", src.get("price") or "", stock=stock)
+
+
+def availability_evidence(src: dict, stock: str = "") -> bool:
+    """Confirm only a fresh provider IN_STOCK and the same vehicle in fresh inventory."""
+    card = match_listing(src, stock=stock) if src else None
+    if not card or not card.get("price"):
+        return False
+    try:
+        age = time.time() - float(src.get("checked_at") or 0)
+    except (ValueError, TypeError):
+        return False
+    stamp = re.search(r"Обновлено: (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) МСК", _stock_text(stock))
+    if not stamp:
+        return False
+    at = datetime.strptime(stamp.group(1), "%Y-%m-%d %H:%M").replace(tzinfo=timezone(timedelta(hours=3)))
+    stock_age = time.time() - at.timestamp()
+    return (0 <= age <= 600 and 0 <= stock_age <= 3600
+            and src.get("offer_status") == "ACTIVE" and src.get("availability") == "IN_STOCK")
+
+
 def attached_listing(doc: dict | None) -> dict | None:
     """Объявление, привязанное к чату. Реплика клиента это не заменяет."""
     doc = doc or {}
@@ -189,7 +221,7 @@ def report_link(doc: dict) -> str:
     src = attached_listing(doc)
     if not src:
         return ""
-    card = match_card(src.get("title") or "", src.get("price") or "")
+    card = match_listing(src)
     if not card:
         return ""
     match = re.search(r"https?://[^\s<>]+", card.get("Автотека") or "")
@@ -228,10 +260,10 @@ def allowed_prices(doc: dict | None) -> set[int]:
     listing_n = digits(str(src.get("price") or ""))
     if listing_n:
         allowed.add(listing_n)
-    card = match_card(src.get("title") or "", src.get("price") or "")
+    card = match_listing(src)
     if card and card.get("price"):
         allowed.add(int(card["price"]))
-    vat_n = 0 if cash_only_card(src.get("title") or "", card) else digits(vat_for(str(src.get("price") or ""), card))
+    vat_n = 0 if not card or cash_only_card(src.get("title") or "", card) else digits(vat_for(str(src.get("price") or ""), card))
     if vat_n:
         allowed.add(vat_n)
     return allowed
@@ -266,7 +298,7 @@ def cash_only_card(title: str = "", card: dict | None = None) -> bool:
 def cash_only_doc(doc: dict) -> bool:
     listing = attached_listing(doc) or {}
     title = listing.get("title") or ""
-    card = match_card(title, listing.get("price") or "") if title else None
+    card = match_listing(listing) if title else None
     return cash_only_card(title, card)
 
 
@@ -307,8 +339,9 @@ def focus_block(
     cme_id: str = "",
     channel: str = "Авито",
     stock: str = "",
+    listing: dict | None = None,
 ) -> str:
-    card = match_card(title, price_string, stock=stock)
+    card = match_listing(listing, stock=stock) if listing is not None else match_card(title, price_string, stock=stock)
     lines = [
         "# Клиент пишет по объявлению %s" % (channel or "Авито"),
         "Объявление: %s" % (title or "не названо"),
@@ -319,6 +352,11 @@ def focus_block(
         lines.append("Ссылка: %s" % url)
     if cme_id:
         lines.append("Код выгрузки CM Expert: %s" % cme_id)
+    if listing is not None and listing.get("checked_at"):
+        if availability_evidence(listing, stock=stock):
+            lines.append("Наличие проверено: этот экземпляр есть в свежем стоке, Авто.ру подтверждает IN_STOCK и ACTIVE. На вопрос о наличии ответь прямо, без уточнения у сотрудника.")
+        else:
+            lines.append("Актуальное наличие не подтверждено: не обещай наличие или отсутствие по старой карточке; нужен уточняющий запрос. Не утверждай, что машина продана.")
     if card:
         vin = (card.get("VIN") or "").split()[0] if card.get("VIN") else ""
         lines.append("Это машина из стока: %s%s." % (card.get("title"), (" VIN " + vin) if vin else ""))
@@ -375,7 +413,7 @@ def focus_block(
             "Номер уже есть или клиент отказывается от связи — [[ЧЕЛОВЕК]]. "
             "Кредит не оформляем: спросили — наличный расчёт и номер, банки не называй."
         )
-        vat = "" if cash_only_card(title) else vat_for(price_string)
+        vat = ""  # No verified vehicle: payment conditions cannot be inferred from price.
         if vat:
             lines.append(
                 "Цена на юрлицо с НДС по цене объявления: %s. "
@@ -408,6 +446,7 @@ def focus_from_doc(doc: dict) -> str:
         src.get("url") or "",
         src.get("cme_id") or "",
         channel=channel,
+        listing=src,
     )
 
 
@@ -429,4 +468,5 @@ def vat_from_doc(doc: dict | None) -> str:
         return ""
     if cash_only_doc(doc):
         return ""
-    return vat_for(src.get("price") or "", match_card(src.get("title") or "", src.get("price") or ""))
+    card = match_listing(src)
+    return vat_for(src.get("price") or "", card) if card else ""

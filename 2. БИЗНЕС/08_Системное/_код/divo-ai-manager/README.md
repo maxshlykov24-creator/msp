@@ -494,6 +494,20 @@ Official GET /api/v4/contacts/chats returned zero chats for contacts in leads 47
 
 Remaining approved work: verified provider-to-CRM binding and manager delivery path, webhook role and delivery semantics, independent queues and stale-state protection, full inbound reconciliation and selective recovery, monitoring, authorized test chats and a full working day observation. User asked to identify test chats. Current stage does not constitute completion of the stability plan or proof of conversational quality on live traffic.
 
+## 2026-11-06: vehicle facts and clarification without stopping the conversation
+
+Deployed at about 14:18 MSK. Auto.ru provided the Audi VIN, mileage, ACTIVE and IN_STOCK, but the adapter discarded those fields. Matching failed because the shortened title omitted mileage; existing chats also retained old listing data. The model's greeting and availability clarification were then replaced by a hard handoff.
+
+The adapter now retains those fields and refreshes existing chat listings. All card consumers use exact provider VIN when present; conflicting or duplicate VIN matches do not fall back to a similar title. Availability requires a matching priced inventory card, inventory timestamp within one hour, and ACTIVE + IN_STOCK read within ten minutes. Simple availability questions use this evidence without an LLM. This checks current export freshness, not the entire upstream CME refresh chain.
+
+The clarification marker creates a staff task while preserving the answer and allowing subsequent questions. Explicit requests for a person, complaints, staff intervention and unsupported actions still stop automation. Missing reports and document/measurement questions use clarification; paint history is not proof of thickness measurements. Unverified listings no longer get a VAT price inferred from the advertised price. Main model and Haiku unchanged.
+
+Validation: 97 isolated tests passed locally and on the server candidate with networking disabled. All 21 current active Auto.ru offers matched stock by VIN and passed availability evidence. Replaying the real first Audi message on deployed code produced a greeting and confirmation of availability with no capture or pause. Isolated live-model checks covered trim and business hours. The initial model test lacked the service's existing LLM_PROXY and returned 403; repeating with the service's network settings succeeded. No test replies were sent to customers.
+
+Backup: /root/divo-ai-manager/99_АРХИВ/facts-20261106/ (before/, manifest.json, verification.json, clarification-verification.json, test-pause-before.txt). verification.json records the first model run, including the subsequently fixed measurement/paint confusion; clarification-verification.json proves the corrected response and next-question continuation. Eight installed file hashes verified. Service active/running, NRestarts=0, Auto.ru health empty and repeated successful polling after deployment. State and queues were not rolled back.
+
+Only owner test chat ar:5700c0494eadde70f0ab13c12c305e15 had its hard handoff pause changed to a soft clarification wait after checking the provider history and absence of manager pickup. New incoming messages are allowed; historical catchup and nudges remain paused. Other historical handoffs were not reopened. A new real-message acceptance test after installation remains pending. The wider November stability plan is not complete.
+
 
 ## 2026-11-06: новые параметры интеграции Авто.ру
 

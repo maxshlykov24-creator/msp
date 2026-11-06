@@ -291,7 +291,8 @@ async def _handoff(channel, chat_id, history: list[dict], reason: str) -> None:
         # Подтверждаем только состоявшееся уведомление сотрудника. Если он
         # уже забрал разговор, не вклиниваемся со служебной репликой.
         if alert.get("tg") and not alert.get("picked"):
-            text = "Передал ваш вопрос менеджеру для ответа в этом чате."
+            greeting = "Здравствуйте! " if not any(m.get("role") == "assistant" for m in history) else ""
+            text = greeting + "Передал ваш вопрос менеджеру для ответа в этом чате."
             latest = current.get("messages") or []
             if not latest or latest[-1].get("content") != text:
                 await channel.send(chat_id, text)
@@ -438,6 +439,7 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
     if nudge.urgent_reason(user_text, history) == "phone" and not crm.already_alerting(chat_id, "phone"):
         await crm.capture(chat_id, history, "phone")
     # Неизвестное действие не отправляем как текст и не заменяем фактом.
+    clarification = prompt.CLARIFY_MARK in raw
     handoff = prompt.HANDOFF_MARK in raw or prompt.has_unsupported_action(raw)
     silence = prompt.SILENCE_MARK in raw
     want_photo = prompt.MEDIA_PHOTO_MARK in raw
@@ -446,8 +448,13 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
     if reason:
         await _handoff(channel, chat_id, history, reason)
         return
+    if clarification:
+        # A task about a missing fact does not transfer ownership of the entire chat.
+        await crm.capture(chat_id, history, "handoff")
+        if store.hard_paused(chat_id):
+            return
     clean_text = (
-        raw.replace(prompt.HANDOFF_MARK, "")
+        raw.replace(prompt.HANDOFF_MARK, "").replace(prompt.CLARIFY_MARK, "")
         .replace(prompt.SILENCE_MARK, "")
         .replace(prompt.MEDIA_PHOTO_MARK, "")
         .replace(prompt.MEDIA_VIDEO_MARK, "")
@@ -694,6 +701,11 @@ def _build_system(history: list[dict], chat_id: str = "") -> str:
     # называет цену соседней машины. Полный сток возвращается, только если
     # клиент прямо просит другие варианты или объявления у чата нет.
     system = prompt.build(with_stock=not listing or other_cars) + prompt.CACHE_SPLIT
+    system += ("\n\n# Уточнение факта не останавливает разговор\n"
+               "Сначала используй факты подтверждённой карточки. Не зови человека ради уже известных наличия, комплектации, цены, адреса или часов работы. "
+               "Если конкретного факта действительно нет, ответь на известную часть вопроса, обозначь что именно уточнишь и добавь [[УТОЧНЕНИЕ]]. "
+               "Не выдумывай ответ, срок, звонок или наличие материалов. Этот маркер создаёт задачу сотруднику, но позволяет отвечать на следующие вопросы. "
+               "[[ЧЕЛОВЕК]] оставь для прямой просьбы человека, жалобы или конфликта. В первом ответе поздоровайся.")
     now = nudge.now_msk()
     system += (
         "\n\n# Сейчас по Москве\n"
@@ -817,7 +829,7 @@ def _build_system(history: list[dict], chat_id: str = "") -> str:
             "по графику салона. Не подтверждай скидку или условия, которые "
             "могли обсуждать с сотрудником вне этого чата. "
             "Спор о договорённости — [[ЧЕЛОВЕК]]. Ссылка отчёта есть — отправь "
-            "её. Ссылки нет — [[ЧЕЛОВЕК]], без обещания отправки файла."
+            "её. Ссылки нет — [[УТОЧНЕНИЕ]], без обещания отправки файла."
         )
         if nudge.asked_our_hours_day(user_text):
             system += (
@@ -971,15 +983,15 @@ def _build_system(history: list[dict], chat_id: str = "") -> str:
             "Звонки не проходят или просит ответить здесь. Это не отказ. "
             "Ответь фактом в чат, если он есть в карточке. Телефон чтобы "
             "позвонить не проси. Нужен отчёт или файл без ссылки — "
-            "передай человеку через [[ЧЕЛОВЕК]], без обещания отправки. "
+            "создай уточнение через [[УТОЧНЕНИЕ]], без обещания отправки. "
             "«Наберу и расскажу» и «скиньте номер, если звонок неудобен» нельзя."
         )
     if nudge.refusals_count(history) >= 2:
         system += (
             "\n\n# Клиент отказал в номере второй раз\n"
-            "Уговаривать нельзя, третьей попытки нет. Клиенту в этом ходе "
-            "ничего не пиши. Поставь только маркер %s последней строкой."
-            % prompt.HANDOFF_MARK
+            "Уговаривать нельзя, третьей попытки нет. Отвечай здесь по известным фактам. "
+            "Для отсутствующего факта добавь %s, не останавливай остальные ответы."
+            % prompt.CLARIFY_MARK
         )
     elif nudge.refuses_phone(user_text) and not nudge.wants_write_here(user_text):
         system += (
@@ -1033,8 +1045,12 @@ async def _generate(history: list[dict], chat_id: str = "") -> str:
     doc = store.load_doc(chat_id) if chat_id else {}
     last = history[-1].get("content", "") if history else ""
     prior = history[:-1]
+    listing = avito_match.attached_listing(doc) or {}
+    if (avito_match.availability_evidence(listing)
+            and re.fullmatch(r"\s*(?:(?:добрый (?:день|вечер)|доброе утро|здравствуйте|привет)[!,.\s]*)?(?:(?:машина|авто|автомобиль|она|он)\s+)?(?:ещ[её]\s+)?(?:в наличии|есть в наличии)[?!.\s]*", last, re.I)):
+        return "Автомобиль в наличии."
     if nudge.document_question(last):
-        return prompt.HANDOFF_MARK
+        return "Этот вопрос по документам уточню у коллеги; ответим здесь. " + prompt.CLARIFY_MARK
     if nudge.asks_seller(last):
         return prompt.seller_answer()
     payment_answer = avito_match.cash_only_answer(doc, last)
@@ -1065,7 +1081,7 @@ async def _generate(history: list[dict], chat_id: str = "") -> str:
         if link and not nudge.asked_damage(history):
             return link
         if not link:
-            return prompt.HANDOFF_MARK
+            return "Уточню у коллеги отчёт по этому автомобилю для ответа здесь. " + prompt.CLARIFY_MARK
     # Отказ после предложения связи по уточнению: менеджер отвечает здесь.
     waiting = any(m.get("role") == "assistant" and
                   ("уточню этот момент" in m.get("content", "").lower() or
@@ -1073,25 +1089,25 @@ async def _generate(history: list[dict], chat_id: str = "") -> str:
                    "созвонимся" in m.get("content", "").lower()) for m in prior[-6:])
     if waiting and (nudge.refuses_phone(last) or nudge.wants_write_here(last)
                     or re.search(r"не (?:хочу|буду|могу).*звон|звон\w* не (?:хочу|буду|могу)|ответ\w* (?:здесь|тут)|без звон|не согласен|^нет[.! ]*$", last, re.I)):
-        return prompt.HANDOFF_MARK
+        return "Продолжим здесь. Нерешённый вопрос уточню у коллеги. " + prompt.CLARIFY_MARK
     paint_only = bool(re.fullmatch(
         r"\s*(?:здравствуйте[,.! ]*|добрый (?:день|вечер)[,.! ]*)?"
         r"(?:что по кузову|что по окрасам|есть (?:окрасы|крашеные элементы))[?!. ]*", last, re.I))
-    if paint_only or re.search(r"прибор|толщиномер|микрон|замер", last, re.I):
+    if re.search(r"прибор|толщиномер|микрон|замер", last, re.I) and not paint_only:
+        return "Результаты замеров кузова уточню у коллеги для ответа здесь. " + prompt.CLARIFY_MARK
+    if paint_only:
         repeated = any(m.get("role") == "user" and
                       re.search(r"прибор|толщиномер|микрон|замер", m.get("content", ""), re.I)
                       for m in prior)
         listing = avito_match.attached_listing(doc) or {}
-        card = avito_match.match_card(listing.get("title", ""), listing.get("price", ""))
+        card = avito_match.match_listing(listing)
         paint = (card or {}).get("Окрасы", "").strip()
         if paint and paint.lower() not in {"нет данных", "неизвестно", "—", "-"} and (paint_only or not repeated):
             answer = "Окрасов нет." if paint.lower().rstrip(".") == "нет" else "По кузову: %s." % paint.rstrip(".")
             if re.search(r"грм|обслуж|ремень|цепь", last, re.I):
-                answer += " По обслуживанию уточню. Давайте созвонимся, обсудим подробнее."
+                answer += " По обслуживанию уточню у коллеги для ответа здесь. " + prompt.CLARIFY_MARK
             return answer
-        if nudge.refuses_phone(last) or nudge.wants_write_here(last):
-            return prompt.HANDOFF_MARK
-        return prompt.HANDOFF_MARK
+        return "Данные по замерам кузова уточню у коллеги для ответа здесь. " + prompt.CLARIFY_MARK
     system = _build_system(history, chat_id)
     raw = await llm.reply(system, history)
     log.info(
@@ -1123,9 +1139,10 @@ async def _generate(history: list[dict], chat_id: str = "") -> str:
             history,
         )
     if re.search(r"\b(?:уточню|уточним|проверю|проверим)\b|(?:нужно|надо) уточнить|информации нет|сведений нет", raw, re.I):
-        # Обещание уточнить должно создавать реальное действие сотруднику,
-        # а не заменяться очередным требованием телефона.
-        return prompt.HANDOFF_MARK
+        # Keep the substantive reply and greeting. A colleague checks the missing
+        # fact while the agent can answer subsequent questions using known facts.
+        if prompt.HANDOFF_MARK not in raw and prompt.CLARIFY_MARK not in raw:
+            return raw + "\n" + prompt.CLARIFY_MARK
     return raw
 
 
@@ -1306,7 +1323,7 @@ def _refresh_nudge(chat_id: int, history: list[dict]) -> None:
     doc["nudge"] = nudge.refresh(doc.get("nudge") or {}, history)
     listing = avito_match.attached_listing(doc)
     doc["nudge"]["car"] = (listing.get("title") or "") if listing else ""
-    if listing and not avito_match.match_card(listing.get("title") or "", listing.get("price") or ""):
+    if listing and not avito_match.match_listing(listing):
         doc["nudge"]["waiting"] = False
     store.save_doc(chat_id, doc)
 
@@ -1336,7 +1353,7 @@ async def send_nudge(chat_id: int | str) -> None:
     doc = store.load_doc(chat_id)
     history = list(doc.get("messages") or [])
     listing = avito_match.attached_listing(doc)
-    if listing and not avito_match.match_card(listing.get("title") or "", listing.get("price") or ""):
+    if listing and not avito_match.match_listing(listing):
         doc.setdefault("nudge", {})["waiting"] = False
         store.save_doc(chat_id, doc)
         return

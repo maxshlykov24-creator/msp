@@ -257,21 +257,20 @@ async def remember_listing(chat_key: str, room: dict, catalog: dict[str, dict]) 
     doc = store.load_doc(chat_key)
     last = room.get("last_message") or {}
     customer_id = str(last.get("author") or "") if not is_out(last, str(room.get("me") or "")) else ""
-    if (doc.get("autoru") or {}).get("title"):
-        doc["autoru"]["me"] = str(room.get("me") or "")
-        doc["autoru"]["customer_names"] = customer_names(room)
-        if customer_id and customer_id != str(room.get("me") or ""):
-            doc["autoru"]["customer_id"] = customer_id
-            store.save_doc(chat_key, doc)
-        return
     listing = listing_from_room(room, catalog)
     title = listing.get("title") or ""
     price = listing.get("price") or ""
     url = listing.get("url") or ""
+    previous = doc.get("autoru") or {}
     doc["autoru"] = {
+        **previous,
+        **listing,
+        "checked_at": listing.get("checked_at", 0),
+        "availability": listing.get("availability", ""),
+        "offer_status": listing.get("offer_status", ""),
         "chat_id": raw_id(chat_key),
         "me": str(room.get("me") or ""),
-        "customer_id": customer_id,
+        "customer_id": customer_id or previous.get("customer_id", ""),
         "customer_names": customer_names(room),
         "title": title,
         "price": price,
