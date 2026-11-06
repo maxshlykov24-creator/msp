@@ -32,7 +32,7 @@ def cfg():
 
 
 def lead(until="2026-10-24", paid=True, **kw):
-    return {"id": 17, "status_id": 77086494,
+    return {"id": 17, "pipeline_id": 9601214, "status_id": 77086494,
         "_embedded": {"contacts": [{"id": 44, "is_main": True}]},
         "custom_fields_values": [
             {"field_id": 3810737, "values": [{"enum_id": 5452541 if paid else 5452539}]},

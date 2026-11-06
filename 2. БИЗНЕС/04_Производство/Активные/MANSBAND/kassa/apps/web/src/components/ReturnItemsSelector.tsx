@@ -18,7 +18,7 @@ function codesOf(item: CartItem): string[] {
 
 /**
  * Выбор позиций из исходной продажи для возврата/обмена.
- * С штрихкодом — только через скан (пиканье); без штрихкода — вручную + задача на проверку.
+ * Любая позиция выбирается нажатием. Скан — дополнительная сверка.
  */
 export function ReturnItemsSelector({
   original,
@@ -110,12 +110,6 @@ export function ReturnItemsSelector({
   }
 
   function tryManualPick(item: CartItem, index: number) {
-    if (item.barcode?.trim()) {
-      setError("Отсканируйте штрихкод позиции — так сверяем возврат");
-      setNotice(null);
-      scanRef.current?.focus();
-      return;
-    }
     if (selectedKeys.has(keyOf(item, index))) {
       deselectAt(index);
       return;
@@ -169,7 +163,7 @@ export function ReturnItemsSelector({
           </Button>
         </div>
         <p className="hint-only text-[12px] text-mute">
-          Позиции со штрихкодом — только сканом. Без штрихкода — вручную, уйдёт задача на проверку.
+          Нажмите на позицию для выбора. При желании проверьте её сканированием.
         </p>
       </div>
 
@@ -204,7 +198,7 @@ export function ReturnItemsSelector({
                   {ok
                     ? " · выбрано"
                     : hasBarcode
-                      ? " · нужен скан"
+                      ? " · нажмите для выбора"
                       : " · без штрихкода — вручную"}
                 </span>
               </button>
@@ -212,7 +206,7 @@ export function ReturnItemsSelector({
                 <Check size={18} className="text-emerald-300 shrink-0 mt-0.5" />
               ) : (
                 <span className="text-mute text-[12px] shrink-0 mt-0.5">
-                  {hasBarcode ? "скан" : "вручную"}
+                  Выбрать
                 </span>
               )}
             </li>

@@ -25,6 +25,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models import Base
 from app.database import get_engine, get_session_factory
+from app.pipeline_guard import messaging_allowed
 
 log = logging.getLogger(__name__)
 LOCK = 674001929
@@ -352,6 +353,7 @@ def condition(lead, c):
 
 
 def matches(lead, r):
+    if not messaging_allowed(lead): return False
     if lead.get("is_deleted") or lead.get("pipeline_id") not in r.pipelines: return False
     if r.statuses and lead.get("status_id") not in r.statuses: return False
     if not r.statuses and lead.get("status_id") in (142, 143): return False

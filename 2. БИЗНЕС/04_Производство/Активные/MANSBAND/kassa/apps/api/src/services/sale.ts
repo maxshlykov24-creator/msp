@@ -1,3 +1,4 @@
+import { targetPipeline } from "./amoRouting.js";
 import { HttpError } from "../lib/http.js";
 import { createHash } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
@@ -99,7 +100,6 @@ export async function processSale(
     if (!amoLeadId) throw new Error("amoCRM: не удалось создать или связать сделку");
     await deals.persist(enriched);
     await issueCertificateIfNeeded(enriched);
-    await enqueueManualChecks(enriched, opts.who);
     await enqueueOperationalTasks(enriched, opts.who);
     // Очередь Эдвина (сдача / чаевые / возврат / счёт компании) — до МойСклад:
     // отгрузка/возврат МС может упасть, а выплату клиенту всё равно нужно поставить.
@@ -245,7 +245,7 @@ export async function afterKindConverted(
       if (companyId) {
         await amo.linkCompanyToLead(deal.amoLeadId, companyId).catch(() => {});
       }
-      const customFields = await buildLeadCustomFields(deal).catch(() => []);
+      const customFields = await buildLeadCustomFields(deal);
       if (customFields.length) {
         await amo.updateLead(deal.amoLeadId, { customFields }).catch(() => {});
       }
@@ -438,7 +438,7 @@ async function enqueueOperationalTasks(deal: Deal, who: string): Promise<void> {
       item.productId !== "cert" &&
       item.productId !== "rent"
   );
-  if (withoutBarcode.length > 0) {
+  if (withoutBarcode.length > 0 && deal.kind !== "refund" && deal.kind !== "exchange") {
     await taskService.createTask({
       kind: "barcode",
       dealNumber: deal.number,
@@ -564,8 +564,8 @@ async function updateLeadResilient(
     await amo.updateLead(leadId, patch);
   } catch (err) {
     if (!patch.customFields?.length) throw err;
-    console.warn(`[amo] updateLead #${leadId} без кастом-полей после отказа: ${(err as Error).message}`);
-    await amo.updateLead(leadId, { ...patch, customFields: [] });
+    // Do not turn a rejected field update into a falsely successful sync.
+    throw err;
   }
 }
 
@@ -584,9 +584,11 @@ async function ensureAmoLead(deal: Deal): Promise<number | null> {
     // Компания (kind=company): найти/создать сущность и привязать к сделке.
     const companyId = (await ensureLeadCompany(deal).catch(() => null)) ?? undefined;
 
-    const pipelineId = COMPLAINTS_KINDS.has(deal.kind) ? AMO_PIPELINE_COMPLAINTS : AMO_PIPELINE_SALES;
+    const boundLead = deal.amoLeadId ? await amo.getLead(deal.amoLeadId) : null;
+    if (deal.amoLeadId && !boundLead) throw new Error("Связанная сделка amoCRM недоступна");
+    const pipelineId = boundLead?.pipeline_id ?? targetPipeline(deal);
     const statusId = (await getStatusId(pipelineId, deal.stage)) ?? undefined;
-    const customFields = await buildLeadCustomFields(deal).catch(() => []);
+    const customFields = await buildLeadCustomFields(deal);
     const leadName = `${deal.clientName} · #${deal.number}`;
 
     // Жалобы / возвраты / обмены — всегда новая сделка.
@@ -618,11 +620,11 @@ async function ensureAmoLead(deal: Deal): Promise<number | null> {
       }
       if (contactId && deal.clientPhone) {
         const certStatusIds = (await Promise.all([
-          getStatusId(AMO_PIPELINE_SALES, "Сертификат оплачен"),
-          getStatusId(AMO_PIPELINE_SALES, "Сертификат продан"),
+          getStatusId(pipelineId, "Сертификат оплачен"),
+          getStatusId(pipelineId, "Сертификат продан"),
         ])).filter((id): id is number => Boolean(id));
         const linked = await amo.getLeadsByIds(await amo.listLeadIdsByContact(contactId));
-        const open = amo.pickOpenSalesLead(linked, AMO_PIPELINE_SALES, {
+        const open = amo.pickOpenSalesLead(linked, pipelineId, {
           excludeStatusIds: certStatusIds, closedOrJunkIds: CLOSED_OR_JUNK_STATUS_IDS,
           claimedLeadIds: claimed,
       });
@@ -638,7 +640,7 @@ async function ensureAmoLead(deal: Deal): Promise<number | null> {
     const lead = (await withIdempotency(`amo:${deal.id}:lead`, "amo", () => createLeadResilient({
       name: leadName,
       price: deal.total,
-      pipelineId: AMO_PIPELINE_SALES,
+      pipelineId,
       statusId,
       contactId,
       companyId,
@@ -699,9 +701,11 @@ export async function resyncToAmo(number: number, who: string): Promise<Deal | n
     return deals.markSync(deal, "failed", "amoCRM: сделка не создана — см. логи api");
   }
   deal.amoLeadId = amoLeadId;
-  const pipelineId = COMPLAINTS_KINDS.has(deal.kind) ? AMO_PIPELINE_COMPLAINTS : AMO_PIPELINE_SALES;
+  const boundLead = deal.amoLeadId ? await amo.getLead(deal.amoLeadId) : null;
+    if (deal.amoLeadId && !boundLead) throw new Error("Связанная сделка amoCRM недоступна");
+    const pipelineId = boundLead?.pipeline_id ?? targetPipeline(deal);
   const statusId = (await getStatusId(pipelineId, deal.stage)) ?? undefined;
-  const customFields = await buildLeadCustomFields(deal).catch(() => []);
+  const customFields = await buildLeadCustomFields(deal);
   await updateLeadResilient(amoLeadId, { statusId, price: Math.abs(deal.total), customFields });
   await writeKassaLink(amoLeadId, deal.number).catch((err: Error) => {
     console.warn(`[amo] ссылка на кассу, сделка #${amoLeadId}: ${err.message}`);
@@ -1126,6 +1130,7 @@ async function writeback(amoLeadId: number, deal: Deal): Promise<void> {
 
 /** Финансовый переход и доплата используют тот же возобновляемый процесс, что создание. */
 export async function synchronizeFinancialDeal(deal: Deal, who: string, photos?: PhotoInput[]): Promise<Deal> {
+  if (deal.amoEditOutbox) throw Object.assign(new Error("Дождитесь синхронизации предыдущей правки"),{statusCode:409});
   deal.financialSyncRequired = true;
   await deals.persist(deal);
   const fulfill = ["sale", "company", "delivery", "exchange", "refund"].includes(deal.kind)

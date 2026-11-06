@@ -285,6 +285,7 @@ export const ATELIER_SERVICES: AtelierServiceOption[] = [
 ];
 
 export const AD_SOURCES = [
+  "Без предв. касания",
   "Совет",
   "Сарафан",
   "Телеграм канал",
@@ -783,7 +784,7 @@ export function rentalEndPassed(rentalTo: string | undefined, today = moscowToda
 export const AMO_LEAD_FIELDS = {
   consultant: "Отв-ный консультант",
   purpose: "Цель покупки",
-  channel: "Канал продаж",
+  channel: "Источник",
   comment: "Комментарий к заказу",
   storeAddress: "Адрес магазина",
   guestName: "Имя гостя",

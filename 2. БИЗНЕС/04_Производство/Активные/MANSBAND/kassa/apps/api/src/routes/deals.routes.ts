@@ -186,7 +186,7 @@ export default async function dealsRoutes(app: FastifyInstance, dependencies: {
     const idempotencyKey = raw.idempotencyKey ?? raw.id!;
     const requested = raw as unknown as Omit<Deal, "number" | "createdAt">;
     requested.id = raw.id ?? idempotencyKey;
-    for (const field of ["amoLeadId", "msOrderId", "msDemandId", "paymentStatus", "syncStatus", "syncError", "history", "completedAt", "financialSyncRequired", "photoAttached"] as const) delete requested[field];
+    for (const field of ["amoLeadId", "msOrderId", "msDemandId", "paymentStatus", "syncStatus", "syncError", "amoEditOutbox", "history", "completedAt", "financialSyncRequired", "photoAttached"] as const) delete requested[field];
     if (req.user.role !== "admin") delete requested.isTest;
     requested.subtotal = requested.items.reduce((sum, i) => sum + i.price * i.qty, 0);
     requested.discountTotal = Math.max(0, requested.subtotal - requested.total);

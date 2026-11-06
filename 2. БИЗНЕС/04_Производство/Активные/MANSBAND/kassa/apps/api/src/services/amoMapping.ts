@@ -12,6 +12,7 @@ import * as amo from "../clients/amo.js";
 import { db } from "../db/index.js";
 import { deals as dealsTable } from "../db/schema.js";
 import { getEnv } from "../env.js";
+import { typedRoutingEnabled, typeLabel } from "./amoRouting.js";
 import { getCompanyFieldIdByName, getFieldIdByName, getFieldIdsByName, getLeadFieldMeta, syncAmoMeta } from "./bootstrap.js";
 
 // Сведение полей форм кассы → кастом-поля сделки amoCRM (аудит зафиксирован
@@ -38,6 +39,40 @@ async function getLeadFieldIdMap(): Promise<Record<AmoLeadFieldKey, number | nul
 /** Сбросить кэш id полей (например, сразу после bootstrap создал новые поля). */
 export function invalidateLeadFieldCache(): void {
   cachedIds = null;
+}
+
+/** CRM owns these descriptive fields. Payments and paid are deliberately excluded. */
+export async function readAmoEditableFields(lead: amo.AmoLead): Promise<Partial<Deal>> {
+  const ids = await getLeadFieldIdMap();
+  const result: Record<string, unknown> = {};
+  const keys = ["consultant", "purpose", "channel", "comment", "referredBy", "callManager"] as const;
+  for (const key of keys) {
+    const id = ids[key];
+    if (!id) continue;
+    const value = lead.custom_fields_values?.find(f => f.field_id === id)?.values?.[0]?.value;
+    result[key] = value == null ? "" : String(value);
+  }
+  // Two real CRM fields have this name. Read both without losing either description.
+  const descriptions = [3133947, 3322719].flatMap(id => {
+    const value = lead.custom_fields_values?.find(f => f.field_id === id)?.values?.[0]?.value;
+    return typeof value === "string" && value.trim() ? [value.trim()] : [];
+  });
+  if (!result.comment && descriptions.length) result.comment = [...new Set(descriptions)].join("\n");
+  return result as Partial<Deal>;
+}
+
+/** Only changed local values are sent; unrelated CRM edits are preserved. */
+export async function buildEditedLeadFields(deal: Deal, before: Deal): Promise<LeadCustomFieldValue[]> {
+  const [next, previous] = await Promise.all([buildLeadCustomFields(deal), buildLeadCustomFields(before)]);
+  const old = new Map(previous.map(f => [f.field_id, f]));
+  const result = next.filter(f => JSON.stringify(f.values) !== JSON.stringify(old.get(f.field_id)?.values));
+  const ids = await getLeadFieldIdMap();
+  const clearable = new Set([ids.consultant, ids.purpose, ids.channel, ids.comment, ids.referredBy, ids.callManager, ids.otlozhkaKind, ids.reservedUntil]);
+  const present = new Set(next.map(f => f.field_id));
+  for (const field of previous) {
+    if (clearable.has(field.field_id) && !present.has(field.field_id)) result.push({field_id:field.field_id,values:[]});
+  }
+  return result;
 }
 
 /**
@@ -190,6 +225,11 @@ export async function buildLeadCustomFields(deal: Deal): Promise<LeadCustomField
     if (!id || value === undefined || value === null || value === "") return;
     out.push({ field_id: id, values: [{ value }] });
   };
+  if (typedRoutingEnabled()) {
+    const typeId = await getFieldIdByName("Тип заявки");
+    if (!typeId) throw new Error("Нет поля Тип заявки");
+    out.push({ field_id: typeId, values: [{ value: typeLabel(deal) }] });
+  }
 
   put("consultant", deal.consultant);
   put("purpose", deal.purpose);
@@ -295,7 +335,7 @@ function resolveEnumValue(enums: string[], value: string): string | null {
 }
 
 async function sanitizeSelectValues(values: LeadCustomFieldValue[]): Promise<LeadCustomFieldValue[]> {
-  const meta = await getLeadFieldMeta().catch(() => new Map());
+  const meta = await getLeadFieldMeta();
   const out: LeadCustomFieldValue[] = [];
   for (const item of values) {
     const field = meta.get(item.field_id);
@@ -317,9 +357,7 @@ async function sanitizeSelectValues(values: LeadCustomFieldValue[]): Promise<Lea
     if (resolved.length) {
       out.push({ field_id: item.field_id, values: resolved });
     } else {
-      console.warn(
-        `[amoMapping] поле #${item.field_id}: «${String(item.values[0]?.value)}» нет в справочнике amoCRM — пропущено`
-      );
+      throw new Error(`Поле #${item.field_id}: значение отсутствует в справочнике amoCRM`);
     }
   }
   return out;

@@ -217,6 +217,15 @@ export interface Deal {
   idempotencyKey?: string;
   syncStatus?: "pending" | "synced" | "failed";
   syncError?: string;
+  /** Server-only durable CRM edit queue, persisted atomically with the deal. */
+  amoEditOutbox?: {
+    id: string;
+    attempts: number;
+    retryAt: number;
+    stage?: string;
+    price?: number;
+    customFields: Array<{field_id:number;values:Array<{value:unknown}>}>;
+  };
   subtotal?: number;
   discountTotal?: number;
   atelierAmount?: number;

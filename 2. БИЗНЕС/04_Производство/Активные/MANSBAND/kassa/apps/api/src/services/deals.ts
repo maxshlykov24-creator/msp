@@ -19,8 +19,11 @@ import {
 import type { Deal, DealKind, FunnelType, Store } from "@kassa/shared";
 import { getFieldIdByName } from "./bootstrap.js";
 import { broadcast } from "../ws/hub.js";
+import { withOperationLock } from "../lib/idempotency.js";
+import { getEnv } from "../env.js";
+import { prepareAmoEdit } from "./amoEditQueue.js";
 import * as financeQueue from "./queue.js";
-import { buildLeadCustomFields, scheduleKassaLinkBackfill } from "./amoMapping.js";
+import { readAmoEditableFields, buildEditedLeadFields, buildLeadCustomFields, scheduleKassaLinkBackfill } from "./amoMapping.js";
 
 // Системные закрытые статусы amo (общие id для воронок).
 const CLOSED_OR_JUNK_STATUS_IDS = new Set([
@@ -77,6 +80,16 @@ export async function getByAmoLeadId(amoLeadId: number): Promise<Deal | null> {
     .limit(1);
   const deal = rows[0]?.data as Deal | undefined;
   return deal ? presentDeal(deal) : null;
+}
+
+/** Merge descriptive CRM fields without replacing payments, history or item state. */
+export async function refreshFieldsFromAmo(deal: Deal, lead: amo.AmoLead): Promise<Deal> {
+  if (deal.amoEditOutbox) return deal;
+  const fields = await readAmoEditableFields(lead);
+  if (Object.entries(fields).every(([key,value]) => (deal as unknown as Record<string,unknown>)[key] === value)) return deal;
+  const rows = await pg<{data:Deal}[]>`update deals set data = data || ${JSON.stringify(fields)}::jsonb, updated_at = now()
+    where number = ${deal.number} and not (data ? 'moneyCancellation') returning data`;
+  return rows[0]?.data ?? deal;
 }
 
 /** Сериализуем выбор CRM-сделки одного контакта и сразу закрепляем владельца. */
@@ -177,7 +190,7 @@ export async function ensureLocalFromAmoLead(lead: amo.AmoLead, stage: string): 
   const statuses = await statusRows();
   const storeFieldId = await getFieldIdByName(AMO_LEAD_FIELDS.storeAddress).catch(() => null);
   const contacts = await contactsForLeads([lead]);
-  const mapped = mapLeadToDeal(lead, statuses, storeFieldId, contacts);
+  const mapped = await mapLeadToDeal(lead, statuses, storeFieldId, contacts);
   const deal: Deal = {
     ...mapped,
     stage,
@@ -320,6 +333,16 @@ export async function updateDealFields(
   patch: Partial<Deal> & { reason?: string },
   who: string
 ): Promise<Deal | null> {
+  const current = await resolve(ref);
+  if (!current) return null;
+  return withOperationLock(`amo-sync:${current.amoLeadId ?? current.id}`, () => updateDealFieldsLocked(ref, patch, who));
+}
+
+async function updateDealFieldsLocked(
+  ref: string,
+  patch: Partial<Deal> & { reason?: string },
+  who: string
+): Promise<Deal | null> {
   const deal = await resolve(ref);
   if (!deal) return null;
   if(deal.moneyCancellation)throw Object.assign(new Error("По заявке подтверждена денежная отмена"),{statusCode:409});
@@ -345,10 +368,14 @@ export async function updateDealFields(
   if(updated.stage === "Сертификат оплачен" && deal.stage !== updated.stage && (updated.kind === "cert_digital" || updated.kind === "cert_plastic")) {
     const {issueCertificateIfNeeded}=await import("./sale.js");await issueCertificateIfNeeded(updated);
   }
+  const queueEdit = getEnv().AMOCRM_ASYNC_EDITS === "true" && nextStage === deal.stage && !fields.payments && !fields.items &&
+    !["Успех", "Сертификат оплачен", "Аренда оплачена"].includes(nextStage) && !deal.financialSyncRequired;
+  if (queueEdit) await prepareAmoEdit(updated, deal);
+  else if (deal.amoEditOutbox) throw Object.assign(new Error("Дождитесь синхронизации предыдущей правки"), {statusCode:409});
   await persist(updated);
   const { cancelObsoleteStageTasks } = await import("./taskFlow.js");
   await cancelObsoleteStageTasks(updated, who);
-  await syncEditedDealToAmo(updated, nextStage !== deal.stage);
+  if (!queueEdit) await syncEditedDealToAmo(updated, nextStage !== deal.stage, deal);
   broadcast("deal.updated", { number: deal.number });
   return updated;
 }
@@ -396,19 +423,19 @@ export async function updateStage(
   await persist(updated);
   const { cancelObsoleteStageTasks } = await import("./taskFlow.js");
   await cancelObsoleteStageTasks(updated, who);
-  if (!patch?.skipAmoWriteback) await syncEditedDealToAmo(updated, true);
+  if (!patch?.skipAmoWriteback) await syncEditedDealToAmo(updated, true, deal);
   broadcast("deal.stage_changed", { number: deal.number, stage });
   return updated;
 }
 
 /** Локальная правка обязана обновить бюджет и поля CRM либо явно сообщить о сбое. */
-async function syncEditedDealToAmo(deal: Deal, stageChanged: boolean): Promise<void> {
+async function syncEditedDealToAmo(deal: Deal, stageChanged: boolean, before?: Deal): Promise<void> {
   if (!deal.amoLeadId) return;
   try {
     const statusId = stageChanged ? await resolveStatusId(deal.amoLeadId, deal.stage) : undefined;
     if (stageChanged && !statusId) throw new Error("Этап не найден в amoCRM");
-    const customFields = await buildLeadCustomFields(deal);
-    await amo.updateLead(deal.amoLeadId, { statusId: statusId ?? undefined, price: Math.abs(deal.total), customFields });
+    const customFields = before ? await buildEditedLeadFields(deal, before) : await buildLeadCustomFields(deal);
+    await amo.updateLead(deal.amoLeadId, { statusId: statusId ?? undefined, price: !before || before.total !== deal.total ? Math.abs(deal.total) : undefined, customFields });
     // Сбой именно редактирования можно снять успешным повтором без проведения продажи.
     if (deal.syncError?.startsWith("amo-edit:")) {
       Object.assign(deal, await markSync(deal, "synced"));
@@ -821,7 +848,7 @@ function normalizeStageName(name: string): string {
   return name.toLowerCase().trim().replace(/ё/g, "е").replace(/\s+/g, " ");
 }
 
-async function resolveStatusId(leadId: number, stageNameStr: string): Promise<number | null> {
+export async function resolveStatusId(leadId: number, stageNameStr: string): Promise<number | null> {
   const lead = await amo.getLead(leadId);
   if (!lead) return null;
   const rows = await db.select().from(amoMeta).where(eq(amoMeta.kind, "status"));
@@ -958,12 +985,13 @@ async function contactsForLeads(leads: amo.AmoLead[]): Promise<Map<number, amo.A
   return out;
 }
 
-function mapLeadToDeal(
+async function mapLeadToDeal(
   lead: amo.AmoLead,
   statuses: StatusRow[],
   storeFieldId: number | null,
   contactsById: Map<number, amo.AmoContact> = new Map()
-): Deal {
+): Promise<Deal> {
+  const crmFields = await readAmoEditableFields(lead);
   const store = storeFromLead(lead, storeFieldId);
   const { funnel, kind } = funnelAndKind(lead.pipeline_id, store);
   const createdAt = lead.created_at
@@ -987,6 +1015,7 @@ function mapLeadToDeal(
     total: lead.price ?? 0,
     paid: 0,
     amoLeadId: lead.id,
+    ...crmFields,
   };
 }
 
@@ -1110,7 +1139,7 @@ async function mapLeads(leads: amo.AmoLead[], statuses: StatusRow[]): Promise<De
   for (const lead of leads) byId.set(lead.id, lead);
   const unique = [...byId.values()];
   const contactsById = await contactsForLeads(unique);
-  return unique.map((lead) => mapLeadToDeal(lead, statuses, storeFieldId, contactsById));
+  return Promise.all(unique.map((lead) => mapLeadToDeal(lead, statuses, storeFieldId, contactsById)));
 }
 
 async function fetchAmoOpen(): Promise<Deal[]> {
@@ -1172,7 +1201,7 @@ export async function searchAmo(args: { phone?: string; name?: string; number?: 
     const lead = await amo.getLead(args.number);
     if (!lead) return [];
     const contactsById = await contactsForLeads([lead]);
-    return [mapLeadToDeal(lead, statuses, storeFieldId, contactsById)];
+    return [await mapLeadToDeal(lead, statuses, storeFieldId, contactsById)];
   }
   const tail = phoneTail(args.phone);
   const query = tail || args.phone || args.name || "";
@@ -1192,7 +1221,7 @@ export async function searchAmo(args: { phone?: string; name?: string; number?: 
     }
   }
   const contactsById = await contactsForLeads(leads);
-  const fromAmo = leads.map((l) => mapLeadToDeal(l, statuses, storeFieldId, contactsById));
+  const fromAmo = await Promise.all(leads.map((l) => mapLeadToDeal(l, statuses, storeFieldId, contactsById)));
   if (!tail) return fromAmo;
 
   const local = await searchLocalSuccessByPhone(tail).catch(() => [] as Deal[]);

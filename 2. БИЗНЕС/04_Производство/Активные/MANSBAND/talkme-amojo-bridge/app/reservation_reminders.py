@@ -224,11 +224,13 @@ def get_lead(c: Clients, lead_id: int) -> dict:
 
 
 def scan(c: Clients, s: ReminderSettings) -> list[dict]:
+    from app.pipeline_guard import allowed_pipeline
     # This account rejects custom-field filters. Standard stage filters are live-verified.
     pipelines = c.get("/api/v4/leads/pipelines").get("_embedded", {}).get("pipelines", [])
     params: dict[str, Any] = {"limit": 250, "with": "contacts"}
     i = 0
     for p in pipelines:
+        if not allowed_pipeline(p.get("id")): continue
         for st in p.get("_embedded", {}).get("statuses", []):
             if st["id"] not in (142, 143) and st.get("type") != 1:
                 params[f"filter[statuses][{i}][pipeline_id]"] = p["id"]
@@ -247,7 +249,8 @@ def scan(c: Clients, s: ReminderSettings) -> list[dict]:
 
 
 def sync_jobs(db: Session, leads: list[dict], s: ReminderSettings, now: datetime) -> dict:
-    eligible = {int(x["id"]): expiry(x, s) for x in leads if is_open(x) and expiry(x, s)}
+    from app.pipeline_guard import messaging_allowed
+    eligible = {int(x["id"]): expiry(x, s) for x in leads if messaging_allowed(x) and is_open(x) and expiry(x, s)}
     existing = {(j.lead_id, j.until): j for j in db.scalars(select(ReminderJob)).all()}
     for lead_id, until in eligible.items():
         # Don't catch up overdue reminder dates on initial rollout.
@@ -306,7 +309,8 @@ def send_job(db: Session, job_id: int, c: Clients, s: ReminderSettings, now: dat
     if job.state != "ready" or not in_window(job.until, now, s):
         return
     lead = get_lead(c, job.lead_id)
-    if not is_open(lead) or expiry(lead, s) != job.until:
+    from app.pipeline_guard import messaging_allowed
+    if not messaging_allowed(lead) or not is_open(lead) or expiry(lead, s) != job.until:
         job.state, job.reason = "cancelled", "conditions_changed"
         db.commit()
         return

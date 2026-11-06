@@ -202,7 +202,7 @@ export function RefundForm({
           )}
           {manualCheck.length > 0 && (
             <div className="mt-3 text-[12px] text-mute">
-              Без штрихкода: {manualCheck.length} поз. — после сохранения задача на проверку консультанту.
+              Без штрихкода: {manualCheck.length} поз. — выбраны вручную.
             </div>
           )}
           <div className="mt-4 flex items-center justify-between rounded-lg bg-ink-900 border border-ink-700 px-4 py-3">

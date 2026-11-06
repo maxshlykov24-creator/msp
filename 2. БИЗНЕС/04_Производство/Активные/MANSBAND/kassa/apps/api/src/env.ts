@@ -22,6 +22,9 @@ const schema = z.object({
   AMOCRM_LONG_LIVED_TOKEN: z.string().min(20),
   AMOCRM_PIPELINE_SALES: z.coerce.number(),
   AMOCRM_PIPELINE_COMPLAINTS: z.coerce.number(),
+  AMOCRM_TYPED_PIPELINES_ENABLED: z.enum(["true", "false"]).default("false"),
+  AMOCRM_TYPED_PIPELINES: z.string().default("{}"),
+  AMOCRM_ASYNC_EDITS: z.enum(["true", "false"]).default("false"),
 
   // МойСклад
   MOYSKLAD_API_BASE: z.string().url(),

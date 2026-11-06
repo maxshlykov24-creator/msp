@@ -4,6 +4,7 @@ import { runBootstrap, syncProducts, syncStock } from "./services/bootstrap.js";
 import { scanOverdueRentals, scanOverdueReserves } from "./services/taskFlow.js";
 import { enqueueWeeklySalary } from "./services/payroll.js";
 import { prewarmAmoClosed, prewarmAmoOpen } from "./services/deals.js";
+import { flushAmoEdits } from "./services/amoEditQueue.js";
 
 // Мс до ближайшего наступления hour:00 по локальному времени контейнера (TZ).
 function msUntilNextHour(hour: number): number {
@@ -23,6 +24,7 @@ async function main() {
 
   // Bootstrap-синк в фоне (не блокирует старт; ошибки не валят сервер).
   runBootstrap((m) => app.log.info(m));
+  setInterval(() => { flushAmoEdits().catch(() => app.log.warn("Очередь правок CRM недоступна")); }, 3000);
 
   // Открытые сделки: сразу и раз в 35с. Закрытые с июня — отдельно, первый
   // прогон через минуту (чтобы не встать в одну очередь с открытыми), дальше раз в 10 минут.

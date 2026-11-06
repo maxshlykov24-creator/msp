@@ -4,6 +4,8 @@ import * as deals from "./deals.js";
 import * as taskFlow from "./taskFlow.js";
 import { writeKassaLink } from "./amoMapping.js";
 import { appendSystemAudit } from "./audit.js";
+import { allowedAmoPipeline } from "./amoRouting.js";
+import { withOperationLock } from "../lib/idempotency.js";
 
 /**
  * Этапы воронки доставки (СДЭК). При приходе из amo на такой этап
@@ -107,7 +109,11 @@ export function extractLeadStatusEvents(body: Record<string, unknown>): LeadStat
  * amo сменил этап → зеркало в кассе + задачи (СДЭК и пр.).
  * В amo обратно не пишем (иначе цикл webhook ↔ writeback).
  */
-export async function applyAmoLeadStatusEvent(event: LeadStatusEvent): Promise<{
+export async function applyAmoLeadStatusEvent(event: LeadStatusEvent): Promise<Awaited<ReturnType<typeof applyAmoLeadStatusEventLocked>>> {
+  return withOperationLock(`amo-sync:${event.id}`, () => applyAmoLeadStatusEventLocked(event));
+}
+
+async function applyAmoLeadStatusEventLocked(event: LeadStatusEvent): Promise<{
   dealNumber?: number;
   stage?: string;
   tasks: boolean;
@@ -118,6 +124,8 @@ export async function applyAmoLeadStatusEvent(event: LeadStatusEvent): Promise<{
   if (!lead) return { skipped: "lead_not_found", tasks: false };
   const statusId = lead.status_id;
   const pipelineId = lead.pipeline_id;
+  // Проверяем актуальную CRM до зеркала, ссылок, задач и финансовых эффектов.
+  if (!allowedAmoPipeline(pipelineId)) return { skipped: "pipeline_disabled", tasks: false };
 
   const stage = await deals.stageNameByStatusId(statusId!, pipelineId);
   if (!stage || stage === "—") return { skipped: "unknown_status", tasks: false };
@@ -128,6 +136,8 @@ export async function applyAmoLeadStatusEvent(event: LeadStatusEvent): Promise<{
     if (!lead?.id) return { skipped: "lead_not_found", tasks: false };
     deal = await deals.ensureLocalFromAmoLead(lead, stage);
   }
+  deal = await deals.refreshFieldsFromAmo(deal, lead);
+  if (deal.amoEditOutbox) return {dealNumber:deal.number,tasks:false,skipped:"local_edit_pending"};
 
   // Ссылка в карточке amo на эту заявку кассы. Пишем и при первом зеркале,
   // и при повторной синхронизации этапа: поле могли добавить позже.

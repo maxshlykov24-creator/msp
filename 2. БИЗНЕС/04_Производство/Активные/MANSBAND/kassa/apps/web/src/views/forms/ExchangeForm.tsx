@@ -233,7 +233,7 @@ export function ExchangeForm({
           )}
           {manualCheck.length > 0 && (
             <div className="mt-3 text-[12px] text-mute">
-              Без штрихкода: {manualCheck.length} поз. — после сохранения задача на проверку консультанту.
+              Без штрихкода: {manualCheck.length} поз. — выбраны вручную.
             </div>
           )}
           <div className="mt-3 flex items-center justify-between text-sm">
