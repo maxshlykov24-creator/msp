@@ -441,6 +441,9 @@ test("online conversion preserves the order and queues assembly after CRM stage 
       "../clients/amo.js": { getLead: async () => ({ pipeline_id: 99 }), updateLead: async (...args) => writes.push(args), addLeadNote: async () => {} },
       "./bootstrap.js": {}, "../ws/hub.js": { broadcast: () => {} }, "./queue.js": {}, "./amoMapping.js": {},
       "./sale.js": {}, "./audit.js": { appendSystemAudit: async () => {} },
+      "../lib/idempotency.js": { withOperationLock: async (_key, fn) => fn() },
+      "../env.js": { getEnv: () => ({ AMOCRM_ASYNC_EDITS: "false" }) },
+      "./amoEditQueue.js": { prepareAmoEdit: async () => { throw new Error("Conversion must not enqueue a descriptive edit"); } },
     };
     function load(name) {
       const code = ts.transpileModule(readFileSync(new URL(`../../../apps/api/src/services/${name}.ts`, import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;

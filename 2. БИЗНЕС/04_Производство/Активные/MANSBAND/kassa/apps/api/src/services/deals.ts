@@ -348,6 +348,12 @@ async function updateDealFieldsLocked(
   if(deal.moneyCancellation)throw Object.assign(new Error("По заявке подтверждена денежная отмена"),{statusCode:409});
   const { reason, ...fields } = patch;
   const nextStage = fields.stage ?? deal.stage;
+  // The first queue release accepts descriptive edits only. Financial and workflow
+  // mutations must finish through their existing synchronous handlers.
+  const descriptive = new Set(["consultant", "purpose", "channel", "comment", "referredBy", "callManager"]);
+  const queueEdit = getEnv().AMOCRM_ASYNC_EDITS === "true" && Object.keys(fields).every(key => descriptive.has(key)) &&
+    !["Успех", "Сертификат оплачен", "Аренда оплачена"].includes(nextStage) && !deal.financialSyncRequired;
+  if (!queueEdit && deal.amoEditOutbox) throw Object.assign(new Error("Дождитесь синхронизации предыдущей правки"), {statusCode:409});
   const updated: Deal = {
     ...deal,
     ...fields,
@@ -368,10 +374,7 @@ async function updateDealFieldsLocked(
   if(updated.stage === "Сертификат оплачен" && deal.stage !== updated.stage && (updated.kind === "cert_digital" || updated.kind === "cert_plastic")) {
     const {issueCertificateIfNeeded}=await import("./sale.js");await issueCertificateIfNeeded(updated);
   }
-  const queueEdit = getEnv().AMOCRM_ASYNC_EDITS === "true" && nextStage === deal.stage && !fields.payments && !fields.items &&
-    !["Успех", "Сертификат оплачен", "Аренда оплачена"].includes(nextStage) && !deal.financialSyncRequired;
   if (queueEdit) await prepareAmoEdit(updated, deal);
-  else if (deal.amoEditOutbox) throw Object.assign(new Error("Дождитесь синхронизации предыдущей правки"), {statusCode:409});
   await persist(updated);
   const { cancelObsoleteStageTasks } = await import("./taskFlow.js");
   await cancelObsoleteStageTasks(updated, who);
