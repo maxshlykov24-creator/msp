@@ -767,7 +767,13 @@ def queue_note(doc: dict, key: str, text: str) -> None:
 
 def queue_transcript(doc: dict) -> None:
     for row in doc.get("transcript") or []:
-        queue_note(doc, "transcript:" + str(row["id"]),
+        # A live Auto.ru reply already has its own durable note event.
+        state = doc.get("crm") or {}
+        mid = str(row["id"])
+        if mid in state.get("autoru_noted", []) or any(
+                str(p.get("id")) == mid for p in state.get("note_pending", [])):
+            continue
+        queue_note(doc, "transcript:" + mid,
                    "%s | %s\n%s" % (row.get("at", ""), row["who"], row["text"]))
 
 
@@ -1510,8 +1516,6 @@ def mirror_autoru_line(chat_id: str | int, who: str, text: str, msg_id: str = ""
     state = doc.setdefault("crm", {})
     if state.get("creation"):
         state["transcript_synced_at"] = 0
-        store.save_doc(key, doc)
-        return
     dedupe = str(msg_id or "") or secrets.token_hex(16)
     if dedupe in state.get("autoru_noted", []):
         return
@@ -1528,6 +1532,21 @@ def note_text_equal(left: str, right: str) -> bool:
 
 
 _note_locks: dict[str, asyncio.Lock] = {}
+_note_tasks: dict[str, asyncio.Task] = {}
+
+
+def schedule_notes(chat_id: str) -> None:
+    """Try immediately after delivery; durable queue remains the retry source."""
+    if chat_id in _note_tasks and not _note_tasks[chat_id].done():
+        return
+    task = asyncio.create_task(flush_notes(chat_id))
+    _note_tasks[chat_id] = task
+    def finished(done):
+        if _note_tasks.get(chat_id) is done:
+            _note_tasks.pop(chat_id, None)
+        if not done.cancelled() and done.exception():
+            log.warning("чат %s: запись примечания остаётся в очереди", chat_id)
+    task.add_done_callback(finished)
 
 
 async def flush_notes(chat_id: str) -> None:
@@ -1551,7 +1570,13 @@ async def _flush_notes_locked(chat_id: str) -> None:
     try:
         lead_id = await asyncio.to_thread(_note_lead, chat_id, doc)
         if not lead_id:
+            current = store.load_doc(chat_id)
+            current.setdefault("crm", {})["note_blocker"] = "provider_binding_missing"
+            store.save_doc(chat_id, current)
             return
+        current = store.load_doc(chat_id)
+        current.setdefault("crm", {}).pop("note_blocker", None)
+        store.save_doc(chat_id, current)
         # common notes не поддерживают external_id. До POST сохраняем границу
         # ID; при потере ответа сверяем точный текст среди более новых записей.
         notes = []

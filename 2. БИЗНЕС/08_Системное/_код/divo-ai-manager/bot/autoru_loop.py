@@ -205,6 +205,7 @@ class AutoruChannel:
         crm.mirror_autoru_line(
             chat_id, "bot", sent, msg_id=str(msg.get("id") or "")
         )
+        crm.schedule_notes(str(chat_id))
 
     async def typing(self, chat_id: int | str) -> None:
         return

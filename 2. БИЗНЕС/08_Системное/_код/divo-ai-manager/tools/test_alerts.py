@@ -3805,3 +3805,55 @@ def test_nov06_measurements_are_not_paint_history():
         assert "замер" in " ".join(r["sent"]).lower()
         assert "окрасов нет" not in " ".join(r["sent"]).lower()
     asyncio.run(run())
+
+
+def test_nov06_live_note_for_created_lead_dedupes_archive():
+    from tools.rehearse import Sandbox
+    from bot import crm, store
+    with Sandbox():
+        cid = 'ar:note-created'
+        store.save_doc(cid, {'crm': {'creation': {'lead_id': 123}}})
+        crm.mirror_autoru_line(cid, 'bot', 'Ответ', 'out-1')
+        crm.mirror_autoru_line(cid, 'bot', 'Ответ', 'out-1')
+        d = store.load_doc(cid)
+        assert len(d['crm']['note_pending']) == 1
+        d['transcript'] = [{'id': 'out-1', 'who': 'Бот', 'text': 'Ответ'}]
+        crm.queue_transcript(d)
+        assert len(d['crm']['note_pending']) == 1
+
+
+def test_nov06_notes_schedule_does_not_block_channel():
+    import asyncio
+    from unittest.mock import patch
+    from bot import crm
+    async def run():
+        started, release = asyncio.Event(), asyncio.Event()
+        calls = []
+        async def slow(cid):
+            calls.append(cid); started.set(); await release.wait()
+        with patch.object(crm, 'flush_notes', slow):
+            crm.schedule_notes('ar:schedule-test')
+            await started.wait()
+            crm.schedule_notes('ar:schedule-test')
+            assert calls == ['ar:schedule-test']
+            release.set()
+            await crm._note_tasks['ar:schedule-test']
+    asyncio.run(run())
+
+
+def test_nov06_missing_binding_keeps_note_and_explains_blocker():
+    import asyncio
+    from unittest.mock import patch
+    from tools.rehearse import Sandbox
+    from bot import crm, store
+    async def run():
+        with Sandbox():
+            cid = 'ar:missing-binding'
+            crm.mirror_autoru_line(cid, 'bot', 'Ответ', 'out-1')
+            with patch.object(crm, '_note_lead', return_value=None), patch.object(crm.amo_client, 'write') as write:
+                await crm.flush_notes(cid)
+            d = store.load_doc(cid)
+            assert d['crm']['note_blocker'] == 'provider_binding_missing'
+            assert d['crm']['note_pending'][0]['id'] == 'out-1'
+            write.assert_not_called()
+    asyncio.run(run())
