@@ -3857,3 +3857,40 @@ def test_nov06_missing_binding_keeps_note_and_explains_blocker():
             assert d['crm']['note_pending'][0]['id'] == 'out-1'
             write.assert_not_called()
     asyncio.run(run())
+
+
+def test_nov06_note_target_is_not_customer_identity():
+    from unittest.mock import patch
+    from bot import crm
+    d={'autoru':{'url':'https://auto.ru/cars/used/sale/1160099508-1c24e0b7/'},'crm':{'note_target':{
+        'source':'owner_confirmed_case','chat_id':'ar:test','talk_id':7137,'contact_id':99,'item_id':'1160099508-1c24e0b7'}}}
+    lead={'id':321,'custom_fields_values':[{'field_id':2051461,'values':[{'value':d['autoru']['url']}]}], '_embedded':{'contacts':[{'id':99}]}}
+    with patch.object(crm.amo_client,'request',return_value=(200,{'entity_type':'lead','entity_id':321,'contact_id':99})), patch.object(crm.amo_client,'get_lead',return_value=lead):
+        assert crm._note_lead('ar:test',d)==321
+    with patch.object(crm.amo_client,'find_widget_lead',return_value=None):
+        assert crm._verified_marketplace_lead({'channel':'Авто.ру','chat_id':'ar:test','url':d['autoru']['url']},d) is None
+    with patch.object(crm.amo_client,'request',return_value=(200,{'entity_type':'lead','entity_id':321,'contact_id':100})):
+        assert crm._note_lead('ar:test',d) is None
+
+
+def test_nov06_note_post_preserves_new_queue_event():
+    import asyncio
+    from unittest.mock import patch
+    from tools.rehearse import Sandbox
+    from bot import crm, store
+    async def run():
+        with Sandbox():
+            cid='ar:late-note'
+            crm.mirror_autoru_line(cid,'bot','Первый','one')
+            saved={'id':12,'note_type':'common','params':{'text':'Бот: Первый'}}
+            def request(path,*args,**kwargs):
+                return (200,saved) if path.endswith('/12') else (200,{'_embedded':{'notes':[]}})
+            def write(*args,**kwargs):
+                crm.mirror_autoru_line(cid,'bot','Второй','two')
+                return {'_embedded':{'notes':[{'id':12}]}}
+            with patch.object(crm,'_note_lead',return_value=321), patch.object(crm.amo_client,'request',side_effect=request), patch.object(crm.amo_client,'write',side_effect=write):
+                await crm.flush_notes(cid)
+            d=store.load_doc(cid)
+            assert [r['id'] for r in d['crm']['note_pending']]==['two']
+            assert d['crm']['autoru_noted']==['one']
+    asyncio.run(run())
