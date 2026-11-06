@@ -749,6 +749,9 @@
   @keyframes rise{from{opacity:0}to{opacity:1}}
 
   .plan-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:22px}
+  .plan-grid.tight{margin-top:12px}
+  .plan-grid.tight .phase{padding:16px 18px}
+  .plan-grid.tight + .note{margin-top:10px}
   .phase{display:flex;flex-direction:column;gap:10px}
   .phase-days{font-size:12px;color:var(--mute);margin-top:-4px}
   .phase-pay{padding-top:12px;border-top:1px solid var(--line)}
@@ -1378,7 +1381,7 @@
 <div class="pb hl"><span>На старт работ</span><b>90&nbsp;000&nbsp;₽</b></div>
 <div class="pb"><span>После сдачи на складе в Лобне</span><b>40&nbsp;000&nbsp;₽</b></div>
 </div>
-<div class="plan-grid">
+<div class="plan-grid tight">
 <div class="phase stag"><div class="phase-num">НЕДЕЛЯ 1</div><div class="phase-title">Запуск и сборка волной</div><ul class="phase-dod"><li>День на складе с Mindeo D70 и принтером</li><li>Программа на вашем сервере, защищённый адрес</li><li>Пользователь Моего Склада для документов</li><li>Синхронизация с Моим Складом без ошибок</li><li>Сборка волной и станция упаковки</li></ul></div>
 <div class="phase stag"><div class="phase-num">НЕДЕЛЯ 2</div><div class="phase-title">Приёмка и движение</div><ul class="phase-dod"><li>Приёмка по заказу поставщику</li><li>Перемещение по ячейкам и на ФБС</li><li>Списание и оприходование</li></ul></div>
 <div class="phase stag"><div class="phase-num">НЕДЕЛЯ 3</div><div class="phase-title">Отгрузка и сдача</div><ul class="phase-dod"><li>Отгрузка по заказу покупателя</li><li>Инвентаризация по ячейкам</li><li>Работа без Wi-Fi на всех ТСД</li><li>Экран смены, обучение, сдача в Лобне</li></ul></div>
