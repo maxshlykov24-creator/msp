@@ -1224,11 +1224,11 @@
   .mk-row{flex-wrap:wrap;gap:16px 10px}
   .mk-row .tsd,.cover-m .tsd{zoom:.8}
   .mk figcaption{max-width:170px;font-size:12px}
-  .desk,.slide[data-title="Экран смены"] .desk{zoom:.6;width:580px}
-  .slide[data-title="Экран смены"] .desk .app{height:auto;grid-template-columns:110px 1fr}
-  .slide[data-title="Экран смены"] .y .three,.slide[data-title="Экран смены"] .y .kpis{grid-template-columns:1fr 1fr}
-  .slide[data-title="Экран смены"] .y .three .col:last-child{grid-column:1 / -1}
-  .desk .app{height:380px}
+
+
+
+
+
   .tsd .scr{height:392px}
   .mk:has(.desk) figcaption{max-width:340px}
   .br{grid-template-columns:1fr 80px;gap:6px 10px}
@@ -1304,6 +1304,17 @@
  .mk figcaption{max-width:270px}
 }
 @media print{.tsd{zoom:.34}.cover-m .tsd{zoom:.45}.cover-m{gap:16px}}
+
+/* Preserve the software canvas; mobile only scales the complete mockup. */
+.tsd,.desk{-webkit-text-size-adjust:none;text-size-adjust:none}
+@media screen{
+ .desk .app{height:368px}
+ .slide[data-title="Экран смены"] .desk .app{height:424px}
+}
+@media screen and (max-width:900px){
+ .desk{width:560px;zoom:var(--mockup-scale,.6)}
+ .slide[data-title="Экран смены"] .desk{width:900px;zoom:var(--mockup-scale,.38)}
+}
 </style>
 
 </head>
@@ -1717,6 +1728,19 @@
       fl.classList.add(dir);
     };
   })();
+
+  // Fit fixed desktop canvases without reflowing their contents. Pinch zoom stays enabled.
+  const desktopMockups = Array.from(document.querySelectorAll('.desk'));
+  function fitDesktopMockups(){
+    desktopMockups.forEach(el => {
+      const width = el.closest('[data-title="Экран смены"]') ? 900 : 560;
+      const available = el.parentElement.clientWidth;
+      if (available > 0) el.style.setProperty('--mockup-scale', Math.min(1, available / width));
+    });
+  }
+  const mockupObserver = new ResizeObserver(fitDesktopMockups);
+  desktopMockups.forEach(el => mockupObserver.observe(el.parentElement));
+  fitDesktopMockups();
 </script>
 </body>
 </html>
