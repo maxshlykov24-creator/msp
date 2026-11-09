@@ -493,6 +493,41 @@
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
+
+/* Обложка предложения: результат, процессы и условия. */
+.cover.cover-sales{display:block}
+.cover-sales .cover-m{display:none}
+.cover-sales .brand-row{margin-bottom:28px}
+.cover-sales h1{font-size:clamp(32px,3.7vw,62px);line-height:1.13;letter-spacing:-.035em}
+.cover-sales .cover-benefits{max-width:1100px;font-size:clamp(17px,1.45vw,24px);line-height:1.55;margin-top:28px;color:#d7d4d6}
+.cover-sales .cover-own{max-width:1100px;font-size:clamp(16px,1.25vw,21px);line-height:1.55;margin-top:20px;color:#aaa5aa}
+.cover-sales .cover-own strong{color:#ece5e8;font-weight:600}
+.cover-sales .cover-promises{gap:10px;margin-top:30px;max-width:1200px}
+.cover-sales .cover-promises span{font-size:clamp(12px,.95vw,16px);padding:10px 16px}
+.cover-sales .cover-launch{background:rgba(var(--a1-rgb),.25);border-color:rgba(var(--a2-rgb),.65)}
+@media screen and (min-width:901px) and (max-height:800px){
+ .cover-sales .brand-row{margin-bottom:20px}
+ .cover-sales h1{font-size:clamp(32px,3.5vw,48px)}
+ .cover-sales .cover-benefits{font-size:18px;margin-top:20px}
+ .cover-sales .cover-own{font-size:16px;margin-top:14px}
+ .cover-sales .cover-promises{margin-top:20px}
+}
+@media screen and (max-width:900px){
+ .cover-sales h1{font-size:clamp(28px,5.5vw,42px)}
+ .cover-sales .brand-row{margin-bottom:24px}
+ .cover-sales .cover-benefits{font-size:17px;margin-top:22px}
+ .cover-sales .cover-own{font-size:15px;margin-top:18px}
+ .cover-sales .cover-promises{margin-top:24px;gap:8px}
+ .cover-sales .cover-promises span{font-size:12px;padding:9px 12px}
+}
+@media print{
+ .cover-sales h1{font-size:30pt !important}
+ .cover-sales .brand-row{margin-bottom:22px}
+ .cover-sales .cover-benefits{font-size:13pt;margin-top:22px;max-width:none}
+ .cover-sales .cover-own{font-size:11.5pt;margin-top:16px;max-width:none}
+ .cover-sales .cover-promises{margin-top:24px}
+ .cover-sales .cover-promises span{font-size:9pt;padding:8px 12px}
+}
 </style>
 <style>
 
@@ -1248,6 +1283,7 @@
 }
 @media print{.tsd{zoom:.34}.cover-m .tsd{zoom:.45}.cover-m{gap:16px}}
 </style>
+
 </head>
 <body>
 <svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" aria-hidden="true" style="position:absolute"><defs>
@@ -1271,12 +1307,13 @@
 
 <div class="deck" id="deck">
 <section class="slide active" data-title="Обложка">
-<div class="cover">
+<div class="cover cover-sales">
 <div class="cover-t">
 <div class="brand-row stag"><b style="font-size:28px;letter-spacing:.12em">ЛУКДЕКОР</b><span class="x">×</span><img class="ms-logo" src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMjQgODAwIDg1MS4yMTM1OTUiIGFyaWEtbGFiZWw9Ik1TIFByb2R1Y3QiPjxkZWZzPjxsaW5lYXJHcmFkaWVudCBpZD0id2FybS1nc2F0aW5UcnVlIiB4MT0iMCIgeTE9IjAiIHgyPSIxIiB5Mj0iMSI+PHN0b3Agc3RvcC1jb2xvcj0iI2NlOTI5ZCIvPjxzdG9wIG9mZnNldD0iLjQ2IiBzdG9wLWNvbG9yPSIjZTNiNGJjIi8+PHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjYmQ3ZThjIi8+PC9saW5lYXJHcmFkaWVudD48Y2xpcFBhdGggaWQ9Indhcm0tY3NhdGluVHJ1ZSI+PHBhdGggZD0iTTAuMDAwMDAwIDIyNC4wMDAwMDAgTDQwMC4wMDAwMDAgMjQuMDAwMDAwIEw4MDAuMDAwMDAwIDIyNC4wMDAwMDAgTDQwMC4wMDAwMDAgNDI0LjAwMDAwMCBMNDAwLjAwMDAwMCA4NzEuMjEzNTk1IEwzMjAuMDAwMDAwIDgzMS4yMTM1OTUgTDMyMC4wMDAwMDAgMzg0LjAwMDAwMCBMNjQwLjAwMDAwMCAyMjQuMDAwMDAwIEw1NjAuMDAwMDAwIDE4NC4wMDAwMDAgTDI0MC4wMDAwMDAgMzQ0LjAwMDAwMCBMMjQwLjAwMDAwMCA3OTEuMjEzNTk1IEwxNjAuMDAwMDAwIDc1MS4yMTM1OTUgTDE2MC4wMDAwMDAgMzA0LjAwMDAwMCBMNDgwLjAwMDAwMCAxNDQuMDAwMDAwIEw0MDAuMDAwMDAwIDEwNC4wMDAwMDAgTDgwLjAwMDAwMCAyNjQuMDAwMDAwIEw4MC4wMDAwMDAgNzExLjIxMzU5NSBMMC4wMDAwMDAgNjcxLjIxMzU5NSBaIi8+PHBhdGggZD0iTTQ2NC4wMDAwMDAwIDQyOC4wMDAwMDAwIEw4MDAuMDAwMDAwMCAyNjAuMDAwMDAwMCBMODAwLjAwMDAwMDAgMzQ2LjAwMDAwMDAgTDU0NC4wMDAwMDAwIDQ3NC4wMDAwMDAwIEw1NDQuMDAwMDAwMCA1NzEuNjA2Nzk3NSBMODAwLjAwMDAwMDAgNDQzLjYwNjc5NzUgTDgwMC4wMDAwMDAwIDcwNy4yMTM1OTUwIEw0NjQuMDAwMDAwMCA4NzUuMjEzNTk1MCBMNDY0LjAwMDAwMDAgNzg5LjIxMzU5NTAgTDcyMC4wMDAwMDAwIDY2MS4yMTM1OTUwIEw3MjAuMDAwMDAwMCA1NjMuNjA2Nzk3NSBMNDY0LjAwMDAwMDAgNjkxLjYwNjc5NzUgWiIvPjwvY2xpcFBhdGg+PGZpbHRlciBpZD0id2FybS1uc2F0aW5UcnVlIj48ZmVUdXJidWxlbmNlIGJhc2VGcmVxdWVuY3k9Ii4wMjUgLjYiIG51bU9jdGF2ZXM9IjIiIHNlZWQ9IjciLz48ZmVDb2xvck1hdHJpeCB0eXBlPSJzYXR1cmF0ZSIgdmFsdWVzPSIwIi8+PGZlQ29tcG9zaXRlIGluMj0iU291cmNlR3JhcGhpYyIgb3BlcmF0b3I9ImluIi8+PC9maWx0ZXI+PC9kZWZzPjxnIGZpbGw9InVybCgjd2FybS1nc2F0aW5UcnVlKSI+PHBhdGggZD0iTTAuMDAwMDAwIDIyNC4wMDAwMDAgTDQwMC4wMDAwMDAgMjQuMDAwMDAwIEw4MDAuMDAwMDAwIDIyNC4wMDAwMDAgTDQwMC4wMDAwMDAgNDI0LjAwMDAwMCBMNDAwLjAwMDAwMCA4NzEuMjEzNTk1IEwzMjAuMDAwMDAwIDgzMS4yMTM1OTUgTDMyMC4wMDAwMDAgMzg0LjAwMDAwMCBMNjQwLjAwMDAwMCAyMjQuMDAwMDAwIEw1NjAuMDAwMDAwIDE4NC4wMDAwMDAgTDI0MC4wMDAwMDAgMzQ0LjAwMDAwMCBMMjQwLjAwMDAwMCA3OTEuMjEzNTk1IEwxNjAuMDAwMDAwIDc1MS4yMTM1OTUgTDE2MC4wMDAwMDAgMzA0LjAwMDAwMCBMNDgwLjAwMDAwMCAxNDQuMDAwMDAwIEw0MDAuMDAwMDAwIDEwNC4wMDAwMDAgTDgwLjAwMDAwMCAyNjQuMDAwMDAwIEw4MC4wMDAwMDAgNzExLjIxMzU5NSBMMC4wMDAwMDAgNjcxLjIxMzU5NSBaIi8+PHBhdGggZD0iTTQ2NC4wMDAwMDAwIDQyOC4wMDAwMDAwIEw4MDAuMDAwMDAwMCAyNjAuMDAwMDAwMCBMODAwLjAwMDAwMDAgMzQ2LjAwMDAwMDAgTDU0NC4wMDAwMDAwIDQ3NC4wMDAwMDAwIEw1NDQuMDAwMDAwMCA1NzEuNjA2Nzk3NSBMODAwLjAwMDAwMDAgNDQzLjYwNjc5NzUgTDgwMC4wMDAwMDAwIDcwNy4yMTM1OTUwIEw0NjQuMDAwMDAwMCA4NzUuMjEzNTk1MCBMNDY0LjAwMDAwMDAgNzg5LjIxMzU5NTAgTDcyMC4wMDAwMDAwIDY2MS4yMTM1OTUwIEw3MjAuMDAwMDAwMCA1NjMuNjA2Nzk3NSBMNDY0LjAwMDAwMDAgNjkxLjYwNjc5NzUgWiIvPjwvZz48ZyBjbGlwLXBhdGg9InVybCgjd2FybS1jc2F0aW5UcnVlKSIgb3BhY2l0eT0iLjA4NSI+PHJlY3Qgd2lkdGg9IjgwMCIgaGVpZ2h0PSI5MDAiIGZpbHRlcj0idXJsKCN3YXJtLW5zYXRpblRydWUpIi8+PC9nPjwvc3ZnPg==" alt="MS Product"></div>
-<h1 class="stag">Свой софт для ТСД.<br><span class="grad">Склад по вашим правилам.</span></h1>
-<p class="lead stag">Своя система склада под процессы вашей компании. Сборка всех заказов одной волной, проверка на каждом скане и метрики по каждому сотруднику. Быстрее, меньше ошибок, без лицензии на каждое устройство.</p>
-<div class="pills-d stag"><span>7 операций на ТСД</span><span>Сборка волной</span><span>Работает без Wi-Fi</span><span>Под ваш процесс</span><span>Запуск за 3 недели</span></div>
+<h1 class="stag">Собирайте быстрее и без ошибок.<br><span class="grad">Держите склад под контролем.</span></h1>
+<p class="lead cover-benefits stag">Собираем заказы за один обход без возврата к одной и той же позиции. Проверяем товары при каждом движении. Не даём отгружать без остатка. Отслеживаем скорость, ошибки и эффективность каждого сотрудника в одном месте.</p>
+<p class="cover-own stag"><strong>Более удобный и эффективный софт под вашу компанию.</strong> Прямая интеграция с МойСклад с гарантированно более быстрой и стабильной синхронизацией. Ваш код на вашем сервере. Выстраиваем ваши процессы без зависимости от коробочного решения Cleverence.</p>
+<div class="pills-d cover-promises stag"><span>Без подписок и лицензий</span><span>Свой софт для ТСД под компанию</span><span>Гарантия ускорения и минимизации ошибок</span><span class="cover-launch">Запуск за 3 недели</span></div>
 </div>
 <div class="cover-m stag"><div class="tsd "><svg class="tsd-hardware" viewBox="0 0 420 1125" aria-hidden="true"><use href="#tsd-front-photo" width="100%" height="100%"/></svg><div class="scr y"><div class="sb"><span>09:41</span><span class="sb-r"><svg class="i xs"><use href="#i-wifi"/></svg>87%</span></div><div class="ah"><div class="lg">ЛУКДЕКОР<small>ТСД · СКЛАД ЛОБНЯ</small></div><span class="av">ИК</span></div><div class="bd"><div class="hi"><div class="eb">Смена с 09:00</div><span class="chip good"><svg class="i xs"><use href="#i-wifi"/></svg>На связи</span></div><div class="tiles"><div class="tile hl"><svg class="i"><use href="#i-wave"/></svg><b>Сборка волной</b><span>3 волны ждут</span></div><div class="tile"><svg class="i"><use href="#i-in"/></svg><b>Приёмка</b><span>2 заказа</span></div><div class="tile"><svg class="i"><use href="#i-move"/></svg><b>Перемещение</b><span>Ячейки, ФБС</span></div><div class="tile"><svg class="i"><use href="#i-minus"/></svg><b>Списание</b><span>Брак, расход</span></div><div class="tile"><svg class="i"><use href="#i-plus"/></svg><b>Оприходование</b><span>Излишки</span></div><div class="tile"><svg class="i"><use href="#i-truck"/></svg><b>Отгрузка</b><span>1 заказ</span></div><div class="tile"><svg class="i"><use href="#i-inv"/></svg><b>Инвентаризация</b><span>Зона A</span></div><div class="tile"><svg class="i"><use href="#i-search"/></svg><b>Найти товар</b><span>Где лежит</span></div></div></div><div class="ft"><div class="scan"><svg class="i"><use href="#i-scan"/></svg><span>Скан ячейки или товара</span></div></div></div></div><div class="tsd  tsd-side"><svg class="tsd-hardware" viewBox="0 0 380 1090" aria-hidden="true"><use href="#tsd-side-photo" width="100%" height="100%"/></svg><div class="scr y"><div class="sb"><span>09:41</span><span class="sb-r"><svg class="i xs"><use href="#i-wifi"/></svg>87%</span></div><div class="ah"><span class="ah-l"><svg class="i"><use href="#i-back"/></svg><b>Отбор волны</b></span></div><div class="bd"><div class="hi"><div><div class="eb">Волна 14 · 20 заказов</div><div class="sub">12 из 31&nbsp;шт</div></div><span class="chip acc">Тележка 2</span></div><div class="bar"><i style="width:39%"></i></div><div class="pick"><div class="eb">Ячейка</div><div class="cell xl">A-2-5</div><div class="pa">60992-10</div><div class="pq">Возьмите <b>5&nbsp;шт</b></div><div class="sub">сразу для 5 заказов</div></div><div class="row"><div class="m"><b>12002-01</b><span>Следом · A-2-7</span></div><span class="qty">4&nbsp;шт</span></div></div><div class="ft"><div class="ybtn sec">Нет на месте</div><div class="ybtn">Скан товара</div></div></div></div></div>
 </div>
