@@ -719,7 +719,10 @@ def avito_timed_message_lead(refs: list[dict], url: str) -> dict | None:
         lead = get_lead(int(talk["entity_id"]))
         if not lead or not lead.get("id"):
             raise AmoError(0, "Candidate lead unavailable")
-        if listing_item_id(lead_listing_url(lead)) != item:
+        lead_item = listing_item_id(lead_listing_url(lead))
+        if not lead_item:
+            raise AmoError(0, "Candidate listing unavailable")
+        if lead_item != item:
             continue
         if lead.get("is_deleted") or lead.get("status_id") in CLOSED:
             continue

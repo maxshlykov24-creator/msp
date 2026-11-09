@@ -4061,3 +4061,21 @@ def test_nov09_temporal_handoff_does_not_mutate_crm():
                 assert result['chat_url'].endswith('/123')
                 assert not store.load_doc(cid).get('crm',{}).get('verified_binding')
     asyncio.run(run())
+
+
+def test_nov09_recent_handoff_scheduled_without_notes_or_binding():
+    import asyncio
+    from datetime import datetime, timezone
+    from unittest.mock import patch
+    from bot import crm
+    class StopTick(Exception): pass
+    class Bot:
+        async def listen(self, **kwargs): raise StopTick()
+    scheduled=[]
+    doc={'crm':{'alert':{'tg':{'chat_id':1,'message_id':2},'started_at':datetime.now(timezone.utc).isoformat()}}}
+    async def run():
+        with patch.object(crm.store,'all_chat_ids',return_value=['av:test-schedule']),patch.object(crm.store,'load_doc',return_value=doc),patch.object(crm,'schedule_notes',side_effect=scheduled.append),patch.object(crm,'bot',Bot()):
+            try: await crm.tick()
+            except StopTick: pass
+    asyncio.run(run())
+    assert scheduled==['av:test-schedule']

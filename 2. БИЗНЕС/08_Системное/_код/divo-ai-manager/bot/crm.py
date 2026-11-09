@@ -933,6 +933,9 @@ async def ensure_lead_async(snap: dict, doc: dict) -> dict:
                 # A reviewable chat link is not permission to mutate a contact,
                 # create another sale, or move the candidate deal automatically.
                 return snap
+            if (doc.get("crm") or {}).get("message_time_link"):
+                # A stale candidate must not fall through to duplicate creation.
+                raise RuntimeError("Temporal CRM link requires revalidation")
         result = await asyncio.to_thread(ensure_lead, snap, doc)
     finally:
         current = store.load_doc(cid)
@@ -2376,7 +2379,13 @@ async def tick() -> None:
         state = store.load_doc(cid).get("crm") or {}
         alert = state.get("alert") or {}
         # Queue recovery must not wait behind a slow claim or Telegram poll.
-        if state.get("note_pending") or (state.get("verified_binding") and alert.get("tg")):
+        try:
+            recent_avito_handoff = (str(cid).startswith("av:") and bool(alert.get("tg"))
+                and datetime.fromisoformat(alert.get("started_at") or "").timestamp() >= time.time() - 4 * 86400)
+        except (ValueError, TypeError):
+            recent_avito_handoff = False
+        if (state.get("note_pending") or (state.get("verified_binding") and alert.get("tg"))
+                or recent_avito_handoff):
             schedule_notes(str(cid))
         if state.get("handoff_pending") or (ping_allowed(alert) and not alert.get("tg")):
             queued.append(cid)
