@@ -631,3 +631,14 @@ Read-only прогон и дальнейшее живое чтение подт�
 Отдельно обнаружены расхождения старого state.lead_id с найденным talk: 47052022 ↔ 46826302 и 46811508 ↔ 46835452. Нет точной привязки старой карточки к этому исходному чату; считать дублями и объединять запрещено без отдельной проверки. По имени сопоставления не было. Отсутствие совпадения у коротких/неполных историй не доказывает отсутствие других дублей.
 
 Доказательства на VPS: 99_АРХИВ/links-month-20261109 — docs-before.json, month-leads.json, month-notes.json, month-events.json, month-chat-refs.json, month-matches.json, duplicate-pairs.json, provider-recent.json, chat-matches.json, followup.json, исходные уведомления, планы, журналы правок и final-link-readback.json. Локальные временные файлы содержат исходные данные, в git не добавлять. Сделки пользователь объединяет вручную; автоматического объединения не выполнялось.
+
+
+### 2026-11-09: approved duplicate merge, 3 of 7 completed
+
+Owner authorized the seven listed pairs. Native amoCRM UI completed 47189694 -> 47188312, 47225360 -> 47225328, 47114810 -> 46679474. API readback: old cards absent, original talk/contact retained, all 13/25/27 notes preserved by type+params multiplicity (merged notes receive new IDs); tasks 1/0/6 preserved. Extra contacts remain standalone, not deleted or merged. Client-proven phones added to original chat contacts; HS7 phone verified as four consecutive incoming numeric chunks within 7 seconds. All seven phone proofs are archived, writes applied only to completed three pairs.
+
+Native target IDs retained. Zeekr and Wey assigned to the existing handoff managers; sales stages retained. HS7 restored to source sales/new-application stage after phone proof. Fresh state snapshots and bounded controlled service restart updated CRM IDs, creation, verified_binding (source owner_approved_merge), note target and alert snapshots; message history, pause and delivery receipts retained. Resolver readback confirmed all three targets; service active.
+
+NOT completed: 47114820 -> 47052022, 47174258 -> 47174196, 47114828 -> 47094406, 47168380 -> 47069030. Chrome switched from amoCRM to Google Sheets while preparing the next pair. UI actions stopped; asynchronous request asks owner to leave Chrome free for about 10 minutes. Resume only when browser is available and freshly inspect UI. Two disputed pairings excluded. No production code/model changes.
+
+Evidence: VPS 99_АРХИВ/merge-approved-20261109/before.json (all seven pairs, contacts, notes, tasks), phone-evidence.json (private provider messages), verified.json, state-before/after-*.json, runtime-readback.json. No secrets or private snapshots committed.
