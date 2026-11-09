@@ -1000,6 +1000,38 @@ def _lead_as_widget(lead_id: int, rows: list[dict]) -> dict | None:
     return lead
 
 
+def exact_chat_marker_lead(chat_id: str, url: str, contact_id: int) -> dict | None:
+    """Recover a moved/replaced bot-owned lead, never a similar customer.
+
+    Caller must already have a verified binding. Require its same contact,
+    exact full-chat marker, listing, and a unique live target across all stages.
+    """
+    import hashlib
+    if not chat_id.startswith(("av:", "ar:")) or not contact_id or not listing_item_id(url):
+        return None
+    marker = "DIVO_CHAT_" + hashlib.sha256(chat_id.encode()).hexdigest()[:32]
+    found = {}
+    for page in range(1, 21):
+        code, data = request("/api/v4/leads", {"query": marker, "with": "contacts", "limit": 250, "page": page})
+        if code not in (200, 204):
+            raise AmoError(code, "Chat marker lookup unavailable")
+        for lead in items(data, "leads"):
+            if marker not in {t.get("name") for t in lead.get("_embedded", {}).get("tags", [])}:
+                continue
+            if lead.get("is_deleted") or lead.get("status_id") in CLOSED:
+                continue
+            if lead.get("pipeline_id") not in {PIPELINE_TECH, PIPELINE_SALES}:
+                continue
+            contacts = {int(c["id"]) for c in lead.get("_embedded", {}).get("contacts", [])}
+            if contacts != {int(contact_id)} or listing_item_id(lead_listing_url(lead)) != listing_item_id(url):
+                return None
+            lead["_provider_contact_id"] = int(contact_id)
+            found[int(lead["id"])] = lead
+        if not (data.get("_links") or {}).get("next"):
+            return next(iter(found.values())) if len(found) == 1 else None
+    raise AmoError(0, "Chat marker pagination incomplete")
+
+
 def find_widget_lead(
     *, peer: str = "", car: str = "", channel: str = "", url: str = "",
     chat_id: str = "", customer_id: str = "", customer_names: list[str] | None = None,

@@ -3969,3 +3969,35 @@ def test_nov09_note_recovery_precedes_slow_manager_poll():
             except asyncio.CancelledError:pass
             else:raise AssertionError('poll should be cancelled')
     asyncio.run(run())
+
+
+def test_nov09_exact_marker_recovery_rejects_ambiguity_and_foreign_contact():
+    import hashlib
+    from copy import deepcopy
+    from unittest.mock import patch
+    from tools import amo_client as a
+    cid = 'av:marker-recovery'
+    url = 'https://avito.ru/moskva/avtomobili/test_1234567890'
+    marker = 'DIVO_CHAT_' + hashlib.sha256(cid.encode()).hexdigest()[:32]
+    lead = {'id': 10, 'pipeline_id': a.PIPELINE_TECH, 'status_id': 89803205,
+            '_embedded': {'contacts': [{'id': 20}], 'tags': [{'name': marker}]},
+            'custom_fields_values': [{'field_id': a.FIELD_LISTING_URL, 'values': [{'value': url}]}]}
+    def check(rows):
+        with patch.object(a, 'request', return_value=(200, {'_embedded': {'leads': rows}})):
+            return a.exact_chat_marker_lead(cid, url, 20)
+    assert check([deepcopy(lead)])['id'] == 10
+    assert check([deepcopy(lead), dict(deepcopy(lead), id=11)]) is None
+    wrong = deepcopy(lead); wrong['_embedded']['contacts'] = [{'id': 21}]
+    assert check([wrong]) is None
+    wrong = deepcopy(lead); wrong['_embedded']['tags'] = [{'name': marker + 'x'}]
+    assert check([wrong]) is None
+    wrong = deepcopy(lead); wrong['status_id'] = a.STATUS_LOST
+    assert check([wrong]) is None
+    with patch.object(a, 'request', return_value=(200, {'_embedded': {'leads': [lead]}, '_links': {'next': {}}})):
+        assert a.exact_chat_marker_lead(cid, url, 20)['id'] == 10
+    with patch.object(a, 'request', return_value=(200, {'_embedded': {'leads': [lead]}, '_links': {'next': {'href': 'next'}}})):
+        try:
+            a.exact_chat_marker_lead(cid, url, 20)
+            raise AssertionError('incomplete pagination accepted')
+        except a.AmoError:
+            pass

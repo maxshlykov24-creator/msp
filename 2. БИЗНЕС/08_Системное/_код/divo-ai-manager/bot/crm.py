@@ -551,6 +551,9 @@ def _verified_marketplace_lead(snap: dict, doc: dict) -> dict | None:
                 and amo_client.listing_item_id(amo_client.lead_listing_url(lead)) == item):
             lead["_provider_contact_id"] = int(binding["contact_id"])
             return lead
+        recovered = amo_client.exact_chat_marker_lead(room, snap.get("url") or "", int(binding["contact_id"]))
+        if recovered:
+            return recovered
     return amo_client.find_widget_lead(
         channel=channel, chat_id=str(snap.get("chat_id") or doc.get("chat_id") or ""),
         url=snap.get("url") or "", customer_id=ar.get("customer_id", ""),
