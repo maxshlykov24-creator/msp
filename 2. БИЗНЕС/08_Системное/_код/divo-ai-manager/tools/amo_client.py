@@ -637,6 +637,102 @@ def provider_bound_lead(channel: str, chat_id: str, customer_id: str = "", url: 
     return next(iter(found.values())) if len(found) == 1 else None
 
 
+def matching_message_triples(provider: list[dict], crm_rows: list[dict]) -> list[list[dict]]:
+    """Three consecutive distinct seconds, same direction; never skip a message."""
+    def ordered(rows):
+        seen = {}
+        for row in rows:
+            mid = str(row.get("id") or "")
+            if not mid or row.get("direction") not in {"in", "out"} or not row.get("at"):
+                raise ValueError("Incomplete message evidence")
+            signature = (int(row["at"]), row["direction"])
+            if mid in seen and seen[mid] != signature:
+                raise ValueError("Conflicting message identity")
+            seen[mid] = signature
+        return sorted((at, direction, mid) for mid, (at, direction) in seen.items())
+    left, right = ordered(provider), ordered(crm_rows)
+    def windows(rows):
+        counts = {}
+        for at, _, _ in rows:
+            counts[at] = counts.get(at, 0) + 1
+        for i in range(len(rows) - 2):
+            triple = rows[i:i+3]
+            if any(counts[r[0]] != 1 for r in triple):
+                continue  # Same-second ordering is not evidence.
+            yield tuple((r[0], r[1]) for r in triple), triple
+    index = dict(windows(right))
+    matches = []
+    for key, triple in windows(left):
+        if key in index:
+            matches.append([{"at": a[0], "direction": a[1], "provider_id": a[2], "crm_id": b[2]}
+                            for a, b in zip(triple, index[key])])
+    return matches
+
+
+def avito_timed_message_lead(refs: list[dict], url: str) -> dict | None:
+    """Owner-approved temporal correlation, not immutable provider identity.
+
+    Complete event window, unique talk and listing, all directions included.
+    No contact/phone search. Every read is across stages, with bounded pagination.
+    """
+    item = listing_item_id(url)
+    if not item or len(refs) < 3:
+        return None
+    lo, hi = min(int(r["at"]) for r in refs), max(int(r["at"]) for r in refs)
+    groups = {}
+    for page in range(1, 21):
+        code, data = request("/api/v4/events", {
+            "filter[type]": "incoming_chat_message,outgoing_chat_message",
+            "filter[created_at][from]": lo, "filter[created_at][to]": hi,
+            "limit": 100, "page": page,
+        }, attempts=1)
+        if code not in (200, 204):
+            raise AmoError(code, "Message correlation events unavailable")
+        for event in items(data, "events"):
+            typ = event.get("type")
+            if typ not in {"incoming_chat_message", "outgoing_chat_message"}:
+                continue
+            for value in event.get("value_after") or []:
+                msg = value.get("message") or {}
+                if msg.get("origin") != "avito":
+                    continue
+                if not msg.get("talk_id") or not msg.get("id") or not event.get("created_at"):
+                    raise AmoError(0, "Incomplete Avito event")
+                groups.setdefault(int(msg["talk_id"]), []).append({
+                    "id": str(msg["id"]), "at": int(event["created_at"]),
+                    "direction": "in" if typ == "incoming_chat_message" else "out",
+                })
+        if not (data.get("_links") or {}).get("next"):
+            break
+    else:
+        raise AmoError(0, "Message correlation pagination incomplete")
+    candidates = []
+    for talk_id, rows in groups.items():
+        triples = matching_message_triples(refs, rows)
+        if not triples:
+            continue
+        code, talk = request("/api/v4/talks/%s" % talk_id, attempts=1)
+        if code != 200:
+            raise AmoError(code, "Candidate talk unavailable")
+        if talk.get("origin") != "avito" or talk.get("entity_type") != "lead" or not talk.get("contact_id"):
+            raise AmoError(0, "Candidate talk identity unavailable")
+        lead = get_lead(int(talk["entity_id"]))
+        if not lead or not lead.get("id"):
+            raise AmoError(0, "Candidate lead unavailable")
+        if listing_item_id(lead_listing_url(lead)) != item:
+            continue
+        if lead.get("is_deleted") or lead.get("status_id") in CLOSED:
+            continue
+        contacts = {int(c["id"]) for c in lead.get("_embedded", {}).get("contacts", [])}
+        if lead.get("pipeline_id") not in {PIPELINE_TECH, PIPELINE_SALES} or contacts != {int(talk["contact_id"])}:
+            return None
+        lead["_provider_contact_id"] = int(talk["contact_id"])
+        lead["_provider_talk_id"] = talk_id
+        lead["_message_time_evidence"] = triples[-1]
+        candidates.append(lead)
+    return candidates[0] if len(candidates) == 1 else None
+
+
 def autoru_message_lead(refs: list[dict], url: str) -> dict | None:
     """Resolve an integration reply by its exact CRM message UUID, never by name.
 

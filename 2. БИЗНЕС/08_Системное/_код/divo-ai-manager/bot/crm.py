@@ -857,6 +857,62 @@ async def refresh_transcript(chat_id: str, doc: dict) -> None:
     doc.setdefault("crm", {})["transcript_synced_at"] = time.time()
 
 
+async def recover_avito_time_link(chat_id: str, doc: dict) -> None:
+    """Handoff link only. Temporal evidence never authorizes phone/CRM writes."""
+    if not chat_id.startswith("av:"):
+        return
+    state = doc.setdefault("crm", {})
+    source = doc.get("avito") or {}
+    if state.get("verified_binding") or state.get("message_time_link") or not source.get("url"):
+        return
+    if time.time() < state.get("message_time_retry_at", 0):
+        return
+    state["message_time_retry_at"] = time.time() + 180
+    from bot.avito import Avito
+    from bot.avito_loop import is_noise
+    api = Avito()
+    try:
+        messages = await api.messages(chat_id[3:], limit=100)
+    finally:
+        await api.close()
+    rows = [m for m in messages if not is_noise(m)]
+    if any(not m.get("id") or not m.get("created") or m.get("direction") not in {"in", "out"} for m in rows):
+        raise ValueError("Incomplete marketplace history")
+    refs = [{"id": str(m["id"]), "at": int(m["created"]), "direction": m["direction"]} for m in rows]
+    lead = await asyncio.to_thread(amo_client.avito_timed_message_lead, refs, source["url"])
+    if not lead:
+        state["message_time_result"] = "no_unique_consecutive_triple"
+        return
+    state["message_time_link"] = {
+        "source": "three_consecutive_message_times", "chat_id": chat_id,
+        "item_id": amo_client.listing_item_id(source["url"]), "lead_id": int(lead["id"]),
+        "contact_id": lead["_provider_contact_id"], "talk_id": lead["_provider_talk_id"],
+        "evidence": lead["_message_time_evidence"], "checked_at": time.time(),
+    }
+    state["message_time_result"] = "unique_link_only"
+
+
+def avito_time_link(chat_id: str, doc: dict) -> str:
+    proof = (doc.get("crm") or {}).get("message_time_link") or {}
+    source = doc.get("avito") or {}
+    if (proof.get("source") != "three_consecutive_message_times" or proof.get("chat_id") != chat_id
+            or proof.get("item_id") != amo_client.listing_item_id(source.get("url", ""))
+            or len(proof.get("evidence") or []) != 3):
+        return ""
+    code, talk = amo_client.request("/api/v4/talks/%s" % int(proof["talk_id"]), attempts=1)
+    if (code != 200 or talk.get("origin") != "avito" or talk.get("entity_type") != "lead"
+            or talk.get("contact_id") != proof["contact_id"]):
+        return ""
+    lead = amo_client.get_lead(int(talk["entity_id"]))
+    contacts = {int(c["id"]) for c in lead.get("_embedded", {}).get("contacts", [])}
+    if (lead.get("is_deleted") or lead.get("status_id") in amo_client.CLOSED
+            or lead.get("pipeline_id") not in {amo_client.PIPELINE_TECH, amo_client.PIPELINE_SALES}
+            or contacts != {int(proof["contact_id"])}
+            or amo_client.listing_item_id(amo_client.lead_listing_url(lead)) != proof["item_id"]):
+        return ""
+    return amo_client.lead_url(int(lead["id"]))
+
+
 async def ensure_lead_async(snap: dict, doc: dict) -> dict:
     cid = str(snap.get("chat_id") or "")
     if phone_key(str(snap.get("phone") or "")) and cid.startswith(("av:", "ar:")):
@@ -865,13 +921,26 @@ async def ensure_lead_async(snap: dict, doc: dict) -> dict:
         except Exception:
             log.warning("чат %s: история площадки ожидает повторного чтения", cid)
     try:
+        if cid.startswith("av:") and not (doc.get("crm") or {}).get("verified_binding"):
+            try:
+                await asyncio.wait_for(recover_avito_time_link(cid, doc), timeout=45)
+                link = await asyncio.to_thread(avito_time_link, cid, doc)
+            except Exception:
+                link = ""
+                log.warning("чат %s: сопоставление времени не подтверждено", cid)
+            if link:
+                snap["chat_url"] = link
+                # A reviewable chat link is not permission to mutate a contact,
+                # create another sale, or move the candidate deal automatically.
+                return snap
         result = await asyncio.to_thread(ensure_lead, snap, doc)
     finally:
         current = store.load_doc(cid)
         target = current.setdefault("crm", {})
         changed = doc.get("crm") or {}
         for key in ("creation", "verified_binding", "lead_id", "contact_id", "status_id",
-                    "lead_url", "created", "phone", "transcript_synced_at", "claim_pending"):
+                    "lead_url", "created", "phone", "transcript_synced_at", "claim_pending",
+                    "message_time_link", "message_time_retry_at", "message_time_result"):
             if key in changed:
                 target[key] = changed[key]
         for row in changed.get("note_pending") or []:
@@ -1609,7 +1678,7 @@ async def _refresh_bound_alert_link_locked(chat_id: str) -> None:
     doc = store.load_doc(chat_id)
     state = doc.get("crm") or {}
     alert = state.get("alert") or {}
-    if not bot or not alert.get("tg") or not state.get("verified_binding"):
+    if not bot or not alert.get("tg") or not (state.get("verified_binding") or state.get("message_time_link")):
         return
     if alert.get("picked") not in (None, "", "button") or (not alert.get("active") and not alert.get("picked")):
         return
@@ -1620,10 +1689,13 @@ async def _refresh_bound_alert_link_locked(chat_id: str) -> None:
     source = doc.get("autoru") or doc.get("avito") or {}
     snap = {"channel": "Авто.ру" if chat_id.startswith("ar:") else "Авито",
             "chat_id": chat_id, "url": source.get("url", "")}
-    lead = await asyncio.to_thread(_verified_marketplace_lead, snap, doc)
-    if not lead:
+    if state.get("verified_binding"):
+        lead = await asyncio.to_thread(_verified_marketplace_lead, snap, doc)
+        url = amo_client.lead_url(int(lead["id"])) if lead else ""
+    else:
+        url = await asyncio.to_thread(avito_time_link, chat_id, doc)
+    if not url:
         return
-    url = amo_client.lead_url(int(lead["id"]))
     # Re-read after network; never restore stale pickup/phone/history state.
     current = store.load_doc(chat_id)
     alert = current.setdefault("crm", {}).get("alert") or {}
@@ -1674,6 +1746,23 @@ async def flush_notes(chat_id: str) -> None:
     if lock.locked():
         return
     async with _note_gate, lock:
+        doc = store.load_doc(chat_id)
+        alert = (doc.get("crm") or {}).get("alert") or {}
+        try:
+            recent_handoff = datetime.fromisoformat(alert.get("started_at") or "").timestamp() >= time.time() - 4 * 86400
+        except (ValueError, TypeError):
+            recent_handoff = False
+        if chat_id.startswith("av:") and alert.get("tg") and recent_handoff:
+            try:
+                await asyncio.wait_for(recover_avito_time_link(chat_id, doc), timeout=45)
+            except Exception:
+                log.warning("чат %s: ссылка по времени ожидает проверки", chat_id)
+            finally:
+                current = store.load_doc(chat_id)
+                for key in ("message_time_link", "message_time_retry_at", "message_time_result"):
+                    if key in (doc.get("crm") or {}):
+                        current.setdefault("crm", {})[key] = doc["crm"][key]
+                store.save_doc(chat_id, current)
         if (store.load_doc(chat_id).get("crm") or {}).get("note_pending"):
             try:
                 await recover_autoru_binding(chat_id)

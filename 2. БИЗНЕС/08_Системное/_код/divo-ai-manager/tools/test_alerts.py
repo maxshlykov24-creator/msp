@@ -4001,3 +4001,63 @@ def test_nov09_exact_marker_recovery_rejects_ambiguity_and_foreign_contact():
             raise AssertionError('incomplete pagination accepted')
         except a.AmoError:
             pass
+
+
+def test_nov09_mixed_consecutive_message_times():
+    from tools.amo_client import matching_message_triples as match
+    def rows(times, directions, prefix):
+        return [{'id': prefix+str(i), 'at': t, 'direction': d} for i,(t,d) in enumerate(zip(times,directions))]
+    source=rows([100,110,120],['in','out','in'],'a')
+    target=rows([100,110,120],['in','out','in'],'b')
+    assert len(match(source,target))==1
+    assert match(source,target[:2])==[]
+    assert match(source,rows([100,111,120],['in','out','in'],'b'))==[]
+    assert match(source,rows([100,110,120],['in','in','in'],'b'))==[]
+    assert match(source,rows([100,105,110,120],['in','out','out','in'],'b'))==[]
+    assert match(source,rows([100,110,110,120],['in','out','out','in'],'b'))==[]
+    assert len(match(source,target+[dict(target[0])]))==1  # repeated event, not a fourth message
+
+
+def test_nov09_time_candidates_unique_full_scan():
+    from unittest.mock import patch
+    from tools import amo_client as a
+    refs=[{'id':'av'+str(t),'at':t,'direction':d} for t,d in [(100,'in'),(110,'out'),(120,'in')]]
+    url='https://avito.ru/moskva/avtomobili/car_1234567890'
+    def events(talk):
+        return [{'type':'incoming_chat_message' if r['direction']=='in' else 'outgoing_chat_message',
+                 'created_at':r['at'],'value_after':[{'message':{'id':str(talk)+r['id'],'origin':'avito','talk_id':talk}}]} for r in refs]
+    lead={'id':10,'pipeline_id':a.PIPELINE_TECH,'status_id':89803205,
+          '_embedded':{'contacts':[{'id':20}]},
+          'custom_fields_values':[{'field_id':a.FIELD_LISTING_URL,'values':[{'value':url}]}]}
+    def run(rows,next_page=False):
+        def req(path,params=None,**kwargs):
+            if path=='/api/v4/events':
+                return 200,{'_embedded':{'events':rows},'_links':{'next':{'href':'next'}} if next_page else {}}
+            return 200,{'entity_type':'lead','entity_id':10,'contact_id':20,'origin':'avito'}
+        with patch.object(a,'request',side_effect=req),patch.object(a,'get_lead',return_value=lead):
+            return a.avito_timed_message_lead(refs,url)
+    assert run(events(7))['id']==10
+    assert run(events(7)+events(8)) is None
+    try:
+        run(events(7),True)
+        raise AssertionError('partial scan accepted')
+    except a.AmoError:
+        pass
+
+
+def test_nov09_temporal_handoff_does_not_mutate_crm():
+    import asyncio
+    from unittest.mock import patch
+    from tools.rehearse import Sandbox
+    from bot import crm,store
+    async def run():
+        with Sandbox():
+            cid='av:time-link-test'
+            d=store.load_doc(cid)
+            snap={'chat_id':cid,'channel':'Авито','phone':'79001234567'}
+            async def noop(*args,**kwargs):pass
+            with patch.object(crm,'refresh_transcript',side_effect=noop),patch.object(crm,'recover_avito_time_link',side_effect=noop),patch.object(crm,'avito_time_link',return_value='https://divomotors.amocrm.ru/leads/detail/123'),patch.object(crm,'ensure_lead',side_effect=AssertionError('CRM write forbidden')):
+                result=await crm.ensure_lead_async(snap,d)
+                assert result['chat_url'].endswith('/123')
+                assert not store.load_doc(cid).get('crm',{}).get('verified_binding')
+    asyncio.run(run())
