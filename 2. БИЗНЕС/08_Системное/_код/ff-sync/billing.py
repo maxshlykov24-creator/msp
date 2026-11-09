@@ -57,10 +57,13 @@ def collect(lot_ids, date_to=""):
     detail = []
     storage = 0.0
     pick = 0.0
+    blockers = []
     for lot in lots:
         calc = row_of(lot, client, moves.get(lot["id"], {}), date_to=end)
         if calc["billing_errors"]:
-            raise ValueError("Партия %s: %s. Заполни данные перед выставлением счёта." % (lot["id"], ", ".join(calc["billing_errors"])))
+            label = lot["article"] or lot["name"] or ("Партия %s" % lot["id"])
+            blockers.append("%s: %s" % (label, ", ".join(calc["billing_errors"])))
+            continue
         if calc["bill_days"] == 0 and calc["pick_qty"] == 0:
             continue
         if calc["pick_rate"] < 0:
@@ -68,6 +71,8 @@ def collect(lot_ids, date_to=""):
         storage += calc["storage"]
         pick += calc["pick"]
         detail.append((lot, calc))
+    if blockers:
+        raise ValueError("Нельзя сформировать счёт. Заполни данные товаров: " + "; ".join(dict.fromkeys(blockers)))
     parts = {"storage": round(storage, 2), "intake": 0.0, "ship": round(pick, 2)}
     parts["total"] = round(parts["storage"] + parts["ship"], 2)
     return client, detail, parts, end

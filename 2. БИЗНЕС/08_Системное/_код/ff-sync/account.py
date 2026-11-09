@@ -509,7 +509,7 @@ def require_current_ledger(client_id=None):
         return
     status = ledger_status(client_id)
     if status['sync_error']:
-        raise ValueError('Последняя синхронизация учёта не завершена. Обнови учёт перед счётом или клиентским отчётом.')
+        raise ValueError('Счёт заблокирован: ' + status['sync_error'])
     raw = status['last_sync']
     if not raw or (datetime.now(MSK) - datetime.fromisoformat(raw)).total_seconds() > 1800:
         raise ValueError('Данные учёта требуют обновления. Нажми «Обновить учёт».')
@@ -652,13 +652,18 @@ def save_lot_product(lot_id, data, actor):
                 from db import get_lot
                 party = get_client_by_id(get_lot(lot_id)['client_id'])['ms_counterparty_id']
                 current_result = None
+                current_error = None
                 for scope in independent_scopes(snapshot):
                     try:
                         result = sync_transfer_scope(snapshot, groups, set(scope), billing_locked=True)
                         if party in scope:
                             current_result = result
-                    except Exception:
-                        pass  # Keep the save result, but do not claim a verified ledger.
+                    except Exception as scope_exc:
+                        if party in scope:
+                            current_error = str(scope_exc)
+                if current_error:
+                    return {'ok': True, 'saved': True, 'synced': False, 'product': current,
+                            'msg': 'Данные сохранены. Счёт пока недоступен: ' + current_error}
                 if current_result:
                     return {'ok': True, 'saved': True, 'synced': True, 'product': current,
                             'last_sync': current_result['last_sync']}

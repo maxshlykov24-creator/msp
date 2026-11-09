@@ -1115,6 +1115,7 @@ async function loadLots() {
     return;
   }
   if (mine !== lotsLoad) return;
+  state.stockSyncError = res.sync_error || "";
   state.lots = res.rows;
   state.stockDateTo = dateTo;
   renderLedgerSync(res);
@@ -1188,10 +1189,20 @@ function refreshPick() {
       : `Все позиции, ${selected.length} на ${num(sum)} ₽`;
   const oneClient = new Set(selected.map((r) => r.client_id)).size === 1;
   const incomplete = selected.some((r) => (r.billing_errors || []).length);
-  const ready = selected.length > 0 && oneClient && !incomplete && validStockDate($("sTo").value) && state.stockDateTo === $("sTo").value;
+  const ready = selected.length > 0 && oneClient && !incomplete && !state.stockSyncError && validStockDate($("sTo").value) && state.stockDateTo === $("sTo").value;
   $("sBill").disabled = !ready || sum <= 0;
   $("sBill").title = !oneClient ? "Выбери одного контрагента" : incomplete ? "Заполни литраж и стоимость сборки выделенных товаров" : sum <= 0 ? "По выбранным товарам всё уже выставлено" : "";
   $("sReport").disabled = !ready;
+  const missing = selected.filter(r => (r.billing_errors || []).length)
+    .map(r => `${r.article || r.name}: ${r.billing_errors.join(", ")}`);
+  const reasons = [state.stockSyncError ? "Учёт не сверён: " + state.stockSyncError : "",
+    missing.length ? "Заполни данные товаров: " + missing.join("; ") : ""].filter(Boolean);
+  if (reasons.length) {
+    $("sBill").title = reasons.join(". ");
+    say($("sMsg"), "Счёт недоступен. " + reasons.join(". "), "bad");
+  } else {
+    say($("sMsg"), "", "");
+  }
 }
 
 $("sTbl").onclick = (e) => {
@@ -1266,7 +1277,7 @@ $("pForm").onsubmit = async (e) => {
       stockProductSaving = false;
       closeStockProduct();
       await loadLots();
-      say($("sMsg"), "Сохранено в МойСклад. Учёт и суммы обновлены.", "ok");
+      if (!$("sMsg").textContent) say($("sMsg"), "Сохранено. Расчёт обновлён." + (!$("sBill").disabled ? " Можно сформировать счёт." : ""), "ok");
     } else {
       say($("pMsg"), res.msg, "warn");
       await loadLots();
