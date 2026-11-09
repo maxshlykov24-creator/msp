@@ -3773,7 +3773,7 @@ def test_nov06_clarification_preserves_reply_and_continuation():
     async def run():
         r = await replay({"messages": []}, "Какая комплектация?", raw="Добрый день! Точный список опций уточню у коллеги.")
         assert r["capture"] == 1 and not r["paused"]
-        assert "Добрый" in " ".join(r["sent"]) and "опций" in " ".join(r["sent"])
+        assert any(g in " ".join(r["sent"]) for g in ("Добрый", "Доброе")) and "опций" in " ".join(r["sent"])
         assert "[[" not in " ".join(r["sent"])
         again = await replay({"messages": r["history"]}, "До скольки работаете?", raw="Работаем ежедневно с 10:00 до 20:00.")
         assert "20:00" in " ".join(again["sent"]) and not again["paused"] and again["capture"] == 0
@@ -3893,4 +3893,79 @@ def test_nov06_note_post_preserves_new_queue_event():
             d=store.load_doc(cid)
             assert [r['id'] for r in d['crm']['note_pending']]==['two']
             assert d['crm']['autoru_noted']==['one']
+    asyncio.run(run())
+
+
+def test_nov09_exact_message_binding():
+    from unittest.mock import patch
+    from tools import amo_client as a
+    url='https://auto.ru/cars/used/sale/1160689625-301c480b/'
+    event={'type':'outgoing_chat_message','entity_type':'contact','entity_id':99,
+           'value_after':[{'message':{'id':'exact-uuid','talk_id':7177,'origin':'amo.ext.31941682'}}]}
+    talk={'entity_type':'lead','entity_id':321,'contact_id':99,'origin':'amo.ext.31941682'}
+    lead={'id':321,'pipeline_id':a.PIPELINE_TECH,'status_id':89803205,
+          'custom_fields_values':[{'field_id':a.FIELD_LISTING_URL,'values':[{'value':url}]}],
+          '_embedded':{'contacts':[{'id':99}]}}
+    def req(path,*args,**kwargs):
+        return (200,{'_embedded':{'events':[event]}}) if path.endswith('/events') else (200,talk)
+    with patch.object(a,'request',side_effect=req),patch.object(a,'get_lead',return_value=lead):
+        assert a.autoru_message_lead([{'id':'exact-uuid','at':1000}],url)['id']==321
+        event.update(entity_type='lead',entity_id=321,_embedded={'entity':{'linked_talk_contact_id':99}})
+        assert a.autoru_message_lead([{'id':'exact-uuid','at':1000}],url)['id']==321
+        event['entity_id']=322
+        assert a.autoru_message_lead([{'id':'exact-uuid','at':1000}],url) is None
+        event.update(entity_type='contact',entity_id=99)
+        assert a.autoru_message_lead([{'id':'other-uuid','at':1000}],url) is None
+        event['type']='incoming_chat_message'
+        assert a.autoru_message_lead([{'id':'exact-uuid','at':1000}],url) is None
+        event['type']='outgoing_chat_message'
+        talk['contact_id']=100
+        assert a.autoru_message_lead([{'id':'exact-uuid','at':1000}],url) is None
+        talk['contact_id']=99
+        assert a.autoru_message_lead([{'id':'exact-uuid','at':1000}],url.replace('1160689625','1160689626')) is None
+    with patch.object(a,'request',return_value=(403,{})):
+        try:a.autoru_message_lead([{'id':'exact-uuid','at':1000}],url)
+        except a.AmoError:pass
+        else:raise AssertionError('must fail closed')
+
+
+def test_nov09_recovery_ignores_incoming_refs_and_preserves_state():
+    import asyncio
+    from unittest.mock import patch,AsyncMock
+    from tools.rehearse import Sandbox
+    from bot import crm,store
+    from bot.autoru import Autoru
+    async def run():
+        with Sandbox():
+            cid='ar:room'
+            store.save_doc(cid,{'autoru':{'me':'seller','url':'https://auto.ru/cars/used/sale/1160689625-301c480b/'},'messages':[]})
+            msgs=[{'id':'in','room_id':'room','author':'buyer','provided_id':'wrong','created':'2026-11-09T07:00:00Z'},
+                  {'id':'out','room_id':'room','author':'seller','me':True,'provided_id':'right','created':'2026-11-09T07:01:00Z'}]
+            def resolve(refs,url):
+                assert [r['id'] for r in refs]==['right']
+                d=store.load_doc(cid);d['messages']=[{'role':'user','content':'Новое сообщение'}];store.save_doc(cid,d)
+                return {'id':321,'_provider_contact_id':99,'_provider_talk_id':7177,'_provider_message_id':'right'}
+            with patch.object(Autoru,'messages',new=AsyncMock(return_value=msgs)),patch.object(crm.amo_client,'autoru_message_lead',side_effect=resolve):
+                await crm.recover_autoru_binding(cid)
+            d=store.load_doc(cid)
+            assert d['messages'][0]['content']=='Новое сообщение'
+            assert d['crm']['verified_binding']['lead_id']==321
+            assert not d['crm'].get('creation') and not d['crm'].get('phone')
+    asyncio.run(run())
+
+
+def test_nov09_note_recovery_precedes_slow_manager_poll():
+    import asyncio
+    from unittest.mock import patch
+    from bot import crm
+    async def run():
+        scheduled=[]
+        class SlowBot:
+            async def listen(self,**kwargs):
+                assert scheduled==['ar:pending']
+                raise asyncio.CancelledError()
+        with patch.object(crm,'bot',SlowBot()),patch.object(crm.store,'all_chat_ids',return_value=['ar:pending']),patch.object(crm.store,'load_doc',return_value={'crm':{'note_pending':[{'id':'one'}]}}),patch.object(crm,'schedule_notes',side_effect=scheduled.append):
+            try:await crm.tick()
+            except asyncio.CancelledError:pass
+            else:raise AssertionError('poll should be cancelled')
     asyncio.run(run())

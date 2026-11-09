@@ -536,7 +536,15 @@ def _verified_marketplace_lead(snap: dict, doc: dict) -> dict | None:
     if (binding.get("version") == 1 and binding.get("chat_id") == room
             and binding.get("channel") == channel and binding.get("item_id") == item
             and binding.get("lead_id") and binding.get("contact_id")):
-        lead = amo_client.get_lead(int(binding["lead_id"]))
+        target_id = int(binding["lead_id"])
+        if binding.get("source") == "exact_outgoing_message_id":
+            code, talk = amo_client.request("/api/v4/talks/%s" % int(binding["talk_id"]))
+            if (code != 200 or talk.get("entity_type") != "lead"
+                    or talk.get("origin") != "amo.ext.31941682"
+                    or talk.get("contact_id") != binding["contact_id"]):
+                return None
+            target_id = int(talk["entity_id"])
+        lead = amo_client.get_lead(target_id)
         contacts = {int(c["id"]) for c in (lead.get("_embedded") or {}).get("contacts") or []}
         if (not lead.get("is_deleted") and lead.get("status_id") not in amo_client.CLOSED
                 and int(binding["contact_id"]) in contacts
@@ -887,13 +895,7 @@ def _ensure_lead_locked(snap: dict, doc: dict) -> dict:
     # ни принимать Неразобранное, включая медиа и отложенные передачи.
     if not phone_key(str(snap.get("phone") or "")):
         if snap.get("channel") in {"Авито", "Авто.ру"}:
-            widget = amo_client.find_widget_lead(
-                peer=snap.get("peer") or snap.get("name") or "",
-                car=snap.get("car") or "", channel=snap["channel"],
-                url=snap.get("url") or "", chat_id=str(snap.get("chat_id") or ""),
-                customer_id=(doc.get("autoru") or {}).get("customer_id", ""),
-                customer_names=(doc.get("autoru") or {}).get("customer_names", []),
-            )
+            widget = _verified_marketplace_lead(snap, doc)
             if widget:
                 snap["chat_url"] = amo_client.lead_url(int(widget["id"]))
         return snap
@@ -1550,6 +1552,104 @@ def note_text_equal(left: str, right: str) -> bool:
 
 _note_locks: dict[str, asyncio.Lock] = {}
 _note_tasks: dict[str, asyncio.Task] = {}
+_note_gate = asyncio.Semaphore(3)
+
+
+async def recover_autoru_binding(chat_id: str) -> None:
+    """Read-only provider/CRM proof; no sales creation or ownership changes."""
+    if not chat_id.startswith("ar:"):
+        return
+    doc = store.load_doc(chat_id)
+    state = doc.get("crm") or {}
+    source = doc.get("autoru") or {}
+    if not source.get("me") or not source.get("url"):
+        return
+    if state.get("verified_binding") or time.time() < state.get("binding_retry_at", 0):
+        return
+    doc.setdefault("crm", {})["binding_retry_at"] = time.time() + 300
+    store.save_doc(chat_id, doc)
+    from bot.autoru import Autoru
+    from bot.autoru_loop import created_of, is_out
+    api = Autoru()
+    try:
+        messages = await api.messages(chat_id[3:], count=100)
+    finally:
+        await api.close()
+    source = doc.get("autoru") or {}
+    refs = [{"id": str(m["provided_id"]), "at": created_of(m)} for m in messages
+            if m.get("provided_id") and m.get("room_id") == chat_id[3:]
+            and is_out(m, str(source.get("me") or ""))]
+    if not refs:
+        return
+    lead = await asyncio.to_thread(amo_client.autoru_message_lead, refs, source.get("url", ""))
+    if not lead:
+        return
+    current = store.load_doc(chat_id)
+    current.setdefault("crm", {})["verified_binding"] = {
+        "version": 1, "chat_id": chat_id, "channel": "Авто.ру",
+        "item_id": amo_client.listing_item_id(source.get("url", "")),
+        "lead_id": int(lead["id"]), "contact_id": lead["_provider_contact_id"],
+        "source": "exact_outgoing_message_id", "talk_id": lead["_provider_talk_id"],
+        "message_id": lead["_provider_message_id"],
+    }
+    store.save_doc(chat_id, current)
+
+
+async def refresh_bound_alert_link(chat_id: str) -> None:
+    doc = store.load_doc(chat_id)
+    phone = str((((doc.get("crm") or {}).get("alert") or {}).get("snap") or {}).get("phone") or "")
+    async with _alert_lock(chat_id, phone):
+        await _refresh_bound_alert_link_locked(chat_id)
+
+
+async def _refresh_bound_alert_link_locked(chat_id: str) -> None:
+    doc = store.load_doc(chat_id)
+    state = doc.get("crm") or {}
+    alert = state.get("alert") or {}
+    if not bot or not alert.get("tg") or not state.get("verified_binding"):
+        return
+    if alert.get("picked") not in (None, "", "button") or (not alert.get("active") and not alert.get("picked")):
+        return
+    if time.time() < state.get("link_check_at", 0):
+        return
+    doc.setdefault("crm", {})["link_check_at"] = time.time() + 300
+    store.save_doc(chat_id, doc)
+    source = doc.get("autoru") or doc.get("avito") or {}
+    snap = {"channel": "Авто.ру" if chat_id.startswith("ar:") else "Авито",
+            "chat_id": chat_id, "url": source.get("url", "")}
+    lead = await asyncio.to_thread(_verified_marketplace_lead, snap, doc)
+    if not lead:
+        return
+    url = amo_client.lead_url(int(lead["id"]))
+    # Re-read after network; never restore stale pickup/phone/history state.
+    current = store.load_doc(chat_id)
+    alert = current.setdefault("crm", {}).get("alert") or {}
+    inner = alert.setdefault("snap", {})
+    if inner.get("chat_url") == url and alert.get("link_published") == url:
+        return
+    inner["chat_url"] = url
+    tg = alert.get("tg") or {}
+    if not tg:
+        return
+    if alert.get("picked"):
+        who = _esc(alert.get("picked_by") or "Сотрудник")
+        when = _esc(str(alert.get("picked_at") or "")[11:16])
+        text = format_done(inner, "Взял <b>%s</b> в %s." % (who, when),
+            working_wait(alert.get("request_at") or alert.get("started_at") or "",
+                         alert.get("picked_at") or ""), taken=True)
+        markup = None
+    else:
+        text = format_alert(inner)
+        markup = take_keyboard(_ensure_token(alert), inner.get("wait") or WAIT_CHAT)
+    # Edit only: a missing historical post must not create another alert.
+    if await bot.edit(int(tg["chat_id"]), int(tg["message_id"]), text, markup,
+                      clear_markup=bool(alert.get("picked"))):
+        latest = store.load_doc(chat_id)
+        live = latest.setdefault("crm", {}).get("alert") or {}
+        if live.get("tg") == tg and live.get("picked") == alert.get("picked"):
+            live.setdefault("snap", {})["chat_url"] = url
+            live["link_published"] = url
+            store.save_doc(chat_id, latest)
 
 
 def schedule_notes(chat_id: str) -> None:
@@ -1570,8 +1670,14 @@ async def flush_notes(chat_id: str) -> None:
     lock = _note_locks.setdefault(chat_id, asyncio.Lock())
     if lock.locked():
         return
-    async with lock:
+    async with _note_gate, lock:
+        if (store.load_doc(chat_id).get("crm") or {}).get("note_pending"):
+            try:
+                await recover_autoru_binding(chat_id)
+            except Exception:
+                log.warning("чат %s: точная связь CRM ожидает повторной проверки", chat_id)
         await _flush_notes_locked(chat_id)
+        await refresh_bound_alert_link(chat_id)
 
 
 async def _flush_notes_locked(chat_id: str) -> None:
@@ -2172,20 +2278,22 @@ async def _tick_one(chat_id: str) -> None:
 
 
 async def tick() -> None:
-    if bot:
-        await bot.listen(timeout=25)
     chat_ids = store.all_chat_ids()
     queued = []
     for cid in chat_ids:
         state = store.load_doc(cid).get("crm") or {}
         alert = state.get("alert") or {}
+        # Queue recovery must not wait behind a slow claim or Telegram poll.
+        if state.get("note_pending") or (state.get("verified_binding") and alert.get("tg")):
+            schedule_notes(str(cid))
         if state.get("handoff_pending") or (ping_allowed(alert) and not alert.get("tg")):
             queued.append(cid)
+    if bot:
+        await bot.listen(timeout=25)
     # Передачи имеют приоритет над архивом примечаний: медленная amo по
     # старому диалогу не должна задерживать сегодняшнюю заявку.
     for chat_id in queued + [cid for cid in chat_ids if cid not in queued]:
         try:
             await _tick_one(str(chat_id))
-            await flush_notes(str(chat_id))
         except Exception:
             log.exception("алерт чат %s", chat_id)

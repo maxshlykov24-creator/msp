@@ -637,6 +637,62 @@ def provider_bound_lead(channel: str, chat_id: str, customer_id: str = "", url: 
     return next(iter(found.values())) if len(found) == 1 else None
 
 
+def autoru_message_lead(refs: list[dict], url: str) -> dict | None:
+    """Resolve an integration reply by its exact CRM message UUID, never by name.
+
+    Auto.ru echoes the CRM outgoing message ID as provided_id. Incoming
+    provided_id is NOT a CRM ID and must never be submitted by the caller.
+    Search all stages through events/talks, including merged/moved leads.
+    """
+    item = listing_item_id(url)
+    wanted = {str(r.get("id")): int(r.get("at") or 0) for r in refs
+              if r.get("id") and r.get("at")}
+    if not item or not wanted:
+        return None
+    matches = {}
+    for page in range(1, 21):
+        code, data = request("/api/v4/events", {
+            "filter[type]": "outgoing_chat_message",
+            "filter[created_at][from]": min(wanted.values()) - 120,
+            "filter[created_at][to]": max(wanted.values()) + 120,
+            "limit": 100, "page": page,
+        })
+        if code >= 400:
+            raise AmoError(code, "CRM message identity unavailable")
+        for event in items(data or {}, "events"):
+            if event.get("type") != "outgoing_chat_message" or event.get("entity_type") not in {"contact", "lead"}:
+                continue
+            for value in event.get("value_after") or []:
+                msg = value.get("message") or {}
+                if (str(msg.get("id")) not in wanted or msg.get("origin") != "amo.ext.31941682"
+                        or not msg.get("talk_id")):
+                    continue
+                code, talk = request("/api/v4/talks/%s" % int(msg["talk_id"]))
+                if code != 200:
+                    raise AmoError(code, "CRM talk identity unavailable")
+                contact = (event.get("entity_id") if event.get("entity_type") == "contact" else
+                           ((event.get("_embedded") or {}).get("entity") or {}).get("linked_talk_contact_id"))
+                if (talk.get("entity_type") != "lead" or talk.get("origin") != msg["origin"]
+                        or int(talk.get("contact_id") or 0) != int(contact or 0)):
+                    return None
+                if event.get("entity_type") == "lead" and int(event["entity_id"]) != int(talk["entity_id"]):
+                    return None  # A moved/merged event needs fresh reconciliation, not a guess.
+                lead = get_lead(int(talk["entity_id"]))
+                contacts = {int(c["id"]) for c in (lead.get("_embedded") or {}).get("contacts", [])}
+                if (lead.get("is_deleted") or lead.get("status_id") in CLOSED
+                        or lead.get("pipeline_id") not in {PIPELINE_TECH, PIPELINE_SALES}
+                        or talk["contact_id"] not in contacts
+                        or listing_item_id(lead_listing_url(lead)) != item):
+                    return None
+                lead["_provider_contact_id"] = int(talk["contact_id"])
+                lead["_provider_talk_id"] = int(msg["talk_id"])
+                lead["_provider_message_id"] = str(msg["id"])
+                matches[(lead["id"], talk["contact_id"], msg["talk_id"])] = lead
+        if not (data or {}).get("_links", {}).get("next"):
+            return next(iter(matches.values())) if len(matches) == 1 else None
+    raise AmoError(0, "CRM message identity pagination incomplete")
+
+
 def autoru_bound_lead(room_id: str, customer_id: str = "", url: str = "", customer_names: list[str] | None = None) -> int | None:
     # customer_names kept only for call compatibility; never used for matching.
     lead = provider_bound_lead("Авто.ру", room_id, customer_id, url)
