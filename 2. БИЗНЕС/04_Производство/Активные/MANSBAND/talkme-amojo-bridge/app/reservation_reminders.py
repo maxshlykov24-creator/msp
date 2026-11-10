@@ -435,6 +435,8 @@ async def worker(s: ReminderSettings):
 async def lifespan(_: FastAPI):
     from app import certificate_mail, stage_notifications
 
+    from app import campaign
+    Base.metadata.create_all(get_engine(), tables=campaign.TABLES)
     s = ReminderSettings()
     if s.mode == "live" and not s.live_ready():
         raise RuntimeError("Reminder live prerequisites are incomplete")
@@ -511,6 +513,8 @@ from app.certificate_mail import router as certificate_router
 app.include_router(certificate_router)
 from app.message_templates import router as template_router
 app.include_router(template_router)
+from app.campaign import router as campaign_router
+app.include_router(campaign_router)
 
 
 @app.get("/health")
@@ -574,6 +578,8 @@ async def webhook(secret: str, request: Request):
         record_outbound(db, body)
         from app.stage_notifications import record_messages
         record_messages(db, body)
+        from app.campaign import record_messages as campaign_messages
+        campaign_messages(db, body)
     except Exception as exc:
         db.rollback()
         log.error("Reminder event persistence failed: %s", type(exc).__name__)

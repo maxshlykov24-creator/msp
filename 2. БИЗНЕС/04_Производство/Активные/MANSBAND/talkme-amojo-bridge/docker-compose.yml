@@ -50,5 +50,19 @@ services:
         condition: service_healthy
     command: uvicorn app.reservation_reminders:app --host 0.0.0.0 --port 8080 --no-access-log
 
+  campaign:
+    image: talkme-amojo-bridge-reminders:latest
+    restart: unless-stopped
+    env_file:
+      - .env
+      - .env.reminders
+    environment:
+      DATABASE_URL: postgresql+psycopg2://bridge:bridge@db:5432/bridge
+      CAMPAIGN_ASSET_URL: https://ai-msp.ru/certificate-files/campaign-bc57fcda6de49e50e314.jpg
+    depends_on:
+      db:
+        condition: service_healthy
+    command: python -c "from app.campaign import run; run()"
+
 volumes:
   talkme_amojo_pg:
