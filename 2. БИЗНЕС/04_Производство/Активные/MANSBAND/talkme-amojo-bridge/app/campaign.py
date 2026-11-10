@@ -15,7 +15,7 @@ from datetime import datetime, timedelta, timezone, date
 from pathlib import Path
 from zoneinfo import ZoneInfo
 import httpx
-from sqlalchemy import Integer, String, JSON, DateTime, Boolean, UniqueConstraint, select, text
+from sqlalchemy import Integer, String, JSON, DateTime, Boolean, UniqueConstraint, select, text, func, case, or_
 from sqlalchemy.orm import Mapped, mapped_column
 from app.models import Base
 from app.database import get_engine, get_session_factory
@@ -778,24 +778,66 @@ class QueueCommand(BaseModel):
     recipient_id: int|None = None
 
 @router.get('/internal/templates/campaign/queue',dependencies=[Depends(admin)])
-def queue_status(state: str='', page: int=1):
-    if page<1 or page>1000:raise HTTPException(400)
+def queue_status(state: str='', page: int=1, segment: int=0, search: str=''):
+    if page<1 or page>1000 or segment not in range(7) or len(search)>100:raise HTTPException(400)
     with get_session_factory()() as db:
-        query=select(Recipient).where(Recipient.test==False,Recipient.segment.between(1,6))
-        if state=='buyers':query=query.where(Recipient.id.in_(select(Purchase.recipient_id)))
+        base=select(Recipient).where(Recipient.test==False,Recipient.segment.between(1,6))
+        query=base
+        if state=='buyers':
+            live_purchases=select(Purchase.recipient_id).where(or_(Purchase.evidence['active'].as_boolean()==True,Purchase.evidence['active'].as_boolean().is_(None)))
+            query=query.where(Recipient.id.in_(live_purchases))
         elif state=='replies':query=query.where(Recipient.replied_at.is_not(None))
+        elif state=='sent':query=query.where(Recipient.sent_at.is_not(None))
+        elif state=='excluded':query=query.where(Recipient.state.in_(['excluded','duplicate']))
+        elif state in ('interest','refusal','unsubscribe','review'):query=query.where(Recipient.classification==state)
         elif state:query=query.where(Recipient.state==state)
+        if segment:query=query.where(Recipient.segment==segment)
+        if search.strip():
+            term=search.strip().replace('\\','\\\\').replace('%','\\%').replace('_','\\_')
+            tests=[Recipient.snapshot['name'].as_string().ilike('%'+term+'%',escape='\\'),Recipient.snapshot['phone'].as_string().ilike('%'+term+'%',escape='\\')]
+            if search.strip().lstrip('#').isdigit():tests.append(Recipient.id==int(search.strip().lstrip('#')))
+            query=query.where(or_(*tests))
+        total=db.scalar(select(func.count()).select_from(query.subquery()))
         jobs=list(db.scalars(query.order_by(Recipient.segment,Recipient.id).offset((page-1)*50).limit(50)))
-        purchases=list(db.scalars(select(Purchase).where(Purchase.recipient_id.in_([j.id for j in jobs]))))
+        ids=[j.id for j in jobs]
+        attempted=set(db.scalars(select(Part.recipient_id).where(Part.recipient_id.in_(ids)))) if ids else set()
+        purchases=list(db.scalars(select(Purchase).where(Purchase.recipient_id.in_(ids)))) if ids else []
         by_recipient={}
         for p in purchases:
             if p.evidence.get('active',True):by_recipient.setdefault(p.recipient_id,[]).append({'id':p.id,'linked':p.linked,'net_kopecks':p.amount_kopecks-p.refund_kopecks,'document_id':p.evidence.get('document_id'),'at':p.at.isoformat()})
-        segment=active_segment(db)
+        current=active_segment(db)
         used,channels=daily_usage(db,now())
-        return {'mode':mode(db),'segment':segment,'day_budget':day_budget(db,segment,now()) if segment else 0,'today_started':used,
+        segments=[]
+        grouped=db.execute(select(Recipient.segment,func.count(),
+            func.sum(case((Recipient.sent_at.is_not(None),1),else_=0)),
+            func.sum(case((Recipient.state.in_(TERMINAL),1),else_=0)),
+            func.sum(case((Recipient.state=='attention',1),else_=0)),
+            func.sum(case((Recipient.snapshot['chat_history'].as_string()=='existing',1),else_=0)),
+            func.sum(case((Recipient.snapshot['enriched'].as_boolean()==True,1),else_=0)))
+            .where(Recipient.test==False,Recipient.segment.between(1,6)).group_by(Recipient.segment).order_by(Recipient.segment))
+        for n,count,sent,done,attention,existing,checked in grouped:
+            segments.append({'segment':n,'total':count,'sent':sent,'processed':done,'attention':attention,'existing':existing,'checked':checked})
+        ctl=db.get(Control,'production');halt=db.get(Control,'campaign-halt')
+        start=(ctl.data.get('start_day') if ctl else None)
+        local=now().astimezone(MSK)
+        day=max(local.date(),date.fromisoformat(start)) if start else local.date()
+        next_window=None
+        for offset in range(2):
+            for hour,end in ((10,11),(17,20)):
+                candidate=datetime.combine(day+timedelta(days=offset),datetime.min.time(),MSK)+timedelta(hours=hour)
+                if candidate.date()>date(2026,12,31):continue
+                if candidate+timedelta(hours=end-hour)>local:
+                    next_window=candidate.isoformat();break
+            if next_window:break
+        return {'mode':mode(db),'segment':current,'day_budget':day_budget(db,current,now()) if current else 0,'today_started':used,
+            'server_time':now().isoformat(),'start_day':start,'next_window':next_window,'offer_expired':local.date()>date(2026,12,31),
+            'halt_reason':halt.data.get('reason') if halt else None,'segments':segments,'total':total,'page_size':50,
             'channel_usage':channels,'channel_budgets':CHANNEL_BUDGETS,'purchase_sync_fresh':purchase_sync_fresh(db),
             'purchase_coverage':'Касса: оплаченные проведённые документы МойСклад. Продажи вне кассы требуют сверки.',
-            'items':[{'id':j.id,'segment':j.segment,'state':j.state,'reason':j.reason,'lead_id':j.lead_id,'contact_id':j.contact_id,'matched_contact_ids':j.snapshot.get('matched_contact_ids',[]),
+            'items':[{'id':j.id,'name':j.snapshot.get('name') or '',
+                'phone_tail':str(j.snapshot.get('phone') or '')[-4:],
+                'segment':j.segment,'state':j.state,'reason':j.reason,'lead_id':j.lead_id,'contact_id':j.contact_id,'matched_contact_ids':j.snapshot.get('matched_contact_ids',[]),
+                'can_exclude':j.id not in attempted,'can_classify':bool(j.replied_at),
                 'classification':j.classification,'chat_history':j.snapshot.get('chat_history','unverified'),'purchases':by_recipient.get(j.id,[]),
                 'sent_at':j.sent_at.isoformat() if j.sent_at else None,'replied_at':j.replied_at.isoformat() if j.replied_at else None} for j in jobs]}
 

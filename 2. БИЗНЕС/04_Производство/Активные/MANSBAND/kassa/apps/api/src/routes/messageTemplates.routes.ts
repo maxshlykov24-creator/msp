@@ -22,7 +22,7 @@ export default async function messageTemplatesRoutes(app: FastifyInstance) {
         if (!write && suffix.startsWith("/campaign/")) {
           const query = req.query as Record<string, string>;
           const allowed = new URLSearchParams();
-          for (const key of ["state", "page"]) if (typeof query[key] === "string") allowed.set(key, query[key]);
+          for (const key of ["state", "page", "segment", "search"]) if (typeof query[key] === "string") allowed.set(key, query[key]);
           if (allowed.size) path += "?" + allowed.toString();
         }
         const body = write ? { ...(req.body as Record<string, unknown> ?? {}), ...(suffix.startsWith("/check") ? {} : { actor: `${req.user.sub}: ${req.user.name}` }) } : undefined;
