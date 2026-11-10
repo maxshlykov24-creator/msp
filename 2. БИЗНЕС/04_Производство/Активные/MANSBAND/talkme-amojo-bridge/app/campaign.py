@@ -324,7 +324,8 @@ def dispatch(db,j,c,asset):
     if pace and now()<datetime.fromisoformat(pace.data['next']):return
     if not pace:pace=Control(id='pace' if j.test else 'production-pace',data={});db.add(pace)
     cap=day_budget(db,j.segment,now()) if not j.test else 50
-    minimum=max(300,14400//cap)
+    override=db.get(Control,'daily-plan-'+now().astimezone(MSK).date().isoformat()) if not j.test else None
+    minimum=int(override.data['minimum_gap_seconds']) if override and override.data.get('minimum_gap_seconds') else max(300,14400//cap)
     pace.data={'next':(now()+timedelta(seconds=minimum+secrets.randbelow(int(minimum*.4)+1))).isoformat()};db.commit()
     if not j.test:
         if not db.get(Control,f'segment-start-{j.segment}'):
@@ -543,6 +544,8 @@ def active_segment(db):
     return db.scalar(select(Recipient.segment).where(Recipient.test==False,~Recipient.state.in_(TERMINAL)).order_by(Recipient.segment).limit(1))
 
 def day_budget(db,segment,stamp):
+    override=db.get(Control,'daily-plan-'+stamp.astimezone(MSK).date().isoformat())
+    if override:return int(override.data['recipients'])
     row=db.get(Control,f'segment-start-{segment}')
     if not row:return 5 if segment==1 else 15
     elapsed=max(0,(stamp.astimezone(MSK).date()-date.fromisoformat(row.data['day'])).days)
