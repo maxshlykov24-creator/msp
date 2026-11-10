@@ -31,7 +31,9 @@ SUCCESS = {'sent','delivered','read'}
 def now(): return datetime.now(timezone.utc)
 def aware(x): return x.replace(tzinfo=timezone.utc) if x.tzinfo is None else x
 def campaign_windows(day):
-    return ((9,14),(17,18),(19,20)) if day.weekday()<5 else ((10,11),(17,20))
+    if day.weekday()<4:return ((9,14),(17,18),(19,20))
+    if day.weekday()==4:return ((10,14),(16,18))
+    return ((10,14),(17,19))
 
 def in_campaign_window(stamp, *, starting=False):
     local=stamp.astimezone(MSK)
