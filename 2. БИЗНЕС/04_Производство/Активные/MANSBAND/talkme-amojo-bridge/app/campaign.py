@@ -175,7 +175,7 @@ def record_messages(db,body):
         except (KeyError,ValueError): continue
         if stamp.tzinfo is None or stamp>now()+timedelta(minutes=5): continue
         matches=[]
-        for j in db.scalars(select(Recipient)):
+        for j in db.scalars(select(Recipient).where(Recipient.id.in_(select(Part.recipient_id).where(Part.kind=='text',Part.state.in_(['pending','sent','unknown']))))):
             started=db.scalar(select(Part).where(Part.recipient_id==j.id,Part.kind=='text',Part.state.in_(['pending','sent','unknown'])).order_by(Part.at))
             if not started or stamp<aware(started.at): continue
             for route in j.snapshot['routes']:
@@ -223,6 +223,7 @@ def send_part(db,j,c,position,kind,asset):
         sent=db.scalar(select(Part).where(Part.recipient_id==j.id,Part.position==position,Part.kind=='text',Part.state=='sent'))
         confirmation=db.get(Control,'confirmed-'+sent.crm_id) if sent else None
         if not confirmation or now()-datetime.fromisoformat(confirmation.data['at'])<timedelta(seconds=15):return 'halt'
+    if not channel_room(db,j,position,kind):return 'budget'
     route=j.snapshot['routes'][position]
     prior=db.scalar(select(Part).where(Part.recipient_id==j.id,Part.position==position,Part.kind==kind))
     if prior: return prior.state
@@ -260,14 +261,16 @@ def dispatch(db,j,c,asset):
     # Until production eligibility/automation audit is complete, fail closed.
     if db.get(Control,'campaign-halt'):return
     ctl=db.get(Control,'pilot')
-    if not j.test or not ctl or j.person not in ctl.data.get('allowlist',[]):return
+    if j.test:
+        if not ctl or j.person not in ctl.data.get('allowlist',[]):return
+    elif not production_enabled(db):return
     local=now().astimezone(MSK)
     if local.date()>date(2026,12,31):stop(db,j,'offer_expired');return
     if not (10<=local.hour<11 or 17<=local.hour<20):return
     if db.get(Control,'unsubscribe-'+j.person) or j.replied_at:
         j.state='reply_handoff';db.commit();return
     if not j.lead_id:stop(db,j,'missing_campaign_deal');return
-    pace=db.get(Control,'pace')
+    pace=db.get(Control,'pace' if j.test else 'production-pace')
     if j.state=='prepared' and pace and now()<datetime.fromisoformat(pace.data['next']):return
     owner=duty(now())
     lead=c.get(f'/api/v4/leads/{j.lead_id}')
@@ -281,10 +284,18 @@ def dispatch(db,j,c,asset):
         if aware(sent.at).astimezone(MSK).date()!=local.date():stop(db,j,'photo_next_day_forbidden');return
         send_part(db,j,c,sent.position,'photo',asset);return
     # Persisted variable gap, shared by all pilot recipients, no catch-up burst.
-    pace=db.get(Control,'pace')
+    pace=db.get(Control,'pace' if j.test else 'production-pace')
     if pace and now()<datetime.fromisoformat(pace.data['next']):return
-    if not pace:pace=Control(id='pace',data={});db.add(pace)
-    pace.data={'next':(now()+timedelta(seconds=300+secrets.randbelow(121))).isoformat()};db.commit()
+    if not pace:pace=Control(id='pace' if j.test else 'production-pace',data={});db.add(pace)
+    cap=day_budget(db,j.segment,now()) if not j.test else 50
+    minimum=max(300,14400//cap)
+    pace.data={'next':(now()+timedelta(seconds=minimum+secrets.randbelow(int(minimum*.4)+1))).isoformat()};db.commit()
+    if not j.test:
+        if not db.get(Control,f'segment-start-{j.segment}'):
+            db.add(Control(id=f'segment-start-{j.segment}',data={'day':local.date().isoformat()}));db.commit()
+        snapshot=dict(j.snapshot)
+        snapshot['text']=render(snapshot['template'],snapshot.get('name',''),j.segment,now(),neutral=j.id%3==0)
+        j.snapshot=snapshot;db.commit()
     for pos,route in enumerate(j.snapshot['routes']):
         if send_part(db,j,c,pos,'text',asset)!='absent':return
     stop(db,j,'all_recipients_absent')
@@ -360,6 +371,7 @@ def tick(asset):
                 c=Clients(db,ReminderSettings())
                 try:
                     reconcile(db);handle_replies(db,c);sync_reply_notes(db,c)
+                    production_tick(db,c,asset)
                     for j in db.scalars(select(Recipient).where(Recipient.state.in_(['prepared','photo_ready'])).order_by(Recipient.due_at)):
                         dispatch(db,j,c,asset)
                     local=now().astimezone(MSK)
@@ -377,7 +389,7 @@ def tick(asset):
                             f"Сегменты 1–6: {', '.join(str(total['segments'][str(n)]) for n in range(1,7))}.\n"
                             f"Диалоги: новых {total['chat_history']['new']}, существующих {total['chat_history']['existing']}, не проверено {total['chat_history']['unverified']}.\n"
                             f"{purchase_line}\nПроблемы: {total['attention']}. Тесты: {tests['complete']}/{tests['recipients']} комплектов.\n"
-                            'Далее: клиентский пилот после технической приёмки. Массовая очередь выключена.')
+                            f'Режим: {mode(db)}. Следующий сегмент: {active_segment(db)}.' )
                     heartbeat=db.get(Control,'heartbeat')
                     if not heartbeat:heartbeat=Control(id='heartbeat',data={});db.add(heartbeat)
                     heartbeat.data={'at':now().isoformat()};db.commit()
@@ -406,12 +418,12 @@ def campaign_health():
         heartbeat=db.get(Control,'heartbeat')
         stamp=datetime.fromisoformat(heartbeat.data['at']) if heartbeat else None
         fresh=bool(stamp and now()-stamp<timedelta(minutes=3))
-        return {'ok':fresh,'mode':'pilot_only','checked_at':stamp.isoformat() if stamp else None}
+        return {'ok':fresh,'mode':mode(db),'checked_at':stamp.isoformat() if stamp else None}
 
 @router.get('/internal/templates/campaign/stats',dependencies=[Depends(admin)])
 def campaign_stats(tests: bool=False):
     with get_session_factory()() as db:
-        return {'campaign':CAMPAIGN,'mode':'pilot_only','today':detailed_report(db,tests,now().astimezone(MSK).date()),'total':detailed_report(db,tests)}
+        return {'campaign':CAMPAIGN,'mode':mode(db),'today':detailed_report(db,tests,now().astimezone(MSK).date()),'total':detailed_report(db,tests)}
 
 @router.post('/internal/templates/campaign/recipients/{recipient_id}/classification',dependencies=[Depends(admin)])
 def change_classification(recipient_id: int,body: ClassificationChange):
@@ -445,3 +457,192 @@ def run():
                 for n in db.scalars(select(Notification).where(Notification.sent==False).limit(3)):
                     if telegram(n.body):n.sent=True;db.commit()
         time.sleep(10)
+
+# Production queue is imported without creating CRM deals or sending messages.
+# Every activation is explicit and bound to the audited source snapshot.
+CHANNEL_BUDGETS = {'telegram':40,'max':20,'whatsapp':40}
+TERMINAL = {'complete','reply_handoff','excluded','duplicate','unreachable'}
+
+class Identity(Base):
+    __tablename__='campaign_identity'
+    id: Mapped[str] = mapped_column(String(64),primary_key=True)
+    recipient_id: Mapped[int] = mapped_column(Integer,index=True)
+
+TABLES.append(Identity.__table__)
+
+def identity_key(kind,value):
+    return hashlib.sha256(f'{CAMPAIGN}:{kind}:{value}'.encode()).hexdigest()
+
+def claim_identities(db,j,contact,routes):
+    values={identity_key('phone',j.person),identity_key('contact',contact['id'])}
+    for f in contact.get('custom_fields_values') or []:
+        if f.get('field_code')=='PHONE':
+            values.update(identity_key('phone',key(v['value'])) for v in f.get('values') or [])
+    for r in routes:
+        for k,v in (r.get('recipient') or {}).items():
+            values.add(identity_key(r['transport']+':'+k,str(v)))
+    conflicts=[db.get(Identity,v) for v in values]
+    if any(x and x.recipient_id!=j.id for x in conflicts):
+        j.state,j.reason='duplicate','shared_crm_or_messenger_identity';db.commit();return False
+    for v,x in zip(values,conflicts):
+        if not x:db.add(Identity(id=v,recipient_id=j.id))
+    db.commit();return True
+
+def active_segment(db):
+    return db.scalar(select(Recipient.segment).where(Recipient.test==False,~Recipient.state.in_(TERMINAL)).order_by(Recipient.segment).limit(1))
+
+def day_budget(db,segment,stamp):
+    row=db.get(Control,f'segment-start-{segment}')
+    if not row:return 5 if segment==1 else 15
+    elapsed=max(0,(stamp.astimezone(MSK).date()-date.fromisoformat(row.data['day'])).days)
+    ramp=[5,10,15,25,25,25] if segment==1 else [15,15,15,25,25,25]
+    return ramp[elapsed] if elapsed<len(ramp) else 50
+
+def production_enabled(db):
+    row=db.get(Control,'production')
+    return bool(row and row.data.get('enabled') and row.data.get('audit_complete') and row.data.get('source_sha256'))
+
+def mode(db):return 'production' if production_enabled(db) else 'paused'
+
+def daily_usage(db,stamp):
+    start=datetime.combine(stamp.astimezone(MSK).date(),datetime.min.time(),MSK).astimezone(timezone.utc)
+    parts=list(db.scalars(select(Part).join(Recipient,Recipient.id==Part.recipient_id).where(Part.at>=start,Recipient.test==False)))
+    jobs={j.id:j for j in db.scalars(select(Recipient).where(Recipient.id.in_({p.recipient_id for p in parts})))} if parts else {}
+    channels={k:0 for k in CHANNEL_BUDGETS}
+    for p in parts:
+        r=jobs[p.recipient_id].snapshot['routes'][p.position]
+        channels[r['transport']]+=1
+    # Reserve a photo slot for all accepted or uncertain texts, including previous days.
+    for j in db.scalars(select(Recipient).where(Recipient.test==False,Recipient.state.in_(['pending','inflight','photo_ready']))):
+        ps=list(db.scalars(select(Part).where(Part.recipient_id==j.id)))
+        for p in ps:
+            if p.kind=='text' and p.state in {'sent','pending','inflight','unknown'} and not any(q.kind=='photo' for q in ps):
+                channels[j.snapshot['routes'][p.position]['transport']]+=1
+    return len({p.recipient_id for p in parts if p.kind=='text'}),channels
+
+def channel_room(db,j,pos,kind):
+    if j.test:return True
+    _,usage=daily_usage(db,now())
+    channel=j.snapshot['routes'][pos]['transport']
+    # The pending photo already owns its slot; text must reserve two slots.
+    return usage[channel]+(2 if kind=='text' else 0)<=CHANNEL_BUDGETS[channel]
+
+def queue_next(db):
+    segment=active_segment(db)
+    if not segment:return None
+    jobs=list(db.scalars(select(Recipient).where(Recipient.test==False,Recipient.segment==segment,Recipient.state=='queued')))
+    # Do not send until the entire active segment's history/identities are checked.
+    if any(not j.snapshot.get('enriched') for j in jobs):return None
+    return next(iter(sorted(jobs,key=lambda j:(-int(j.snapshot.get('last_incoming',0)),-int(j.snapshot.get('last_purchase',0)),j.id))),None)
+
+def enrich_one(db,c):
+    segment=active_segment(db)
+    if not segment:return
+    jobs=db.scalars(select(Recipient).where(Recipient.test==False,Recipient.segment==segment,Recipient.state=='queued').order_by(Recipient.id))
+    j=next((x for x in jobs if not x.snapshot.get('enriched')),None)
+    if not j:return
+    if not j.contact_id:
+        stop(db,j,'contact_missing_or_ambiguous');return
+    from app.stage_notifications import resolve_plan,StageSettings
+    from app.reservation_reminders import ReminderSettings
+    contact=c.get(f'/api/v4/contacts/{j.contact_id}')
+    phones={phone(v['value']) for f in contact.get('custom_fields_values') or [] if f.get('field_code')=='PHONE' for v in f.get('values') or []}
+    if j.person not in {key(p) for p in phones}:stop(db,j,'contact_phone_changed');return
+    class Capture:
+        def __init__(self):self.wz=c.wz;self.incoming=[];self.talks=[]
+        def get(self,path,**kwargs):
+            data=c.get(path,**kwargs)
+            if path=='/api/v4/events':self.incoming=data.get('_embedded',{}).get('events',[])
+            if path=='/api/v4/talks':self.talks=data.get('_embedded',{}).get('talks',[])
+            return data
+    capture=Capture()
+    routes=resolve_plan(db,capture,{},contact,StageSettings(),ReminderSettings(),routing={'order':['telegram','max','whatsapp'],'previous_first':True,'social_fallback':False})
+    routes=[r for r in routes if r.get('recipient') and r.get('channelId')]
+    if not routes:j.state,j.reason='unreachable','no_verified_destination';db.commit();return
+    if not claim_identities(db,j,contact,routes):return
+    latest=max((int(e.get('created_at',0)) for e in capture.incoming),default=0)
+    j.snapshot={**j.snapshot,'routes':routes,'last_incoming':latest,'chat_history':'existing' if latest else 'new','enriched':True,'checked_at':now().isoformat()};db.commit()
+
+def create_campaign_deal(db,j,c):
+    owner=duty(now())
+    users=c.get('/api/v4/users').get('_embedded',{}).get('users',[])
+    if not any(u['id']==owner and u.get('rights',{}).get('is_active') for u in users):raise ValueError('inactive_shift_owner')
+    # Claim before CRM mutation. Interrupted creation is never blindly retried.
+    j.state='crm_inflight';db.commit()
+    payload=[{'name':f'Рассылка от 10.11 · #{j.id}','pipeline_id':10730010,'status_id':89984117,'responsible_user_id':owner,
+        '_embedded':{'contacts':[{'id':j.contact_id,'is_main':True}],'tags':[{'name':CAMPAIGN},{'name':f'Сегмент {j.segment}'}]}}]
+    try:
+        r=c.amo.post('/api/v4/leads',json=payload);r.raise_for_status()
+        j.lead_id=int(r.json()['_embedded']['leads'][0]['id']);db.commit()
+        lead=c.get(f'/api/v4/leads/{j.lead_id}',**{'with':'contacts'})
+        if lead.get('pipeline_id')!=10730010 or lead.get('status_id')!=89984117 or lead.get('responsible_user_id')!=owner:raise ValueError('crm_readback_mismatch')
+        j.state='prepared';db.commit()
+    except Exception:
+        stop(db,j,'crm_creation_requires_reconciliation');raise
+
+def production_tick(db,c,asset):
+    # Enrichment is read-only with respect to CRM; available while paused.
+    enrich_one(db,c)
+    if not production_enabled(db) or db.get(Control,'campaign-halt'):return
+    local=now().astimezone(MSK)
+    if local.date()>date(2026,12,31):
+        notice(db,'offer-expired','MANSBAND · Очередь остановлена\nСрок исходных шаблонов закончился. Нужны новые утверждённые тексты и изображение.');return
+    if not (10<=local.hour<11 or 17<=local.hour<20):return
+    # No parallel bundle: finish or reconcile the current one first.
+    pending=db.scalar(select(Recipient.id).where(Recipient.test==False,Recipient.state.in_(['prepared','pending','inflight','photo_ready','crm_inflight','attention'])).limit(1))
+    if pending:return
+    j=queue_next(db)
+    if not j:return
+    ctl=db.get(Control,'production')
+    if local.date()<date.fromisoformat(ctl.data['start_day']):return
+    used,_=daily_usage(db,now())
+    cap=day_budget(db,j.segment,now())
+    if used>=cap:return
+    pace=db.get(Control,'production-pace')
+    if pace and now()<datetime.fromisoformat(pace.data['next']):return
+    # First customer pilot is existing conversations only.
+    if not db.get(Control,'segment-start-1') and j.segment==1 and j.snapshot['chat_history']!='existing':
+        notice(db,'no-warm-pilot','MANSBAND · Клиентский пилот на паузе\nВ первом сегменте не найден подтверждённый входящий диалог. Нужна проверка.');return
+    if not any(channel_room(db,j,pos,'text') for pos in range(len(j.snapshot['routes']))):return
+    create_campaign_deal(db,j,c)
+    dispatch(db,j,c,asset)
+
+class PurchaseBatch(BaseModel):
+    checked_at: datetime
+    records: list[dict]
+    source: Literal['kassa'] = 'kassa'
+
+@router.post('/internal/templates/campaign/purchases',dependencies=[Depends(admin)])
+def purchase_feed(body: PurchaseBatch):
+    if len(body.records)>10000 or body.checked_at.tzinfo is None:raise HTTPException(400)
+    with get_session_factory()() as db:
+        result=ingest_purchases(db,body.records)
+        row=db.get(Control,'purchase-sync-verified')
+        if not row:row=Control(id='purchase-sync-verified',data={});db.add(row)
+        row.data={'at':body.checked_at.isoformat(),'source':'kassa','coverage':'observed_kassa_documents','result':result};db.commit()
+        return result
+
+def ingest_purchases(db,records):
+    jobs=list(db.scalars(select(Recipient).where(Recipient.test==False,Recipient.sent_at.is_not(None))))
+    result={'linked':0,'observed':0,'ignored':0,'ambiguous':0}
+    for record in records:
+        if record.get('test') or not record.get('document_id') or not record.get('paid') or not record.get('posted') or record.get('cancelled'):
+            result['ignored']+=1;continue
+        try:
+            stamp=datetime.fromisoformat(record['at']);created=datetime.fromisoformat(record['order_created_at'])
+            amount=int(record['amount_kopecks']);refund=int(record.get('refund_kopecks',0))
+            if not stamp.tzinfo or not created.tzinfo or amount<=0 or refund<0 or refund>amount:raise ValueError()
+        except (KeyError,ValueError,TypeError):result['ignored']+=1;continue
+        person=record.get('person')
+        candidates=[j for j in jobs if (j.person==person or j.lead_id==record.get('amo_lead_id')) and aware(j.sent_at)<=stamp and aware(j.sent_at)<=created]
+        if len(candidates)!=1:
+            result['ambiguous' if candidates else 'ignored']+=1;continue
+        j=candidates[0];identity='kassa:'+str(record['document_id'])
+        linked=j.lead_id==record.get('amo_lead_id')
+        p=db.get(Purchase,identity)
+        if p and p.recipient_id!=j.id:result['ambiguous']+=1;continue
+        if not p:p=Purchase(id=identity,recipient_id=j.id,at=stamp);db.add(p)
+        p.amount_kopecks,p.refund_kopecks,p.linked=amount,refund,linked
+        p.evidence={k:record[k] for k in ('document_id','order_id','amo_lead_id','at','order_created_at','payment_ids') if k in record}
+        result['linked' if linked else 'observed']+=1
+    db.commit();return result
