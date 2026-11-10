@@ -800,3 +800,38 @@ assert billing.lines_of({"storage":0,"ship":assembly_row["pick"]}) == [{"name":"
 assert account.pick_rate_of(dict(policy_lot, pick_rate=999), policy_client) == 71
 assert account.pick_rate_known(policy_lot, policy_client)
 print('Ермолаева: без хранения и литража, сборка 71, другие UUID сохраняют прежние правила — OK')
+
+# An approved replaced receipt retains all issued invoice rows and stops old billing.
+os.environ['FF_DB']=os.path.join(tempfile.mkdtemp(),'replacement.db');db.init_db()
+aid=db.insert_client('A','A','A','ORG','S');bid=db.insert_client('B','B','B','ORG','S')
+s=ledger_fixture();groups=[['A','B']];accept.apply_plan(s,accept.build_plan(s,groups),groups)
+rl=next(x for x in db.list_lots() if x['ledger_kind']=='receipt');calc=account.row_of(rl,date_to=account.as_day('2026-09-12'))
+iid=db.save_invoice_snapshot(aid,{'id':'REPLACE-INV','name':'R-1'},{'storage':6,'intake':0,'ship':0,'total':6},[(rl,calc)],'2026-09-11','2026-09-12','test','2026-09-12')
+rl=dict(db.get_lot(rl['id']));original=billing.invoice_data(iid)
+with db.connect() as c:financial={t:[dict(r) for r in c.execute('select * from '+t)] for t in ['invoices','invoice_lots']}
+replacement=ledger_fixture();replacement['documents'][0]['id']='IN2';replacement['documents'][0]['positions'][0]['qty']=12;replacement['stock']['P']=8
+rp=accept.build_plan(replacement,groups);key='ms:supply:IN2:I1';new=rp['lots'][key]
+try:accept.apply_plan(replacement,rp,groups);raise AssertionError('unapproved replacement accepted')
+except ValueError:pass
+rule={'mode':'retire_replaced_receipt','lot':{k:rl.get(k) for k in accept.CORRECTION_FIELDS},'replacement':{k:new.get(k) for k in ('source_key','party','ms_store_id','ms_product_id','accepted_at','qty_in','ledger_kind','storage_from')},'before':[['2026-09-12T12:00:00','ship',4]],'reason':'explicit owner approval','source_sha256':'a'*64}
+db.set_setting('ledger:closed_corrections',json.dumps({rl['source_key']:rule}))
+with db.connect() as c:
+ v=dict(new);v.pop('party');v.update(client_id=aid,billed_until='2026-09-12',source_active=1);cols=list(v)
+ lid=c.execute('INSERT INTO lots('+','.join(cols)+') VALUES ('+','.join('?' for _ in cols)+')',[v[x] for x in cols]).lastrowid
+ for mk,m in rp['moves'].items():
+  if m['lot_key']!=key:continue
+  z=dict(m);z.pop('lot_key');z.update(lot_id=lid,source_key=mk,source_active=1);cols=list(z);c.execute('INSERT INTO lot_moves('+','.join(cols)+') VALUES ('+','.join('?' for _ in cols)+')',[z[x] for x in cols])
+accept.apply_plan(replacement,rp,groups);accept.apply_plan(replacement,rp,groups)
+assert not db.get_lot(rl['id'])['source_active']
+assert db.get_lot(rl['id'])['qty_in']==10 and db.get_lot(rl['id'])['billed_until']=='2026-09-12'
+assert billing.invoice_data(iid)==original
+assert account.row_of(db.get_lot(lid),date_to=account.as_day('2026-09-13'))['storage']==2.4
+with db.connect() as c:
+ for t in financial:assert [dict(r) for r in c.execute('select * from '+t)]==financial[t]
+changed=ledger_fixture();changed['documents'][0]['id']='IN2';changed['documents'][0]['positions'][0]['qty']=13;changed['stock']['P']=9
+try:accept.apply_plan(changed,accept.build_plan(changed,groups),groups);raise AssertionError('changed replacement accepted')
+except ValueError:pass
+reappeared=ledger_fixture();reappeared['documents']+=replacement['documents'][:1];reappeared['stock']['P']=18
+try:accept.apply_plan(reappeared,accept.build_plan(reappeared,groups),groups);raise AssertionError('retired receipt reappeared')
+except ValueError:pass
+print('receipt replacement: exact approval, archived source, immutable invoice, repeated sync and mutation guards OK')

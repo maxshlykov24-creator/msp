@@ -447,6 +447,30 @@ def approved_closed_correction(old, before, after, rule, *, retired=False, invoi
             and before == rule.get('before') and after == rule.get('after'))
 
 
+def approved_receipt_replacement(old, before, rule, plan, clients):
+    """Archive an exactly approved replaced receipt, retaining its invoice history."""
+    if not isinstance(rule, dict) or rule.get('mode') != 'retire_replaced_receipt':
+        return False
+    if not rule.get('reason') or len(rule.get('source_sha256', '')) != 64:
+        return False
+    if rule.get('lot') != {k: old.get(k) for k in CORRECTION_FIELDS}:
+        return False
+    expected = rule.get('replacement') or {}
+    new = plan['lots'].get(expected.get('source_key'))
+    fields = ('source_key', 'party', 'ms_store_id', 'ms_product_id',
+              'accepted_at', 'qty_in', 'ledger_kind', 'storage_from')
+    if not new or expected != {k: new.get(k) for k in fields}:
+        return False
+    return (old['ledger_kind'] == new['ledger_kind'] == 'receipt'
+            and old['source_key'] != new['source_key']
+            and old['client_id'] == clients.get(new['party'])
+            and old['ms_product_id'] == new['ms_product_id']
+            and old['ms_store_id'] == new['ms_store_id']
+            and old['accepted_at'][:10] == new['accepted_at'][:10]
+            and ([list(x) for x in before] == rule.get('before')
+                 if old['source_active'] else not before))
+
+
 def apply_plan(snapshot, plan, groups, scope_parties=None):
     """Атомарная замена активного представления; старые партии/счета сохраняются."""
     now = stamp()
@@ -484,6 +508,10 @@ def apply_plan(snapshot, plan, groups, scope_parties=None):
                     continue
                 new = plan['lots'].get(key)
                 before = sorted((m['created_at'],m['kind'],m['qty']) for m in old_moves[key] if m['created_at'][:10] <= closed)
+                if new and (corrections.get(key) or {}).get('mode') == 'retire_replaced_receipt':
+                    raise ValueError('Повторно проведена согласованно заменённая приёмка партии %s. Нужна сверка.' % old['id'])
+                if not new and approved_receipt_replacement(old, before, corrections.get(key), plan, clients):
+                    continue
                 if not new and approved_closed_correction(
                         old, before, [], corrections.get(key), retired=True,
                         invoiced=bool(conn.execute('SELECT 1 FROM invoice_lots WHERE lot_id=? LIMIT 1', (old['id'],)).fetchone())):
