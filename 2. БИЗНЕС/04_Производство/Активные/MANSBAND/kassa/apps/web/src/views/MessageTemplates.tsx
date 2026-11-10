@@ -39,6 +39,7 @@ function TemplateSelect({ value, onChange, children, disabled, "aria-label": ari
 export function MessageTemplates() {
   const { user } = useAuth();
   const editable = user?.role === "admin";
+  const [campaignOpen, setCampaignOpen] = useState(false);
   const [tab, setTab] = useState<"rule" | "manual" | "routing">("rule");
   const [docs, setDocs] = useState<Doc[]>([]);
   const [catalog, setCatalog] = useState<{ fields: Field[]; pipelines: Pipeline[] }>({ fields: [], pipelines: [] });
@@ -187,8 +188,9 @@ export function MessageTemplates() {
   });
   const filtersActive = Boolean(pipelineFilter || stageFilter || stateFilter || triggerFilter || search);
 
+  if (campaignOpen) return <CampaignPanel editable={editable} back={() => setCampaignOpen(false)} />;
   return <div className="space-y-5 text-white">
-    <div className="flex flex-wrap items-center justify-between gap-3"><h1 className="text-2xl font-extrabold">Шаблоны сообщений</h1><button className={button} disabled={busy} onClick={() => void action(async () => { await refresh(); setJournal((await api.get<{ items: Journal[] }>(root + "/journal")).items); setRemote((await api.get<{ items: Remote[] }>(root + "/manual")).items); })}>Обновить</button></div>
+    <div className="flex flex-wrap items-center justify-between gap-3"><h1 className="text-2xl font-extrabold">Шаблоны сообщений</h1><button className={button} disabled={dirty} onClick={() => setCampaignOpen(true)}>Рассылка от 10.11</button><button className={button} disabled={busy} onClick={() => void action(async () => { await refresh(); setJournal((await api.get<{ items: Journal[] }>(root + "/journal")).items); setRemote((await api.get<{ items: Remote[] }>(root + "/manual")).items); })}>Обновить</button></div>
     <div className="flex flex-wrap gap-2">{([ ["rule", "Автоматические"], ["manual", "Ручные"], ["routing", "Порядок отправки"] ] as const).map(([key, label]) => <button key={key} className={`${button} ${tab === key ? "bg-gold/20 text-gold-soft" : ""}`} onClick={() => switchTab(key)}>{label}</button>)}</div>
     {!editable && <p className="text-mute">Просмотр. Изменять настройки может только администратор.</p>}
     {tab !== "manual" && executor !== "live" && <div className="rounded-xl border border-amber-600 p-3 text-amber-200">Сохранённые версии пока не подключены к отправке. Можно подготовить и проверить изменения; для применения требуется подключить управление рассылкой.</div>}
@@ -270,5 +272,32 @@ export function MessageTemplates() {
               await api.post(root+"/gift/retry-pdf/"+j.gift_lead_id,{confirmed:true});setNotice("Досылка PDF поставлена в очередь.");setJournal((await api.get<{items:Journal[]}>(root+"/journal")).items);
             })}>Дослать PDF</button>}{!j.attempts.length && <p>Попыток отправки пока нет.</p>}{j.attempts.map((a, i) => <p key={i}>{channelNames[a.channel as Channel] ?? a.channel}: {a.state} {a.reason}</p>)}</div></details>)}</div>}
     </section>}
+  </div>;
+}
+
+type CampaignItem = {id:number;segment:number;state:string;reason:string;lead_id:number;contact_id:number;classification:string;purchases?:{id:string;linked:boolean;net_kopecks:number;document_id:string}[]};
+type CampaignQueue = {mode:string;segment:number|null;day_budget:number;today_started:number;purchase_sync_fresh:boolean;purchase_coverage:string;items:CampaignItem[]};
+type CampaignStats = {total:{text_sent:number;complete:number;replied:number;responses:Record<string,number>;observed_purchases:number;linked_purchases:number;net_kopecks:number}};
+const campaignCategories:Record<string,string>={interest:"Интерес",refusal:"Отказ",unsubscribe:"Отписка",review:"Требует разбора"};
+const campaignStates:Record<string,string>={queued:"В очереди",prepared:"Подготовлен",complete:"Отправлено",attention:"Нужна проверка",excluded:"Исключён",duplicate:"Дубликат",unreachable:"Нет адресата",pending:"Ждём подтверждения",photo_ready:"Ожидает фото",reply_handoff:"Передан менеджеру",crm_inflight:"Проверка CRM"};
+function CampaignPanel({editable,back}:{editable:boolean;back:()=>void}) {
+  const [queue,setQueue]=useState<CampaignQueue|null>(null),[stats,setStats]=useState<CampaignStats|null>(null);
+  const [filter,setFilter]=useState("attention"),[page,setPage]=useState(1);
+  const [busy,setBusy]=useState(false),[error,setError]=useState("");
+  const [reason,setReason]=useState(""),[selected,setSelected]=useState<CampaignItem|null>(null),[category,setCategory]=useState("review");
+  const load=async()=>{const [q,s]=await Promise.all([api.get<CampaignQueue>(root+"/campaign/queue?state="+encodeURIComponent(filter)+"&page="+page),api.get<CampaignStats>(root+"/campaign/stats")]);setQueue(q);setStats(s);};
+  const run=async(fn:()=>Promise<unknown>)=>{setBusy(true);setError("");try{await fn();}catch(e){setError(e instanceof Error?e.message:"Ошибка запроса");}finally{setBusy(false);}};
+  useEffect(()=>{void run(load);},[filter,page]);
+  const control=(action:string,recipient_id?:number)=>void run(async()=>{await api.post(root+"/campaign/control",{action,reason,recipient_id});setReason("");setSelected(null);await load();});
+  const t=stats?.total;
+  return <div className="space-y-5 text-white">
+    <div className="flex flex-wrap gap-3 items-center"><button className={button} onClick={back}>К шаблонам</button><h1 className="text-2xl font-extrabold">Рассылка от 10.11</h1><button className={button} disabled={busy} onClick={()=>void run(load)}>Обновить</button></div>
+    {error&&<p role="alert" className="rounded-xl border border-red-500 p-3">{error}</p>}
+    <p>{queue?.mode==="production"?"Очередь включена":"Отправка на паузе"}. Окна МСК: 10:00–11:00 и 17:00–20:00. Срок шаблонов до 31.12.2026.</p>
+    {queue&&<p>Сегмент: {queue.segment??"завершено"}. Сегодня начато {queue.today_started} из {queue.day_budget} получателей максимум. Пропущенные слоты не догоняются.</p>}
+    {t&&<div className="card p-4 space-y-2"><p>Текст: {t.text_sent}. Полный комплект: {t.complete}. Ответили: {t.replied}.</p><p>{Object.entries(t.responses).map(([k,v])=>`${campaignCategories[k]??k}: ${v}`).join(" · ")}</p><p>Покупок после рассылки: {t.observed_purchases}. Связаны со сделкой рассылки: {t.linked_purchases}. За вычетом возвратов: {(t.net_kopecks/100).toLocaleString("ru-RU")} ₽.</p><p className="text-sm text-mute">{queue?.purchase_coverage} Тесты исключены.</p>{queue&&!queue.purchase_sync_fresh&&<p className="text-amber-200">Сверка покупок устарела или не выполнена. Это не подтверждение нулевой конверсии.</p>}</div>}
+    <div className="flex flex-wrap gap-3"><Select ariaLabel="Список получателей рассылки" value={filter} onChange={v=>{setFilter(v);setPage(1);setSelected(null);}} options={[{value:"attention",label:"Нужна проверка"},{value:"replies",label:"Ответившие"},{value:"buyers",label:"Покупатели после рассылки"},{value:"queued",label:"Очередь"},{value:"complete",label:"Отправленные"},{value:"excluded",label:"Исключённые"},{value:"",label:"Все"}]}/><button className={button} disabled={busy||page===1} onClick={()=>setPage(page-1)}>Назад</button><span>Страница {page}</span><button className={button} disabled={busy||!queue||queue.items.length<50} onClick={()=>setPage(page+1)}>Дальше</button></div>
+    <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr><th>Получатель</th><th>Сегмент</th><th>Состояние</th><th>Ответ и покупки</th><th>CRM</th><th></th></tr></thead><tbody>{queue?.items.map(j=><tr key={j.id} className="border-t border-ink-600"><td className="p-2">#{j.id}</td><td>{j.segment}</td><td>{campaignStates[j.state]??j.state}<span className="block text-xs text-mute">{j.reason}</span></td><td>{campaignCategories[j.classification]??"Нет ответа"}{j.purchases?.map(p=><a key={p.id} className="block underline" href={`https://online.moysklad.ru/app/#demand/edit?id=${p.document_id}`} target="_blank" rel="noreferrer">{(p.net_kopecks/100).toLocaleString("ru-RU")} ₽ · {p.linked?"связана с рассылкой":"после рассылки"}</a>)}</td><td>{j.lead_id?<a className="underline" href={`https://mansband.amocrm.ru/leads/detail/${j.lead_id}`} target="_blank" rel="noreferrer">Сделка</a>:j.contact_id?<a className="underline" href={`https://mansband.amocrm.ru/contacts/detail/${j.contact_id}`} target="_blank" rel="noreferrer">Контакт</a>:"Не создан"}</td><td>{editable&&<button className={button} onClick={()=>{setSelected(j);setCategory(j.classification||"review");setReason("");}}>Разобрать</button>}</td></tr>)}</tbody></table>{queue&&!queue.items.length&&<p className="p-4 text-mute">Нет получателей в этом списке.</p>}</div>
+    {editable&&<div className="card space-y-3 p-4"><h2 className="font-bold">{selected?`Получатель #${selected.id}`:"Управление очередью"}</h2><textarea className={input} value={reason} maxLength={500} onChange={e=>setReason(e.target.value)} placeholder="Причина изменения для журнала" aria-label="Причина изменения"/>{selected?<><Select ariaLabel="Категория ответа" value={category} onChange={setCategory} options={Object.entries(campaignCategories).map(([value,label])=>({value,label}))}/><div className="flex flex-wrap gap-3"><button className={button} disabled={busy||!reason.trim()} onClick={()=>void run(async()=>{await api.post(root+`/campaign/recipients/${selected.id}/classification`,{category,reason});setSelected(null);setReason("");await load();})}>Сохранить категорию</button><button className={button} disabled={busy||!reason.trim()} onClick={()=>control("exclude",selected.id)}>Исключить из очереди</button><button className={button} onClick={()=>setSelected(null)}>Закрыть</button></div></>:<div className="flex flex-wrap gap-3"><button className={button} disabled={busy||!reason.trim()} onClick={()=>control("pause")}>Поставить на паузу</button><button className={button} disabled={busy||!reason.trim()||queue?.mode==="production"} onClick={()=>control("resume")}>Продолжить по плану</button></div>}<p className="text-sm text-mute">Отписку нельзя отменить здесь. Неопределённую отправку нельзя повторить кнопкой. Все решения сохраняются.</p></div>}
   </div>;
 }

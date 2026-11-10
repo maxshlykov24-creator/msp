@@ -46,4 +46,58 @@ def prepare(data):
             m.notice(db,'pilot-start','MANSBAND · Тест рассылки\nПолучатели: Максим, Нина, Полина.\nТекст из согласованных шаблонов, затем фото.\nОдин канал на человека. Массовая очередь выключена.\nРезультат проверим по статусам доставки.')
         finally:c.close()
 
-if __name__=='__main__':prepare(json.load(sys.stdin))
+
+
+
+def import_audience(data):
+    """Idempotent import. CSV is authoritative; CRM scan is read-only."""
+    import time
+    if data.get('campaign')!=m.CAMPAIGN:raise ValueError('campaign_mismatch')
+    templates={int(k):v for k,v in data['templates'].items()}
+    if set(templates)!=set(range(1,16)):raise ValueError('templates_missing')
+    rows=data['recipients']
+    if len({m.key(x['phone']) for x in rows})!=len(rows):raise ValueError('duplicate_phone_in_source')
+    m.init()
+    with get_session_factory()() as db:
+        c=Clients(db,ReminderSettings())
+        try:
+            expected={m.key(x['phone']) for x in rows}
+            matches={k:[] for k in expected}
+            # Entire CRM index avoids substring queries and sees shared phones.
+            page=1
+            while True:
+                contacts=c.get('/api/v4/contacts',limit=250,page=page).get('_embedded',{}).get('contacts',[])
+                for contact in contacts:
+                    keys={m.key(v['value']) for f in contact.get('custom_fields_values') or [] if f.get('field_code')=='PHONE' for v in f.get('values') or []}
+                    for k in keys & expected:matches[k].append(contact['id'])
+                if len(contacts)<250:break
+                page+=1
+                if page>5000:raise ValueError('contact_scan_limit')
+                time.sleep(.3)
+            existing={j.person:j for j in db.scalars(select(m.Recipient).where(m.Recipient.campaign==m.CAMPAIGN))}
+            counts={'queued':0,'ambiguous':0,'missing':0,'existing':0,'excluded':0}
+            for index,row in enumerate(sorted(rows,key=lambda r:(r['segment'],r.get('row',0)))):
+                person=m.key(row['phone'])
+                if person in existing:counts['existing']+=1;continue
+                segment=int(row['segment']);ids=matches[person]
+                variant=index%15+1
+                state='queued' if 1<=segment<=6 else 'excluded'
+                reason='' if state=='queued' else 'excluded_by_source'
+                if state=='queued' and len(ids)!=1:
+                    state='attention' if ids else 'queued';reason='ambiguous_crm_contacts' if ids else ''
+                    counts['ambiguous' if ids else 'missing']+=1
+                elif state=='queued':counts['queued']+=1
+                else:counts['excluded']+=1
+                j=m.Recipient(person=person,contact_id=ids[0] if len(ids)==1 else 0,segment=segment,test=False,state=state,reason=reason,
+                    snapshot={'name':row['name'],'phone':m.phone(row['phone']),'template':templates[variant],'variant':variant,'routes':[],
+                    'source_sha256':data['source_sha256'],'template_sha256':data['template_sha256'],'asset_sha256':m.ASSET_SHA256,
+                    'last_purchase':row.get('last_purchase',0),'source_row':row.get('row',0),'matched_contact_ids':ids})
+                db.add(j)
+            ctl=db.get(m.Control,'audience-import')
+            if not ctl:ctl=m.Control(id='audience-import',data={});db.add(ctl)
+            ctl.data={'source_sha256':data['source_sha256'],'counts':counts,'at':m.now().isoformat()}
+            db.commit();print(json.dumps(counts))
+        finally:c.close()
+
+if __name__=='__main__':
+    (import_audience if '--audience' in sys.argv else prepare)(json.load(sys.stdin))
