@@ -229,3 +229,30 @@ def test_new_contact_uses_configured_channel_with_old_blocked_account(db,monkeyp
     assert j.snapshot['routes'][0]['channelId']=='current'
     assert j.snapshot['routes'][0]['transport']=='telegram'
     assert not c.wz.posts
+
+def test_queue_overview_filters_search_and_safe_actions(db,monkeypatch):
+    j=job(db);j.test=False;j.state='queued';j.contact_id=0
+    j.snapshot={**j.snapshot,'name':'Проверка','phone':'79000000001','enriched':True,'chat_history':'existing'}
+    db.add(m.Recipient(person=m.key('79000000002'),test=False,segment=2,state='attention',reason='ambiguous_crm_contacts',snapshot={'name':'Другой','matched_contact_ids':[12,34]}))
+    db.add(m.Control(id='production',data={'enabled':True,'audit_complete':True,'source_sha256':'source','start_day':'2026-11-11'}));db.commit()
+    monkeypatch.setattr(m,'get_session_factory',lambda:lambda:db)
+    monkeypatch.setattr(m,'now',lambda:datetime(2026,11,10,18,tzinfo=timezone.utc))
+    result=m.queue_status(segment=1,search='Проверка')
+    assert result['total']==1 and result['items'][0]['name']=='Проверка'
+    assert result['items'][0]['phone_tail']=='0001' and 'phone' not in result['items'][0]
+    assert result['items'][0]['can_exclude'] and not result['items'][0]['can_classify']
+    assert result['segments'][0]['existing']==1 and result['segments'][1]['attention']==1
+    assert result['start_day']=='2026-11-11' and result['next_window']=='2026-11-11T10:00:00+03:00'
+
+def test_queue_sent_includes_replied_and_cannot_exclude_attempted(db,monkeypatch):
+    j=job(db);j.test=False;j.state='reply_handoff';j.sent_at=m.now();j.replied_at=m.now()
+    db.add(m.Part(recipient_id=j.id,position=0,kind='text',state='sent',crm_id='queue-attempt'));db.commit()
+    monkeypatch.setattr(m,'get_session_factory',lambda:lambda:db)
+    result=m.queue_status(state='sent')
+    assert result['total']==1 and not result['items'][0]['can_exclude'] and result['items'][0]['can_classify']
+
+def test_queue_buyers_excludes_invalidated_purchases(db,monkeypatch):
+    j=job(db);j.test=False
+    db.add(m.Purchase(id='kassa:invalid',recipient_id=j.id,at=m.now(),amount_kopecks=500,refund_kopecks=0,linked=True,evidence={'active':False}));db.commit()
+    monkeypatch.setattr(m,'get_session_factory',lambda:lambda:db)
+    assert m.queue_status(state='buyers')['total']==0

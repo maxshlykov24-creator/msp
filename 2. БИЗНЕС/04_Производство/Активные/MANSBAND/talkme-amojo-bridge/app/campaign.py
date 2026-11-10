@@ -788,6 +788,7 @@ def queue_status(state: str='', page: int=1, segment: int=0, search: str=''):
             query=query.where(Recipient.id.in_(live_purchases))
         elif state=='replies':query=query.where(Recipient.replied_at.is_not(None))
         elif state=='sent':query=query.where(Recipient.sent_at.is_not(None))
+        elif state=='delivered':query=query.where(Recipient.sent_at.is_not(None),Recipient.id.in_(select(Part.recipient_id).where(Part.kind=='photo',Part.state=='sent')))
         elif state=='excluded':query=query.where(Recipient.state.in_(['excluded','duplicate']))
         elif state in ('interest','refusal','unsubscribe','review'):query=query.where(Recipient.classification==state)
         elif state:query=query.where(Recipient.state==state)
