@@ -20,7 +20,7 @@ def prepare(data):
             users=c.get('/api/v4/users').get('_embedded',{}).get('users',[])
             if not any(u['id']==owner and u.get('rights',{}).get('is_active') for u in users):raise ValueError('inactive_shift_owner')
             status=c.get('/api/v4/leads/pipelines/10730010/statuses/89984117')
-            if status.get('name')!='Рассылка от 10.11':raise ValueError('stage_changed')
+            if status.get('name')!='Рассылка от 11.11':raise ValueError('stage_changed')
             for source in data['recipients']:
                 person=m.key(source['phone'])
                 j=db.scalar(select(m.Recipient).where(m.Recipient.campaign==m.CAMPAIGN,m.Recipient.person==person))
@@ -34,7 +34,7 @@ def prepare(data):
                 j=m.Recipient(person=person,segment=1,test=True,contact_id=contact['id'],state='crm_inflight',snapshot={'text':source['text'],'variant':source['variant'],'source_sha256':data['source_sha256'],'asset_sha256':m.ASSET_SHA256,'routes':routes,'shift_owner':owner,'approved_at':m.now().isoformat()})
                 db.add(j);db.commit()
                 # No retry: on unknown creation result the durable claim requires manual lookup.
-                payload=[{'name':f'ТЕСТ · Рассылка от 10.11 · {source["name"]}', 'pipeline_id':10730010,'status_id':89984117,'responsible_user_id':owner,'_embedded':{'contacts':[{'id':contact['id'],'is_main':True}],'tags':[{'name':'ТЕСТ рассылки'},{'name':m.CAMPAIGN}]}}]
+                payload=[{'name':f'ТЕСТ · Рассылка от 11.11 · {source["name"]}', 'pipeline_id':10730010,'status_id':89984117,'responsible_user_id':owner,'_embedded':{'contacts':[{'id':contact['id'],'is_main':True}],'tags':[{'name':'ТЕСТ рассылки'},{'name':m.CAMPAIGN}]}}]
                 response=c.amo.post('/api/v4/leads',json=payload);response.raise_for_status()
                 j.lead_id=response.json()['_embedded']['leads'][0]['id'];j.state='prepared';db.commit()
                 lead=c.get('/api/v4/leads/'+str(j.lead_id))

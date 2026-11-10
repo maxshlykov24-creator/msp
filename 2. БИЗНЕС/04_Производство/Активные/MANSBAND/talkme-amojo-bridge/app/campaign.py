@@ -167,7 +167,7 @@ def notice(db, identity, body):
 
 def stop(db,j,reason):
     j.state,j.reason='attention',reason[:100];db.commit()
-    notice(db,f'contact-{j.id}-{reason}'[:100],f'MANSBAND · Рассылка от 10.11\nТребует проверки: {reason}\nОтправка контакту остановлена.\nДействие: проверить результат, не повторять вслепую.\nhttps://mansband.amocrm.ru/leads/detail/{j.lead_id}\n{now().astimezone(MSK):%d.%m %H:%M} МСК')
+    notice(db,f'contact-{j.id}-{reason}'[:100],f'MANSBAND · Рассылка от 11.11\nТребует проверки: {reason}\nОтправка контакту остановлена.\nДействие: проверить результат, не повторять вслепую.\nhttps://mansband.amocrm.ru/leads/detail/{j.lead_id}\n{now().astimezone(MSK):%d.%m %H:%M} МСК')
 
 def record_messages(db,body):
     for msg in body.get('messages') or []:
@@ -405,7 +405,7 @@ def sync_reply_notes(db,c):
         labels={'interest':'Интерес','refusal':'Отказ','unsubscribe':'Отписка','review':'Требует разбора'}
         db.add(Control(id=identity,data={'state':'claimed','at':now().isoformat()}));db.commit()
         try:
-            r=c.amo.post(f'/api/v4/leads/{j.lead_id}/notes',json=[{'note_type':'common','params':{'text':f'Рассылка от 10.11 · {labels[e.classification]}\nКампания: {CAMPAIGN}\nПолучатель кампании: {j.id}\nВремя ответа: {aware(e.at).astimezone(MSK):%d.%m.%Y %H:%M} МСК\nID сообщения: {e.id}'+('\nТЕСТ: исключён из статистики клиентов.' if j.test else '')}}]);r.raise_for_status()
+            r=c.amo.post(f'/api/v4/leads/{j.lead_id}/notes',json=[{'note_type':'common','params':{'text':f'Рассылка от 11.11 · {labels[e.classification]}\nКампания: {CAMPAIGN}\nПолучатель кампании: {j.id}\nВремя ответа: {aware(e.at).astimezone(MSK):%d.%m.%Y %H:%M} МСК\nID сообщения: {e.id}'+('\nТЕСТ: исключён из статистики клиентов.' if j.test else '')}}]);r.raise_for_status()
             row=db.get(Control,identity);row.data={'state':'sent','at':now().isoformat()};db.commit()
         except httpx.HTTPError:
             notice(db,'note-error-'+str(j.id),f'MANSBAND · Ответ учтён на сервере\nНе подтверждена запись заметки в CRM. Не повторяем автоматически.\nhttps://mansband.amocrm.ru/leads/detail/{j.lead_id}')
@@ -438,7 +438,7 @@ def tick(asset):
                         tests=detailed_report(db,tests=True)
                         cat=total['responses']
                         purchase_line=(f"Покупки по документам кассы после рассылки: {total['observed_purchases']}; связанные: {total['linked_purchases']}; чистая сумма {total['net_kopecks']/100:.2f} ₽" if total['purchase_sync_verified'] else 'Покупки: автоматическая сверка не подключена, нулевую конверсию не утверждаем.')
-                        notice(db,'daily-'+str(local.date()),f"MANSBAND · Рассылка от 10.11\n{local:%d.%m %H:%M} МСК\n"
+                        notice(db,'daily-'+str(local.date()),f"MANSBAND · Рассылка от 11.11\n{local:%d.%m %H:%M} МСК\n"
                             f"Сегодня: текст {today['text_sent']}, полный комплект {today['complete']}, частично {today['partial']}; ответили сегодня {total['reply_activity_today']}.\n"
                             f"Всего: текст {total['text_sent']}, полный комплект {total['complete']}.\n"
                             f"Ответили {total['replied']}; интерес {cat['interest']}; отказ {cat['refusal']}; отписка {cat['unsubscribe']}; разобрать {cat['review']}.\n"
@@ -661,7 +661,7 @@ def create_campaign_deal(db,j,c):
     if not any(u['id']==owner and u.get('rights',{}).get('is_active') for u in users):raise ValueError('inactive_shift_owner')
     # Claim before CRM mutation. Interrupted creation is never blindly retried.
     j.state='crm_inflight';j.snapshot={**j.snapshot,'crm_claim_at':now().isoformat()};db.commit()
-    payload=[{'name':f'Рассылка от 10.11 · #{j.id}','pipeline_id':10730010,'status_id':89984117,'responsible_user_id':owner,
+    payload=[{'name':f'Рассылка от 11.11 · #{j.id}','pipeline_id':10730010,'status_id':89984117,'responsible_user_id':owner,
         '_embedded':{'contacts':[{'id':j.contact_id,'is_main':True}],'tags':[{'name':CAMPAIGN},{'name':f'Сегмент {j.segment}'}]}}]
     try:
         r=c.amo.post('/api/v4/leads',json=payload);r.raise_for_status()
@@ -845,7 +845,7 @@ def queue_status(state: str='', page: int=1, segment: int=0, search: str=''):
                 if candidate+timedelta(hours=end-hour)>local:
                     next_window=candidate.isoformat();break
             if next_window:break
-        return {'mode':mode(db),'segment':current,'day_budget':day_budget(db,current,now()) if current else 0,'today_started':used,
+        return {'mode':mode(db),'segment':current,'day_budget':day_budget(db,current,datetime.combine(day,datetime.min.time(),MSK)) if current else 0,'today_started':used,
             'server_time':now().isoformat(),'start_day':start,'next_window':next_window,'offer_expired':local.date()>date(2026,12,31),
             'halt_reason':halt.data.get('reason') if halt else None,'segments':segments,'total':total,'page_size':50,
             'channel_usage':channels,'channel_budgets':CHANNEL_BUDGETS,'purchase_sync_fresh':purchase_sync_fresh(db),
