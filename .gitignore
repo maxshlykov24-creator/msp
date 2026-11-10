@@ -110,3 +110,6 @@ build/
 # Локальный срез дашборда 2MY: содержит телефоны и адресные данные.
 **/2MyMoods/дашборд/*.local.json
 **/2MyMoods/дашборд/*.local.md
+
+# Local brand archive; sources are tracked separately.
+/2. БИЗНЕС/08_Системное/БРЕНД/MS-Product-web-kit.zip

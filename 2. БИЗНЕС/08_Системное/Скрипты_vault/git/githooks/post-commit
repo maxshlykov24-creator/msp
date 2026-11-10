@@ -1,33 +1,6 @@
 #!/bin/sh
-# После коммита пушит в origin (только ветка main).
-# Отключить: GIT_SKIP_AUTO_PUSH=1 git commit ...
-
-if [ "$GIT_SKIP_AUTO_PUSH" = "1" ]; then
-  exit 0
-fi
-
-if ! git remote get-url origin >/dev/null 2>&1; then
-  exit 0
-fi
-
-branch=$(git symbolic-ref --short HEAD 2>/dev/null) || exit 0
-
-if [ "$branch" != "main" ]; then
-  echo "post-commit: skip push (branch=$branch, only main auto-pushes)" >&2
-  exit 0
-fi
-
-if git rev-parse '@{u}' >/dev/null 2>&1; then
-  if git push origin main; then
-    exit 0
-  fi
-else
-  if git push -u origin main; then
-    git branch --set-upstream-to=origin/main "$branch" 2>/dev/null || true
-    exit 0
-  fi
-fi
-
-echo "post-commit: не удалось выполнить git push (сеть, права или конфликт на сервере)." >&2
-echo "  Исправь и выполни вручную: git push origin main" >&2
-exit 0
+[ "${GIT_SKIP_AUTO_PUSH:-0}" = 1 ] && exit 0
+set -eu
+root=$(git rev-parse --show-toplevel)
+cd "$root"
+exec python3 "$root/2. БИЗНЕС/08_Системное/Скрипты_vault/git/vault_sync.py" post-commit

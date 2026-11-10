@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+root=$(git rev-parse --show-toplevel)
+cd "$root"
+exec python3 "$root/2. БИЗНЕС/08_Системное/Скрипты_vault/git/vault_sync.py" pre-push
