@@ -204,6 +204,8 @@ def reconcile(db):
             p.state='sent'
             if p.kind=='text':
                 j.sent_at=j.sent_at or p.at
+                if not db.get(Control,'confirmed-'+p.crm_id):
+                    db.add(Control(id='confirmed-'+p.crm_id,data={'at':now().isoformat()}))
                 j.state='photo_ready'
             else: j.state='complete'
             db.commit()
@@ -219,7 +221,8 @@ def send_part(db,j,c,position,kind,asset):
     if other:return 'halt'
     if kind=='photo':
         sent=db.scalar(select(Part).where(Part.recipient_id==j.id,Part.position==position,Part.kind=='text',Part.state=='sent'))
-        if not sent or now()-aware(sent.at)<timedelta(seconds=15):return 'halt'
+        confirmation=db.get(Control,'confirmed-'+sent.crm_id) if sent else None
+        if not confirmation or now()-datetime.fromisoformat(confirmation.data['at'])<timedelta(seconds=15):return 'halt'
     route=j.snapshot['routes'][position]
     prior=db.scalar(select(Part).where(Part.recipient_id==j.id,Part.position==position,Part.kind==kind))
     if prior: return prior.state

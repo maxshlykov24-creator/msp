@@ -57,6 +57,7 @@ def test_only_absent_allows_fallback(db):
 def test_text_photo_mutually_exclusive(db):
     j=job(db);c=Client((500,))
     db.add(m.Part(recipient_id=j.id,position=0,kind='text',state='sent',crm_id='prior',at=m.now()-timedelta(seconds=30)));db.commit()
+    db.add(m.Control(id='confirmed-prior',data={'at':(m.now()-timedelta(seconds=30)).isoformat()}));db.commit()
     m.send_part(db,j,c,0,'photo','https://asset')
     assert c.wz.posts[0]['contentUri']=='https://asset'
     assert 'text' not in c.wz.posts[0]
@@ -109,3 +110,11 @@ def test_blank_line_after_link():
     rendered=m.render(t,'Нина',1,m.now())
     assert 'auditor_1\n\nНапишите нам.' in rendered
     assert m.render(rendered,'Нина',1,m.now())==rendered
+
+
+def test_photo_delay_starts_at_confirmation_not_post(db):
+    j=job(db);c=Client((500,))
+    db.add(m.Part(recipient_id=j.id,position=0,kind='text',state='sent',crm_id='prior',at=m.now()-timedelta(minutes=5)))
+    db.add(m.Control(id='confirmed-prior',data={'at':m.now().isoformat()}));db.commit()
+    assert m.send_part(db,j,c,0,'photo','asset')=='halt'
+    assert not c.wz.posts
