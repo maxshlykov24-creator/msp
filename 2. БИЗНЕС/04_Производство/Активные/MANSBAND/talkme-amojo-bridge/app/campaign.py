@@ -30,6 +30,16 @@ SUCCESS = {'sent','delivered','read'}
 
 def now(): return datetime.now(timezone.utc)
 def aware(x): return x.replace(tzinfo=timezone.utc) if x.tzinfo is None else x
+def campaign_windows(day):
+    return ((9,14),(17,18),(19,20)) if day.weekday()<5 else ((10,11),(17,20))
+
+def in_campaign_window(stamp, *, starting=False):
+    local=stamp.astimezone(MSK)
+    for start,end in campaign_windows(local.date()):
+        if start<=local.hour<end:
+            return not (starting and local.hour==end-1 and local.minute>=59)
+    return False
+
 def phone(x):
     x = re.sub(r'\D','',str(x))
     return '7'+x[1:] if len(x)==11 and x.startswith('8') else x
@@ -294,8 +304,8 @@ def dispatch(db,j,c,asset):
     elif not production_enabled(db):return
     local=now().astimezone(MSK)
     if local.date()>date(2026,12,31):stop(db,j,'offer_expired');return
-    if not (10<=local.hour<11 or 17<=local.hour<20):return
-    if j.state=='prepared' and local.hour in (10,19) and local.minute>=59:return
+    if not in_campaign_window(local):return
+    if j.state=='prepared' and not in_campaign_window(local,starting=True):return
     if not j.test and j.state=='prepared':
         used,_=daily_usage(db,now())
         if used>=day_budget(db,j.segment,now()) and not db.scalar(select(Part.id).where(Part.recipient_id==j.id).limit(1)):return
@@ -673,8 +683,8 @@ def production_tick(db,c,asset):
     local=now().astimezone(MSK)
     if local.date()>date(2026,12,31):
         notice(db,'offer-expired','MANSBAND · Очередь остановлена\nСрок исходных шаблонов закончился. Нужны новые утверждённые тексты и изображение.');return
-    if not (10<=local.hour<11 or 17<=local.hour<20):return
-    if local.hour in (10,19) and local.minute>=59:return
+    if not in_campaign_window(local):return
+    if not in_campaign_window(local,starting=True):return
     # No parallel bundle: finish or reconcile the current one first.
     pending=db.scalar(select(Recipient.id).where(Recipient.test==False,Recipient.segment==active_segment(db),Recipient.state.in_(['prepared','pending','inflight','photo_ready','crm_inflight','attention']),Recipient.reason.notin_(['ambiguous_crm_contacts'])).limit(1))
     if pending:return
@@ -827,7 +837,7 @@ def queue_status(state: str='', page: int=1, segment: int=0, search: str=''):
         day=max(local.date(),date.fromisoformat(start)) if start else local.date()
         next_window=None
         for offset in range(2):
-            for hour,end in ((10,11),(17,20)):
+            for hour,end in campaign_windows(day+timedelta(days=offset)):
                 candidate=datetime.combine(day+timedelta(days=offset),datetime.min.time(),MSK)+timedelta(hours=hour)
                 if candidate.date()>date(2026,12,31):continue
                 if candidate+timedelta(hours=end-hour)>local:
