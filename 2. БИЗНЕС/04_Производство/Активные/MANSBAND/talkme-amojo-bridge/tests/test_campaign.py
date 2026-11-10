@@ -216,3 +216,16 @@ def test_unsubscribe_overrides_prior_manual_interest(db):
     j=job(db);j.classification='interest';db.add(m.Control(id='classification-'+str(j.id),data={'category':'interest'}));db.add(m.Part(recipient_id=j.id,position=0,kind='text',state='sent',crm_id='prior-interest'));db.commit()
     m.record_messages(db,{'messages':[{'messageId':'opt-out','isEcho':False,'dateTime':m.now().isoformat(),'channelId':'one','chatType':'telegram','chatId':'79000000001','text':'Не пишите мне'}]})
     assert j.classification=='unsubscribe' and db.get(m.Control,'unsubscribe-'+j.person)
+
+
+def test_new_contact_uses_configured_channel_with_old_blocked_account(db,monkeypatch):
+    from app import reservation_reminders as reminders
+    from types import SimpleNamespace
+    monkeypatch.setattr(reminders,'ReminderSettings',lambda:SimpleNamespace(telegram_channel='current',max_channel='max',whatsapp_channel='wa'))
+    j=job(db);j.test=False;j.contact_id=0;j.state='queued';j.snapshot={**j.snapshot,'phone':'79000000001'};db.commit()
+    c=Client((500,))
+    c.wz.get=lambda _:httpx.Response(200,json=[{'channelId':'old','transport':'tgapi','state':'blocked'},{'channelId':'current','transport':'tgapi','state':'active'}],request=httpx.Request('GET','https://example.com'))
+    m.enrich_one(db,c)
+    assert j.snapshot['routes'][0]['channelId']=='current'
+    assert j.snapshot['routes'][0]['transport']=='telegram'
+    assert not c.wz.posts

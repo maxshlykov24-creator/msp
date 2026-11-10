@@ -600,11 +600,15 @@ def enrich_one(db,c):
     if not j.contact_id:
         if j.snapshot.get('matched_contact_ids'):stop(db,j,'ambiguous_crm_contacts');return
         channels=c.wz.get('/channels');channels.raise_for_status()
+        from app.reservation_reminders import ReminderSettings
+        settings=ReminderSettings()
         routes=[]
         for transport in ('telegram','max','whatsapp'):
             candidates=[x for x in channels.json() if x.get('transport')==('tgapi' if transport=='telegram' else transport)]
-            if len(candidates)==1:
-                routes.append({'transport':transport,'channelId':candidates[0]['channelId'],'recipient':{'chatId' if transport=='whatsapp' else 'phone':j.snapshot['phone']}})
+            configured=getattr(settings,transport+'_channel')
+            channel=configured or (candidates[0]['channelId'] if len(candidates)==1 else None)
+            if channel:
+                routes.append({'transport':transport,'channelId':channel,'recipient':{'chatId' if transport=='whatsapp' else 'phone':j.snapshot['phone']}})
         if not routes:stop(db,j,'no_configured_channels');return
         # This is a new CRM contact, not evidence of an existing dialogue.
         j.snapshot={**j.snapshot,'routes':routes,'last_incoming':0,'chat_history':'new','enriched':True,'checked_at':now().isoformat()};db.commit();return

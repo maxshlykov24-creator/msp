@@ -53,7 +53,15 @@ const fs=require('fs'),crypto=require('crypto');
   const url=path.startsWith('https://')?path:base+path;
   if(!url.startsWith(base+'/'))throw Error('foreign_document_origin');
   if(cache.has(url))return cache.get(url);
-  const r=await fetch(url,{headers:{Authorization:'Bearer '+token,'Accept-Encoding':'gzip'},signal:AbortSignal.timeout(25000)});
+  let r;
+  for(let attempt=0;attempt<3;attempt++){
+   await new Promise(resolve=>setTimeout(resolve,350));
+   r=await fetch(url,{headers:{Authorization:'Bearer '+token,'Accept-Encoding':'gzip'},signal:AbortSignal.timeout(25000)});
+   if(r.status!==429 || attempt===2)break;
+   const wait=Math.max(5,Number(r.headers.get('Retry-After'))||15);
+   if(wait>60)throw Error('document_rate_limit_deferred');
+   await new Promise(resolve=>setTimeout(resolve,wait*1000));
+  }
   if(!r.ok)throw Error('document_http_'+r.status);
   const d=await r.json();cache.set(url,d);return d;
  }
@@ -103,6 +111,12 @@ def purchases():
             if telegram(config,'MANSBAND · Учёт покупок\nСверка документов временно недоступна. Статистика покупок может быть неполной.\nОтправки не повторяются. Действие: проверить подключение кассы и МойСклад.'):
                 state.write_text(json.dumps({'notified':time.time()}));state.chmod(0o600)
         raise RuntimeError('purchase_sync_failed')
+    state=root/'purchase-failure.json'
+    old=json.loads(state.read_text()) if state.exists() else {}
+    if old.get('notified'):
+        config=json.loads((root/'config.json').read_text())
+        if telegram(config,'MANSBAND · Учёт покупок восстановлен\nОплаченные проведённые документы кассы снова сверяются с МойСклад.\nСтатистика обновлена. Продажи вне кассы требуют отдельной сверки.'):
+            state.write_text(json.dumps({'notified':0,'recovered_at':time.time()}));state.chmod(0o600)
     print(p.stdout.decode().strip())
 
 if __name__=='__main__':
