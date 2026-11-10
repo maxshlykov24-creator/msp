@@ -615,6 +615,26 @@ assert [x['id'] for x in db.list_lots()]==ids
 conn=db.connect();assert conn.execute('select count(*) from lot_moves').fetchone()[0]==n_moves;assert conn.execute('select count(*) from ms_ledger_history').fetchone()[0]==1;conn.close()
 try:accept.build_plan(snap,[]);raise AssertionError('смешаны чужие группы')
 except ValueError as e:assert 'не хватает' in str(e)
+# Возврат создаёт отдельный остаток, не отменяет выполненную сборку.
+returned=ledger_fixture(qty=10)
+returned['documents'].append({'id':'RET','kind':'salesreturn','name':'RET','moment':'2026-09-13T10:00:00','party':'B','store':'S','positions':[{'id':'R1','product':'P','qty':1}]})
+returned['stock']['P']=1
+accept.apply_plan(returned,accept.build_plan(returned,groups),groups)
+rl=next(x for x in db.list_lots() if x['source_key']=='ms:salesreturn:RET:R1')
+assert rl['ledger_kind']=='receipt' and rl['qty_left']==1
+assert account.row_of(rl,date_to=account.as_day('2026-09-13'))['storage']==0
+assert account.row_of(rl,date_to=account.as_day('2026-09-14'))['storage']==0.3
+assert account.row_of(db.get_lot(assembly['id']),date_to=account.as_day('2026-09-14'))['pick_qty']==10
+before_return_ids=[x['id'] for x in db.list_lots()]
+accept.apply_plan(returned,accept.build_plan(returned,groups),groups)
+assert before_return_ids==[x['id'] for x in db.list_lots()]
+returned['documents'].append({'id':'OUT2','kind':'demand','name':'OUT2','moment':'2026-09-14T12:00:00','party':'B','store':'S','positions':[{'id':'O2','product':'P','qty':1}]})
+returned['stock']['P']=0
+accept.apply_plan(returned,accept.build_plan(returned,groups),groups)
+assert db.get_lot(rl['id'])['qty_left']==0
+assert sum(account.row_of(x,date_to=account.as_day('2026-09-14'))['pick_qty'] for x in db.list_lots())==11
+print('возврат покупателя: остаток, хранение, повторная отгрузка и идемпотентность — OK')
+
 # День приёмки бесплатный, сборка в этот день платная.
 same=ledger_fixture(qty=10,same_day=True);accept.apply_plan(same,accept.build_plan(same,groups),groups)
 rr=account.row_of(db.get_lot(receipt['id']),date_to=account.as_day('2026-09-12'))

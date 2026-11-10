@@ -224,12 +224,12 @@ def fetch_snapshot():
                 'pick_rate': number(attrs.get('Стоимость сборки, ₽'), 'Стоимость сборки, ₽', True),
                 'archived': bool(p.get('archived')), 'updated': p.get('updated', '')}
     # Не пропускаем другие документы, которые могли изменить остаток.
-    for kind in ('salesreturn', 'purchasereturn', 'enter', 'loss', 'move', 'retaildemand', 'retailsalesreturn'):
+    for kind in ('purchasereturn', 'enter', 'loss', 'move', 'retaildemand', 'retailsalesreturn'):
         if any(x.get('applicable') and not x.get('deleted') for x in ms_pages('/entity/' + kind)):
             raise ValueError('Обнаружены движения %s. Нужна сверка их влияния на хранение; предыдущий учёт сохранён.' % kind)
     docs, headers = [], []
     known = {x['ms_counterparty_id'] for x in __import__('db').list_clients()}
-    for kind in ('supply', 'demand'):
+    for kind in ('supply', 'demand', 'salesreturn'):
         originals = ms_pages('/entity/' + kind)
         for doc in originals:
             header = document_header(doc, kind)
@@ -279,7 +279,7 @@ def fetch_snapshot():
                 positions.append({'id': pos['id'], 'product': pid, 'qty': number(pos.get('quantity'), 'количество')})
             docs.append(dict(header, moment=moment, party=party_cache[cache_key], positions=positions))
     # Документ мог измениться во время чтения его позиций.
-    current = [document_header(d, kind) for kind in ('supply', 'demand') for d in ms_pages('/entity/' + kind)]
+    current = [document_header(d, kind) for kind in ('supply', 'demand', 'salesreturn') for d in ms_pages('/entity/' + kind)]
     if canonical(sorted(headers, key=lambda x: x['id'])) != canonical(sorted(current, key=lambda x: x['id'])):
         raise ValueError('Документы МойСклад изменились во время сверки. Повтори обновление.')
     # Тариф/литраж не должен меняться между первой страницей и расчётом.
@@ -344,7 +344,7 @@ def build_plan(snapshot, groups):
                 raise ValueError('Контрагент указан в нескольких группах')
             membership[party] = 'group:%s' % n
     buckets, lots, moves, balance = defaultdict(list), {}, {}, defaultdict(float)
-    for doc in sorted(transfer_documents(snapshot), key=lambda d: (d['moment'], d['kind'] != 'supply', d['id'])):
+    for doc in sorted(transfer_documents(snapshot), key=lambda d: (d['moment'], d['kind'] not in ('supply', 'salesreturn'), d['id'])):
         for pos in doc['positions']:
             qty, pid = pos['qty'], pos['product']
             if not qty:
@@ -355,7 +355,7 @@ def build_plan(snapshot, groups):
                         name=p['name'], tracking_type=p.get('tracking_type', ''), liters=p.get('liters'),
                         pick_rate=p.get('pick_rate'), dims='', party=doc['party'], ms_store_id=doc['store'],
                         received_at=doc['moment'], accepted_at=doc['moment'], ms_supply_id=doc['id'],
-                        source_key=key, source_document=('Приёмка' if doc['kind']=='supply' else 'Отгрузка')+' №'+doc['name'])
+                        source_key=key, source_document=({'supply':'Приёмка', 'salesreturn':'Возврат покупателя', 'demand':'Отгрузка'}[doc['kind']])+' №'+doc['name'])
             base['storage_from'] = None
             bucket = (membership.get(doc['party'], doc['party']), doc['store'], pid)
             transfer = doc.get('transfer_from')
@@ -382,8 +382,8 @@ def build_plan(snapshot, groups):
                 base['received_at'] = transfer['received_at']
                 base['source_document'] = 'Перенос №%s из Приёмки №%s' % (doc['name'], transfer['name'])
                 balance[pid] -= qty
-            balance[pid] += qty if doc['kind']=='supply' else -qty
-            if doc['kind'] == 'supply':
+            balance[pid] += qty if doc['kind'] in ('supply', 'salesreturn') else -qty
+            if doc['kind'] in ('supply', 'salesreturn'):
                 lots[key] = dict(base, ledger_kind='receipt', qty_in=qty, qty_left=qty)
                 buckets[bucket].append(key)
             else:
@@ -536,6 +536,7 @@ def apply_plan(snapshot, plan, groups, scope_parties=None):
                 conn.execute('INSERT INTO ms_ledger_documents(id,kind,data_json,synced_at,active) VALUES (?,?,?,?,1) ON CONFLICT(id) DO UPDATE SET kind=excluded.kind,data_json=excluded.data_json,synced_at=excluded.synced_at,active=1',(d['id'],d['kind'],canonical(d),now))
             conn.execute('INSERT OR IGNORE INTO ms_ledger_history(digest,created_at,snapshot_json) VALUES (?,?,?)',(digest,now,source_json))
             summary = {'products':len(snapshot['products']), 'receipts':sum(d['kind']=='supply' for d in snapshot['documents']),
+                       'returns':sum(d['kind']=='salesreturn' for d in snapshot['documents']),
                        'demands':sum(d['kind']=='demand' for d in snapshot['documents']), 'lots':len(plan['lots']), 'qty':plan['qty']}
             settings = {'ledger:enabled':'1','ledger:last_success':now,'ledger:last_error':'','ledger:summary':canonical(summary)}
             if scope_ids is not None:
@@ -565,14 +566,14 @@ def sync_transfer_scope(snapshot, groups, parties=None, billing_locked=False):
     balance = defaultdict(float)
     for d in snapshot['documents']:
         for p in d['positions']:
-            balance[p['product']] += p['qty'] * (1 if d['kind']=='supply' else -1)
+            balance[p['product']] += p['qty'] * (1 if d['kind'] in ('supply', 'salesreturn') else -1)
     if any(abs(balance[p]-snapshot['stock'].get(p, 0)) > 1e-6 for p in set(balance)|set(snapshot['stock'])):
         raise ValueError('Общая сверка остатков не пройдена')
     docs = [d for d in snapshot['documents'] if d['party'] in parties]
     stock = defaultdict(float)
     for d in docs:
         for p in d['positions']:
-            stock[p['product']] += p['qty'] * (1 if d['kind']=='supply' else -1)
+            stock[p['product']] += p['qty'] * (1 if d['kind'] in ('supply', 'salesreturn') else -1)
     scoped = dict(snapshot, documents=docs, stock=dict(stock), scope_parties=sorted(parties),
                   receipt_transfers=[r for r in snapshot.get('receipt_transfers', [])
                                     if {r[k]['party'] for k in ('source_before','destination')} <= parties],
