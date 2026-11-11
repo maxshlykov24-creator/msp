@@ -842,6 +842,9 @@ class V2RulesTest(unittest.TestCase):
             c['na_reason']='no_suitable_offer'
             for v in c['conditions']:v.update(status='no',evidence=[])
         r=self.check(a);self.assertEqual(r['errors'],[]);self.assertEqual(r['applicable_count'],4)
+        for c in a['criteria'][3:6]:c['na_reason']=''
+        self.assertEqual(self.check(a)['applicable_count'],4)
+        a['criteria'][3]['na_reason']='no_suitable_offer'
         a['criteria'][3]['conditions'][0].update(status='yes',evidence=[evidence()])
         self.assertIn('criterion_4:invalid_na_reason',self.check(a)['errors'])
         a['scenario']['alternative_accepted']=True
@@ -871,7 +874,7 @@ class RevisionTest(unittest.TestCase):
         rev=CallAnalysisRevision(call_id=row.id,job_key='candidate-test',rule_version=RULE_VERSION,
             analysis_version=ANALYSIS_VERSION,transcript_hash=call_worker.stable_hash(row.transcript),
             base_hash=call_worker.source_hash(row),state='ready',
-            result={'baseline':call_worker.snapshot(row),'verdict':verdict},review={'manual_hold':False})
+            result={'baseline':call_worker.snapshot(row),'verdict':verdict,'provider':{'analysis':analysis_v2()}},review={'manual_hold':False})
         self.db.add(rev);self.db.commit();return row,rev
 
     def test_publish_keeps_history_and_freezes_pending_delivery(self):
@@ -918,3 +921,28 @@ class RevisionTest(unittest.TestCase):
             page=calls_api.calls(view='pending',limit=25,offset=0)
             self.assertEqual(page['total'],1)
             self.assertEqual(calls_api.detail(pending.id,diagnostics=True)['id'],pending.id)
+
+    def test_audio_disagreement_prevents_review(self):
+        row,rev=self.candidate();rev.review={'audio_review_required':True};self.db.commit()
+        with self.assertRaisesRegex(ValueError,'audio_review_required'):
+            call_worker.review_revision(rev.id,'test','checked')
+
+    def test_published_history_does_not_create_missing_deliveries(self):
+        row,rev=self.candidate();call_worker.review_revision(rev.id,'test','checked')
+        call_worker.publish_revision(rev.id)
+        with patch.object(call_worker,'deliver_telegram') as send:
+            call_worker.deliver_calls(SimpleNamespace());send.assert_not_called()
+        self.assertEqual(list(self.db.scalars(select(CallDelivery))),[])
+
+    def test_correction_is_saved_and_cannot_be_repeated(self):
+        row,rev=self.candidate();rev.state='needs_review'
+        rev.result={**rev.result,'provider':{'analysis':analysis_v2(),'references':{}},
+            'verdict':{**rev.result['verdict'],'errors':['test:missing_condition']}}
+        self.db.commit()
+        with patch.object(call_worker,'SonnetCallAgent') as agent:
+            agent.return_value.analyze.return_value={'analysis':analysis_v2(),'references':{}}
+            result=call_worker.repair_revision(rev.id)
+            self.assertEqual(result['state'],'ready')
+            with self.assertRaisesRegex(ValueError,'revision_not_repairable'):call_worker.repair_revision(rev.id)
+            agent.return_value.analyze.assert_called_once()
+        self.db.refresh(rev);self.assertIn('first_provider',rev.result)

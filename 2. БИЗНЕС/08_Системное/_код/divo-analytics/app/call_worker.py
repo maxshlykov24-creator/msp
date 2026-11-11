@@ -917,6 +917,49 @@ def stage_revision(call_id: int, run: int = 1) -> dict:
                 "errors": rev.result.get("verdict", {}).get("errors", []), "error": rev.error}
 
 
+def repair_revision(revision_id: int) -> dict:
+    """One correction of a saved, rejected answer. Never repeat an ambiguous request."""
+    with SessionLocal() as db:
+        rev = db.scalar(select(CallAnalysisRevision).where(CallAnalysisRevision.id == revision_id).with_for_update())
+        if not rev or rev.state not in ("needs_review", "ready") or rev.result.get("correction_started_at"):
+            raise ValueError("revision_not_repairable")
+        row = db.get(CallRecord, rev.call_id)
+        if db.scalar(select(CallAnalysisRevision.id).where(CallAnalysisRevision.call_id == rev.call_id,
+                CallAnalysisRevision.review["audio_review_required"].as_boolean().is_(True)).limit(1)):
+            raise ValueError("audio_review_required")
+        if source_hash(row) != rev.base_hash:
+            raise ValueError("revision_source_changed")
+        previous = rev.result["provider"]
+        errors = rev.result["verdict"]["errors"] or ["semantic_review: Перечитай весь разговор и проверь каждое условие, особенно конкретные требования клиента, принадлежность реплик и подтверждение сроков. Общий вопрос менеджера не доказывает выявленную потребность. Исправь фактические пропуски и неверные цитаты; верни полный разбор."]
+        rev.result = {**rev.result, "correction_started_at": now().isoformat(), "first_provider": previous,
+                      "first_verdict": rev.result["verdict"]}
+        rev.state = "correcting"
+        transcript, direction, occurred = row.transcript, row.direction, row.occurred_at
+        db.commit()
+    agent = SonnetCallAgent()
+    try:
+        result = agent.analyze(transcript, direction, occurred, rule_version=RULE_VERSION,
+            correction={"references": previous["references"], "errors": errors})
+        verdict = validate_analysis(result["analysis"], transcript, direction, RULE_VERSION)
+        with SessionLocal() as db:
+            rev = db.get(CallAnalysisRevision, revision_id)
+            rev.result = {**rev.result, "provider": result, "verdict": verdict}
+            rev.state = "needs_review" if verdict["errors"] else "ready"
+            db.commit()
+    except Exception as exc:
+        with SessionLocal() as db:
+            rev = db.get(CallAnalysisRevision, revision_id)
+            rev.state = "ambiguous" if isinstance(exc, AmbiguousSubmission) else "error"
+            rev.error = str(exc) if isinstance(exc, (RemoteFailure, AmbiguousSubmission)) else type(exc).__name__
+            db.commit()
+    finally:
+        agent.close()
+    with SessionLocal() as db:
+        rev = db.get(CallAnalysisRevision, revision_id)
+        return {"id": rev.id, "call_id": rev.call_id, "state": rev.state,
+                "errors": rev.result["verdict"]["errors"], "error": rev.error}
+
+
 def review_revision(revision_id: int, reviewer: str, reason: str) -> dict:
     if not reviewer.strip() or not reason.strip():
         raise ValueError("reviewer_and_reason_required")
@@ -925,8 +968,15 @@ def review_revision(revision_id: int, reviewer: str, reason: str) -> dict:
         if not rev or rev.state != "ready" or rev.result.get("verdict", {}).get("errors"):
             raise ValueError("revision_not_ready")
         row = db.get(CallRecord, rev.call_id)
+        if db.scalar(select(CallAnalysisRevision.id).where(CallAnalysisRevision.call_id == rev.call_id,
+                CallAnalysisRevision.review["audio_review_required"].as_boolean().is_(True)).limit(1)):
+            raise ValueError("audio_review_required")
         if source_hash(row) != rev.base_hash:
             raise ValueError("revision_source_changed")
+        checked = validate_analysis(rev.result["provider"]["analysis"], row.transcript, row.direction, rev.rule_version)
+        if checked["errors"]:
+            raise ValueError("revision_no_longer_valid")
+        rev.result = {**rev.result, "initial_verdict": rev.result["verdict"], "verdict": checked}
         rev.review = {**rev.review, "reviewer": reviewer, "reason": reason, "at": now().isoformat()}
         rev.state = "verified"
         db.commit()
@@ -939,6 +989,9 @@ def publish_revision(revision_id: int) -> dict:
         if not rev or rev.state != "verified":
             raise ValueError("verified_revision_required")
         row = db.scalar(select(CallRecord).where(CallRecord.id == rev.call_id).with_for_update())
+        if db.scalar(select(CallAnalysisRevision.id).where(CallAnalysisRevision.call_id == rev.call_id,
+                CallAnalysisRevision.review["audio_review_required"].as_boolean().is_(True)).limit(1)):
+            raise ValueError("audio_review_required")
         if row.state not in ("complete", "insufficient", "needs_review") or source_hash(row) != rev.base_hash:
             raise ValueError("revision_source_changed")
         if stable_hash(row.transcript) != rev.transcript_hash:
@@ -991,6 +1044,53 @@ def rollback_revision(revision_id: int, reviewer: str, reason: str) -> dict:
         return {"id": rev.id, "state": rev.state}
 
 
+def stage_history(run: int) -> dict:
+    """Frozen historical manifest; sequential, resumable candidates, no auto-publication."""
+    from app.calls_api import published_conditions
+    key = f"calls_regrade_{RULE_VERSION}_{run}"
+    with SessionLocal() as db:
+        saved = db.get(SyncState, key)
+        if saved:
+            manifest = json.loads(saved.value)
+        else:
+            ids = list(db.scalars(select(CallRecord.id).where(*published_conditions(),
+                CallRecord.rule_version != RULE_VERSION).order_by(CallRecord.id)))
+            manifest = {"ids": ids, "total": len(ids), "processed": 0, "counts": {}, "status": "running"}
+            state_set(db, key, json.dumps(manifest));db.commit()
+    for call_id in manifest["ids"][manifest["processed"]:]:
+        with SessionLocal() as db:
+            held = db.scalar(select(CallAnalysisRevision.id).where(CallAnalysisRevision.call_id == call_id,
+                CallAnalysisRevision.review["audio_review_required"].as_boolean().is_(True)).limit(1))
+        if held:
+            result = {"call_id": call_id, "state": "audio_review"}
+        else:
+            result = stage_revision(call_id, run)
+            if result["state"] == "needs_review":
+                with SessionLocal() as db:
+                    revision = db.get(CallAnalysisRevision, result["id"])
+                    repairable = not revision.result.get("correction_started_at")
+                if repairable:
+                    result = repair_revision(result["id"])
+        state = result["state"]
+        if state in ("error", "ambiguous", "running", "correcting"):
+            manifest["status"] = "stopped_for_check"
+        else:
+            manifest["processed"] += 1
+            manifest["counts"][state] = manifest["counts"].get(state, 0) + 1
+            manifest["status"] = "running"
+        manifest["last_result"] = result
+        manifest["updated_at"] = now().isoformat()
+        with SessionLocal() as db:
+            state_set(db, key, json.dumps(manifest));db.commit()
+        print(json.dumps({k: v for k, v in manifest.items() if k != "ids"}), flush=True)
+        if manifest["status"] == "stopped_for_check":
+            return manifest
+    manifest["status"] = "candidates_ready"
+    with SessionLocal() as db:
+        state_set(db, key, json.dumps(manifest));db.commit()
+    return manifest
+
+
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -1005,20 +1105,28 @@ def main():
     parser.add_argument("--reviewer", default="")
     parser.add_argument("--reason", default="")
     parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--stage-history", action="store_true", help="Stage frozen history sequentially; never publish")
     parser.add_argument("--stage-v2", help="Comma-separated call IDs; no publication or delivery")
     parser.add_argument("--run", type=int, default=1)
+    parser.add_argument("--repair-revision", type=int)
     parser.add_argument("--review-revision", type=int)
     parser.add_argument("--publish-revision", type=int)
     parser.add_argument("--rollback-revision", type=int)
     parser.add_argument("--activate-rules", choices=[LEGACY_RULE_VERSION, RULE_VERSION])
     args = parser.parse_args()
     init_db()
+    if args.stage_history:
+        stage_history(args.run)
+        return
     if args.stage_v2:
         for call_id in [int(x) for x in args.stage_v2.split(",")]:
             result = stage_revision(call_id, args.run)
             print(json.dumps(result), flush=True)
             if result["state"] in ("error", "ambiguous", "running"):
                 break
+        return
+    if args.repair_revision:
+        print(json.dumps(repair_revision(args.repair_revision)))
         return
     if args.review_revision:
         print(json.dumps(review_revision(args.review_revision, args.reviewer, args.reason)))

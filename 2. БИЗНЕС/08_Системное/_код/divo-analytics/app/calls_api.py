@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import Counter
 import re
+import json
 from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 from typing import Literal
@@ -208,7 +209,12 @@ def summary(start: date | None = None, end: date | None = None, manager: str | N
                 pass
         delivery_states = Counter(db.scalars(select(CallDelivery.state).join(CallRecord).where(
             *filters(start, end, manager, category, calibration))))
-        return {"total": len(rows), "processed": len(completed), "scored": len(scored),
+        regrade = db.scalar(select(SyncState).where(SyncState.key.like("calls_regrade_%")).order_by(SyncState.updated_at.desc()).limit(1))
+        try:
+            regrade_status = {k: v for k, v in json.loads(regrade.value).items() if k in ("total", "processed", "counts", "status", "updated_at")} if regrade else None
+        except (ValueError, TypeError):
+            regrade_status = None
+        return {"total": len(rows), "regrade": regrade_status, "processed": len(completed), "scored": len(scored),
                 "unscored": len(rows) - len(all_scored), "all_scored": len(all_scored),
                 "rule_version": version, "versions": versions,
                 "scenario_counts": dict(Counter((r.analysis or {}).get("scenario", {}).get("kind", "legacy") for r in scored)),
@@ -251,7 +257,8 @@ def detail(call_id: int, diagnostics: bool = False):
                        "analysis_version": row.analysis_version,
                        "criteria_view": [criterion_view(c, row.rule_version) for c in (row.analysis or {}).get("criteria", [])],
                        "revisions": [{"id": v.id, "rule_version": v.rule_version, "state": v.state,
-                                      "published_at": v.published_at.isoformat() if v.published_at else None}
+                                      "published_at": v.published_at.isoformat() if v.published_at else None,
+                                      "audio_review_required": bool((v.review or {}).get("audio_review_required"))}
                                      for v in db.scalars(select(CallAnalysisRevision).where(CallAnalysisRevision.call_id == row.id).order_by(CallAnalysisRevision.id))],
                        "nexara_job_id": row.nexara_job_id,
                        "delivery_skip_reason": "" if deliveries and all(d.state == "sent" for d in deliveries) else delivery_skip_reason(row),

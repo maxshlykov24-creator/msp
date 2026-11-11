@@ -346,6 +346,12 @@ def derive_v2(a: AnalysisV2) -> list[str]:
         errors.append("next_step:none_has_action")
     for c in a.criteria:
         cond = {v.key: v for v in c.conditions}
+        # Applicability is a rule, not a second model vote. Missing/duplicate keys
+        # still fail validation below; any started or uncertain condition blocks it.
+        if not c.na_reason and no_offer and c.id in (4, 5, 6) and c.conditions and all(v.status == "no" for v in c.conditions):
+            c.na_reason = "no_suitable_offer"
+        if not c.na_reason and c.id == 5 and a.outcome.trade_in in ("no_car", "refused") and a.outcome.trade_in_evidence:
+            c.na_reason = a.outcome.trade_in
         if c.na_reason:
             valid = (c.id == 5 and c.na_reason == a.outcome.trade_in
                      and c.na_reason in ("no_car", "refused") and bool(a.outcome.trade_in_evidence))
@@ -427,6 +433,12 @@ conversation_occurred=false только если нет живого диало
 1. Название салона, имя менеджера, имя клиента. Имя, сообщённое клиентом, засчитывается.
 2. Автомобиль, срок ПОКУПКИ, требование клиента. Визит не равен покупке; слова менеджера
 «можно купить сегодня» не являются намерением клиента. Отсутствие вопроса — no, не unknown.
+requirement: конкретный интерес клиента к состоянию/нюансам, истории, эксплуатации,
+приводу, оснащению, оплате сборов или бюджету тоже считается выявленной потребностью,
+если клиент спросил об этом или назвал условие. Например, вопрос клиента о нюансах
+машины или указание «только городская эксплуатация» подтверждает requirement=yes.
+Один вопрос МЕНЕДЖЕРА «что вас интересует?» без ответа клиента НЕ подтверждает requirement.
+Для yes приведи реплику КЛИЕНТА с интересом/условием, а не общий вопрос менеджера.
 3. Два разных конкретных факта об обсуждаемом автомобиле. Пробег и число мест — два факта.
 Негативные характеристики тоже факты. Общие похвалы и повтор одного свойства не засчитывай.
 Не смешивай сведения о продаваемой машине, автомобиле клиента и разных альтернативах.
