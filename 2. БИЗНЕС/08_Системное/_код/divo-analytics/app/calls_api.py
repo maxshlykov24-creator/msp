@@ -13,7 +13,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import defer
 
 from app.api import _auth_guard
-from app.call_report import CATEGORY_NAMES, CRITERIA, STATE_NAMES, manager_name
+from app.call_report import CATEGORY_NAMES, CRITERIA, STATE_NAMES, REPORT_VERSION, manager_name
 from app.call_rules import MIN_CALL_DURATION_SEC, RULE_VERSION, criterion_view, canonical_company_name, canonicalize_analysis_text_fields
 from app.call_worker import delivery_skip_reason, active_rules
 from app.config import settings
@@ -254,7 +254,7 @@ def detail(call_id: int, diagnostics: bool = False):
         result = summary_row(row)
         result.update({"transcript": row.transcript, "analysis": canonicalize_analysis_text_fields(row.analysis),
                        "validation_errors": row.validation_errors, "rule_version": row.rule_version,
-                       "analysis_version": row.analysis_version,
+                       "analysis_version": row.analysis_version, "render_version": REPORT_VERSION,
                        "criteria_view": [criterion_view(c, row.rule_version) for c in (row.analysis or {}).get("criteria", [])],
                        "revisions": [{"id": v.id, "rule_version": v.rule_version, "state": v.state,
                                       "published_at": v.published_at.isoformat() if v.published_at else None,

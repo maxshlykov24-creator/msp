@@ -946,3 +946,27 @@ class RevisionTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'revision_not_repairable'):call_worker.repair_revision(rev.id)
             agent.return_value.analyze.assert_called_once()
         self.db.refresh(rev);self.assertIn('first_provider',rev.result)
+
+    def test_connection_before_submission_can_retry_without_ambiguous_charge(self):
+        from app.call_rules import RULE_VERSION
+        row=self.reportable();row.state='analysis_ready';self.db.commit()
+        settings.calls_analysis_enabled=True;settings.calls_process_enabled=True;settings.calls_sonnet_api_key='test'
+        self.db.add(SyncState(key='calls_active_rule_version',value=RULE_VERSION));self.db.commit()
+        with patch.object(call_worker,'SonnetCallAgent') as agent:
+            agent.return_value.analyze.side_effect=RemoteFailure('agent_connection_not_established')
+            call_worker.analyze_calls();agent.return_value.analyze.assert_called_once()
+        self.db.refresh(row);self.assertEqual(row.state,'analysis_ready');self.assertIsNotNone(row.next_attempt_at)
+
+    def test_active_v2_worker_archives_real_result_shape(self):
+        from app.call_rules import RULE_VERSION,ANALYSIS_VERSION
+        from app.models import CallAnalysisRevision
+        row=self.reportable();row.state='analysis_ready';row.analysis={};self.db.commit()
+        settings.calls_analysis_enabled=True;settings.calls_process_enabled=True;settings.calls_sonnet_api_key='test'
+        self.db.add(SyncState(key='calls_active_rule_version',value=RULE_VERSION));self.db.commit()
+        with patch.object(call_worker,'SonnetCallAgent') as agent:
+            agent.return_value.analyze.return_value={'analysis':analysis_v2(),'references':{}}
+            call_worker.analyze_calls()
+            self.assertEqual(agent.return_value.analyze.call_args.kwargs['rule_version'],RULE_VERSION)
+        self.db.refresh(row)
+        self.assertEqual((row.state,row.rule_version,row.analysis_version),('complete',RULE_VERSION,ANALYSIS_VERSION))
+        self.assertEqual(len(list(self.db.scalars(select(CallAnalysisRevision)))),1)

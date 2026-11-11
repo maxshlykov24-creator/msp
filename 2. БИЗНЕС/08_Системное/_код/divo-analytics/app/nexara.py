@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import hashlib
 import socket
 import tempfile
 from urllib.parse import quote, urljoin, urlsplit, urlunsplit
@@ -275,4 +276,6 @@ criterion=yes; хотя бы одно conditions=no означает criterion=n
         except (ValueError, KeyError, IndexError, TypeError):
             raise RemoteFailure("agent_invalid_output") from None
         return {"analysis": grounded, "references": raw, "usage": result.get("usage", {}),
-                "generation_id": result.get("id"), "model": result.get("model")}
+                "generation_id": result.get("id"), "model": result.get("model"),
+                "prompt_hash": hashlib.sha256(instruction.encode()).hexdigest(),
+                "schema_hash": hashlib.sha256(json.dumps(schema, sort_keys=True).encode()).hexdigest()}

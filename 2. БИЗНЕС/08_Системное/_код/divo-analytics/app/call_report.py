@@ -8,6 +8,8 @@ from app.call_rules import (CATEGORY_NAMES, CRITERIA, STATUS_NAMES, criterion_vi
                             canonical_company_name, canonicalize_analysis_text_fields)
 from app.config import settings
 
+REPORT_VERSION = "2026-11-12.1"
+
 STATE_NAMES = {
     "insufficient": "Разбор готов",
     "ignored_short": "Разговор короче 30 секунд",

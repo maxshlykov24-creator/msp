@@ -390,6 +390,12 @@ def analyze_calls():
                 except AmbiguousSubmission as exc:
                     row.state, row.last_error = "analysis_ambiguous", str(exc)
                 except RemoteFailure as exc:
+                    if str(exc) == "agent_connection_not_established":
+                        # No HTTP request was sent: a delayed retry cannot duplicate a paid analysis.
+                        row.state = "analysis_ready"
+                        retry_later(row, str(exc), minutes=5)
+                        db.commit()
+                        break
                     if str(exc) == "agent_http_402":
                         row.state = "analysis_ready"
                         retry_later(row, str(exc), minutes=30)
