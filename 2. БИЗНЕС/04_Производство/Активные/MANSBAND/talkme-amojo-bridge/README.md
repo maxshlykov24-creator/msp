@@ -875,6 +875,12 @@ live/ready; Wazzup forwarding 200. Avito/Instagram по-прежнему notEnou
 изолированная fallback-цепочка не доказывают срабатывание реального перехода.
 
 
+## Campaign template revision 2026-11-11
+
+Owner-provided revised document: 14 phrase changes, variant 8 unchanged. All 15 campaign templates retained. Destination is now https://mansband.ru/ with the existing segment UTM parameters. Greeting rotation, evening greeting, blank line after URL, photo and campaign identity remain unchanged.
+
+Live verification: updated 20289 queued recipients with no send attempts; completed recipients and send history preserved. All 450 renderer checks passed; homepage returned HTTP 200 retaining UTM. Both campaign and reminders services restarted. Rollback on bridge: `99_АРХИВ/2026-11-11_templates/` (code and prior templates by recipient ID).
+
 ## Управление шаблонами из кассы — 30.10.2026
 
 **Состояние: развёрнуто 30.10.2026, исполнитель live.**

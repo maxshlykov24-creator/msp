@@ -140,14 +140,14 @@ def parse_templates(source):
 
 def render(template, name, segment, stamp, neutral=False):
     if not 1 <= segment <= 6: raise ValueError('invalid_segment')
-    result=template.replace('{ссылка}',f'https://mansband.ru/selection/collection-202609?utm_source=sms&utm_medium=phon&utm_campaign=auditor_{segment}')
+    result=template.replace('{ссылка}',f'https://mansband.ru/?utm_source=sms&utm_medium=phon&utm_campaign=auditor_{segment}')
     if not name.strip():
         result='Здравствуйте!\n'+result.split('\n',1)[1]
     else: result=result.replace('{Имя}',name.strip())
     greeting='Здравствуйте' if neutral else ('Добрый вечер' if stamp.astimezone(MSK).hour>=18 else 'Добрый день')
     result=result.replace('Добрый день',greeting).replace('добрый день',greeting.lower())
     # Owner-approved formatting: blank line after the campaign link.
-    result=re.sub(r'(https://mansband\.ru/selection/collection-202609\?utm_source=sms&utm_medium=phon&utm_campaign=auditor_[1-6])[^\S\n]*\n+',r'\1\n\n',result)
+    result=re.sub(r'(https://mansband\.ru/\?utm_source=sms&utm_medium=phon&utm_campaign=auditor_[1-6])[^\S\n]*\n+',r'\1\n\n',result)
     if '{' in result or '}' in result: raise ValueError('unfilled_placeholder')
     return '\n'.join(line.rstrip() for line in result.splitlines())
 
