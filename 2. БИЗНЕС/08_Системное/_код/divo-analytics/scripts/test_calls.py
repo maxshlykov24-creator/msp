@@ -836,7 +836,7 @@ class V2RulesTest(unittest.TestCase):
         self.assertIn('criterion_7:deadline_not_specific',self.check(a)['errors'])
 
     def test_na_only_for_proven_terminal_unstarted_stages(self):
-        a=analysis_v2();a['scenario'].update(kind='no_suitable_offer',mismatch_confirmed=True,
+        a=analysis_v2();a['outcome'].update(trade_in='not_discussed',trade_in_evidence=[]);a['scenario'].update(kind='no_suitable_offer',mismatch_confirmed=True,
             customer_declined=True,dialogue_closed=True,evidence=[evidence()])
         for c in a['criteria'][3:6]:
             c['na_reason']='no_suitable_offer'
@@ -865,6 +865,12 @@ class V2RulesTest(unittest.TestCase):
         for v in a['criteria'][4]['conditions']:v.update(status='unknown',evidence=[])
         r=self.check(a);self.assertEqual(r['errors'],[])
         self.assertTrue(r['is_scored']);self.assertEqual(r['applicable_count'],6)
+
+
+    def test_volunteered_trade_information_cannot_be_denied(self):
+        a=analysis_v2();a['outcome'].update(trade_in='no_car',trade_in_evidence=[evidence('Для обмена автомобиля нет.')])
+        fail_condition(a,4,'exchange_or_sale_plans')
+        self.assertIn('criterion_4:proven_trade_information_not_counted',self.check(a)['errors'])
 
 
 class RevisionTest(unittest.TestCase):
