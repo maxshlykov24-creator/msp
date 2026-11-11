@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import logging
 import re
@@ -14,10 +15,10 @@ from sqlalchemy.orm import defer
 
 from app.amo_client import AmoClient, AmoError
 from app.call_report import render_report, report_marker
-from app.call_rules import ANALYSIS_VERSION, MIN_CALL_DURATION_SEC, RULE_VERSION, validate_analysis
+from app.call_rules import ANALYSIS_VERSION, MIN_CALL_DURATION_SEC, RULE_VERSION, LEGACY_RULE_VERSION, validate_analysis
 from app.config import settings
 from app.database import SessionLocal, engine, init_db
-from app.models import CallDelivery, CallRecord, SyncState
+from app.models import CallDelivery, CallRecord, SyncState, CallAnalysisRevision, CallDeliverySnapshot
 from app.nexara import AmbiguousSubmission, NexaraClient, RemoteFailure, SonnetCallAgent, download_audio
 
 log = logging.getLogger("calls")
@@ -312,10 +313,11 @@ def finish_result(row: CallRecord, result: dict):
     row.applicable_count = verdict["applicable_count"]
     row.category = row.analysis.get("category", "insufficient")
     row.category_reason = row.analysis.get("category_reason", "Анализ требует проверки")
-    row.rule_version = RULE_VERSION
+    row.rule_version = LEGACY_RULE_VERSION
     row.analysis_version = ANALYSIS_VERSION
     row.state = "needs_review" if row.validation_errors or (row.category == "primary_inbound" and not row.is_scored) else "complete"
     row.last_error = "analysis_validation_failed" if row.validation_errors else ""
+
     row.next_attempt_at = None
 
 
@@ -345,14 +347,16 @@ def analyze_calls():
         agent = SonnetCallAgent()
         try:
             for row in db.scalars(query.order_by(CallRecord.occurred_at.desc()).limit(5)):
+                version = row.rule_version if (row.provider_result or {}).get("agent_result") and row.validation_errors else active_rules(db)
+                row.rule_version = version
                 row.state = "analyzing"
-                row.analysis_version = ANALYSIS_VERSION
+                row.analysis_version = ANALYSIS_VERSION if version == RULE_VERSION else "sonnet.qa.6"
                 db.commit()
                 try:
                     history = dict(row.provider_result or {})
                     previous = history.get("agent_result")
                     correction = {"references": previous["references"], "errors": row.validation_errors} if previous and row.validation_errors else None
-                    result = agent.analyze(row.transcript, row.direction, row.occurred_at, **({"correction": correction} if correction else {}))
+                    result = agent.analyze(row.transcript, row.direction, row.occurred_at, rule_version=version, **({"correction": correction} if correction else {}))
                     state_set(db, "calls_analysis_retry_after", "")
                     state_set(db, "calls_analysis_blocked", "")
                     attempts = list(history.get("agent_attempts") or [])
@@ -361,26 +365,28 @@ def analyze_calls():
                     attempts.append(result)
                     history.update(agent_result=result, agent_attempts=attempts)
                     row.provider_result = history
-                    verdict = validate_analysis(result["analysis"], row.transcript, row.direction)
+                    verdict = validate_analysis(result["analysis"], row.transcript, row.direction, version)
                     row.validation_errors = verdict["errors"]
                     db.commit()  # Сохраняем оплаченный ответ до единственной коррекции.
                     if verdict["errors"] and not correction:
-                        result = agent.analyze(row.transcript, row.direction, row.occurred_at,
+                        result = agent.analyze(row.transcript, row.direction, row.occurred_at, rule_version=version,
                             correction={"references": result["references"], "errors": verdict["errors"]})
                         history = {**history, "agent_result": result, "agent_attempts": attempts + [result]}
                         row.provider_result = history
-                        verdict = validate_analysis(result["analysis"], row.transcript, row.direction)
+                        verdict = validate_analysis(result["analysis"], row.transcript, row.direction, version)
                     row.analysis = verdict["analysis"]
                     row.validation_errors = verdict["errors"]
                     row.is_scored, row.score = verdict["is_scored"], verdict["score"]
                     row.yes_count, row.applicable_count = verdict["yes_count"], verdict["applicable_count"]
                     row.category = row.analysis.get("category", "insufficient")
                     row.category_reason = row.analysis.get("category_reason", "Анализ требует проверки")
-                    row.rule_version = RULE_VERSION
+                    row.rule_version = version
                     row.state = "needs_review" if row.validation_errors else (
                         "ignored_no_conversation" if row.analysis.get("conversation_occurred") is False else
                         "insufficient" if row.category == "primary_inbound" and not row.is_scored else "complete")
                     row.last_error = "analysis_validation_failed" if row.validation_errors else ""
+                    if version == RULE_VERSION and not row.validation_errors:
+                        archive_current(db, row, "automatic", result)
                 except AmbiguousSubmission as exc:
                     row.state, row.last_error = "analysis_ambiguous", str(exc)
                 except RemoteFailure as exc:
@@ -509,8 +515,8 @@ def process_calls(amo: AmoClient):
                         audio, mime = download_audio(row.recording_url)
                         try:
                             row.state = "submitting"
-                            row.rule_version = RULE_VERSION
-                            row.analysis_version = ANALYSIS_VERSION
+                            row.rule_version = active_rules(db)
+                            row.analysis_version = ANALYSIS_VERSION if row.rule_version == RULE_VERSION else "sonnet.qa.6"
                             row.provider_result = {"submitted_at": now().isoformat()}
                             db.commit()
                             row.nexara_job_id = nexara.submit(audio, mime, row.direction, row.occurred_at)
@@ -572,12 +578,13 @@ def deliver_amo(db, delivery: CallDelivery, row: CallRecord, amo: AmoClient):
         retry_later(delivery, "amo_write_not_confirmed", minutes=10)
         db.commit()
         return
+    body = freeze_delivery(db, delivery, row)
     delivery.state = "sending"
     delivery.attempts += 1
     db.commit()
     try:
         resp = amo.post_once(f"/api/v4/leads/{delivery.target}/notes", [
-            {"note_type": "common", "params": {"text": render_report(row, target=delivery.target)}}])
+            {"note_type": "common", "params": {"text": body}}])
     except httpx.TransportError:
         delivery.state = "ambiguous"
         retry_later(delivery, "amo_write_transport_ambiguous", minutes=10)
@@ -615,6 +622,7 @@ def deliver_telegram(db, delivery: CallDelivery, row: CallRecord):
         delivery.last_error = "telegram_delivery_requires_manual_check"
         db.commit()
         return
+    body = freeze_delivery(db, delivery, row)
     delivery.state = "sending"
     delivery.attempts += 1
     db.commit()
@@ -623,7 +631,7 @@ def deliver_telegram(db, delivery: CallDelivery, row: CallRecord):
         with httpx.Client(timeout=httpx.Timeout(30, connect=12),
                           transport=httpx.HTTPTransport(retries=2)) as client:
             resp = client.post(f"https://api.telegram.org/bot{settings.calls_telegram_bot_token}/sendMessage",
-                json={"chat_id": delivery.target, "text": render_report(row, telegram=True),
+                json={"chat_id": delivery.target, "text": body,
                       "link_preview_options": {"is_disabled": True}})
         data = resp.json()
     except (httpx.ConnectError, httpx.ConnectTimeout):
@@ -685,7 +693,7 @@ def deliver_calls(amo: AmoClient):
                 defer(CallRecord.provider_result, raiseload=True),
                 defer(CallRecord.entity_refs, raiseload=True),
                 defer(CallRecord.owner_candidates, raiseload=True))
-                .where(CallRecord.id == call_id))
+                .where(CallRecord.id == call_id).with_for_update())
             if row is None:
                 continue
             if delivery_skip_reason(row):
@@ -698,9 +706,13 @@ def deliver_calls(amo: AmoClient):
             for channel, target in targets:
                 delivery = db.scalar(select(CallDelivery).where(CallDelivery.call_id == row.id,
                             CallDelivery.channel == channel, CallDelivery.target == target))
+                if not delivery and db.scalar(select(CallRecord.provider_result["reanalysis_delivery_suppressed"].as_boolean()).where(CallRecord.id == row.id)):
+                    continue
                 if not delivery:
                     delivery = CallDelivery(call_id=row.id, channel=channel, target=target, state="pending")
                     db.add(delivery)
+                    db.flush()
+                    freeze_delivery(db, delivery, row)
                     db.commit()
                 if delivery.state in ("sent", "blocked"):
                     continue
@@ -808,6 +820,177 @@ def close_insufficient(call_id: int, reviewer: str, reason: str, *, apply: bool 
         return result
 
 
+
+SNAPSHOT_FIELDS = ("analysis", "category", "category_reason", "state", "score", "yes_count",
+                   "applicable_count", "is_scored", "rule_version", "analysis_version", "validation_errors")
+
+
+def stable_hash(value) -> str:
+    return hashlib.sha256(json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
+
+
+def active_rules(db) -> str:
+    state = db.get(SyncState, "calls_active_rule_version")
+    return RULE_VERSION if state and state.value == RULE_VERSION else LEGACY_RULE_VERSION
+
+
+def snapshot(row) -> dict:
+    return {k: getattr(row, k) for k in SNAPSHOT_FIELDS}
+
+
+def source_hash(row) -> str:
+    return stable_hash({"snapshot": snapshot(row), "transcript": row.transcript,
+                        "manual_review": (row.provider_result or {}).get("manual_review")})
+
+
+def freeze_delivery(db, delivery, row) -> str:
+    saved = db.get(CallDeliverySnapshot, delivery.id)
+    if saved:
+        return saved.body
+    db.flush()
+    db.refresh(row, attribute_names=list(SNAPSHOT_FIELDS), with_for_update=True)
+    saved = CallDeliverySnapshot(delivery_id=delivery.id, rule_version=row.rule_version,
+        analysis_hash=stable_hash(row.analysis),
+        body=render_report(row, telegram=delivery.channel == "telegram",
+                           target=delivery.target if delivery.channel == "amo" else ""))
+    db.add(saved)
+    db.flush()
+    return saved.body
+
+
+def archive_current(db, row, origin: str, provider: dict | None = None):
+    content = snapshot(row)
+    key = f"archive:{row.id}:{stable_hash(content)}"
+    existing = db.scalar(select(CallAnalysisRevision).where(CallAnalysisRevision.job_key == key))
+    if existing:
+        return existing
+    rev = CallAnalysisRevision(call_id=row.id, job_key=key, rule_version=row.rule_version,
+        analysis_version=row.analysis_version, transcript_hash=stable_hash(row.transcript),
+        base_hash=stable_hash(content), state="archived" if origin == "before_reanalysis" else "published",
+        result={"snapshot": content, "origin": origin, "provider": provider or {}},
+        review={"previous_manual_review": (row.provider_result or {}).get("manual_review")},
+        published_at=now() if origin != "before_reanalysis" else None)
+    db.add(rev)
+    db.flush()
+    return rev
+
+
+def stage_revision(call_id: int, run: int = 1) -> dict:
+    """One durable paid attempt; never clears a live analysis or touches deliveries."""
+    with SessionLocal() as db:
+        row = db.get(CallRecord, call_id)
+        if not row or not row.analysis or not SonnetCallAgent.catalog(row.transcript):
+            raise ValueError("published_transcript_required")
+        thash = stable_hash(row.transcript)
+        key = f"candidate:{call_id}:{RULE_VERSION}:{thash}:{run}"
+        prior = db.scalar(select(CallAnalysisRevision).where(CallAnalysisRevision.job_key == key))
+        if prior:
+            return {"id": prior.id, "call_id": call_id, "state": prior.state, "existing": True}
+        rev = CallAnalysisRevision(call_id=call_id, job_key=key, rule_version=RULE_VERSION,
+            analysis_version=ANALYSIS_VERSION, transcript_hash=thash, base_hash=source_hash(row),
+            state="running", result={"baseline": snapshot(row)},
+            review={"manual_hold": bool((row.provider_result or {}).get("manual_review"))})
+        db.add(rev)
+        db.commit()
+        rid, transcript, direction, occurred = rev.id, row.transcript, row.direction, row.occurred_at
+    agent = SonnetCallAgent()
+    try:
+        result = agent.analyze(transcript, direction, occurred, rule_version=RULE_VERSION)
+        verdict = validate_analysis(result["analysis"], transcript, direction, RULE_VERSION)
+        # Persist the paid result before any optional correction request.
+        with SessionLocal() as db:
+            rev = db.get(CallAnalysisRevision, rid)
+            rev.result = {**rev.result, "provider": result, "verdict": verdict}
+            rev.state = "needs_review" if verdict["errors"] else "ready"
+            db.commit()
+    except Exception as exc:
+        with SessionLocal() as db:
+            rev = db.get(CallAnalysisRevision, rid)
+            rev.state = "ambiguous" if isinstance(exc, AmbiguousSubmission) else "error"
+            rev.error = str(exc) if isinstance(exc, (RemoteFailure, AmbiguousSubmission)) else type(exc).__name__
+            db.commit()
+    finally:
+        agent.close()
+    with SessionLocal() as db:
+        rev = db.get(CallAnalysisRevision, rid)
+        return {"id": rid, "call_id": call_id, "state": rev.state,
+                "errors": rev.result.get("verdict", {}).get("errors", []), "error": rev.error}
+
+
+def review_revision(revision_id: int, reviewer: str, reason: str) -> dict:
+    if not reviewer.strip() or not reason.strip():
+        raise ValueError("reviewer_and_reason_required")
+    with SessionLocal() as db:
+        rev = db.scalar(select(CallAnalysisRevision).where(CallAnalysisRevision.id == revision_id).with_for_update())
+        if not rev or rev.state != "ready" or rev.result.get("verdict", {}).get("errors"):
+            raise ValueError("revision_not_ready")
+        row = db.get(CallRecord, rev.call_id)
+        if source_hash(row) != rev.base_hash:
+            raise ValueError("revision_source_changed")
+        rev.review = {**rev.review, "reviewer": reviewer, "reason": reason, "at": now().isoformat()}
+        rev.state = "verified"
+        db.commit()
+        return {"id": rev.id, "state": rev.state}
+
+
+def publish_revision(revision_id: int) -> dict:
+    with SessionLocal() as db:
+        rev = db.scalar(select(CallAnalysisRevision).where(CallAnalysisRevision.id == revision_id).with_for_update())
+        if not rev or rev.state != "verified":
+            raise ValueError("verified_revision_required")
+        row = db.scalar(select(CallRecord).where(CallRecord.id == rev.call_id).with_for_update())
+        if row.state not in ("complete", "insufficient", "needs_review") or source_hash(row) != rev.base_hash:
+            raise ValueError("revision_source_changed")
+        if stable_hash(row.transcript) != rev.transcript_hash:
+            raise ValueError("revision_transcript_changed")
+        # Pin unsent reports BEFORE changing the published analysis. Sent history is not fabricated.
+        for delivery in db.scalars(select(CallDelivery).where(CallDelivery.call_id == row.id,
+                                                              CallDelivery.state == "pending")):
+            freeze_delivery(db, delivery, row)
+        archive_current(db, row, "before_reanalysis")
+        verdict = validate_analysis(rev.result["verdict"]["analysis"], row.transcript, row.direction, rev.rule_version)
+        if verdict["errors"]:
+            raise ValueError("revision_no_longer_valid")
+        for key in ("analysis", "score", "yes_count", "applicable_count", "is_scored"):
+            setattr(row, key, verdict[key])
+        row.validation_errors = []
+        row.rule_version, row.analysis_version = rev.rule_version, rev.analysis_version
+        row.category = row.analysis["category"]
+        row.category_reason = row.analysis["category_reason"]
+        row.state = "insufficient" if row.category == "primary_inbound" and not row.is_scored else "complete"
+        row.last_error = ""
+        rev.result = {**rev.result, "snapshot": snapshot(row)}
+        rev.state, rev.published_at = "published", now()
+        # Prevent regraded history from creating any previously absent outbound deliveries.
+        history = dict(row.provider_result or {})
+        history["reanalysis_delivery_suppressed"] = True
+        history["published_revision_id"] = rev.id
+        row.provider_result = history
+        db.commit()
+        return {"id": rev.id, "call_id": row.id, "state": rev.state, "score": row.score}
+
+
+def rollback_revision(revision_id: int, reviewer: str, reason: str) -> dict:
+    if not reviewer.strip() or not reason.strip():
+        raise ValueError("reviewer_and_reason_required")
+    with SessionLocal() as db:
+        rev = db.scalar(select(CallAnalysisRevision).where(CallAnalysisRevision.id == revision_id).with_for_update())
+        if not rev or rev.state != "published" or "baseline" not in rev.result:
+            raise ValueError("published_candidate_required")
+        row = db.scalar(select(CallRecord).where(CallRecord.id == rev.call_id).with_for_update())
+        if snapshot(row) != rev.result.get("snapshot") or stable_hash(row.transcript) != rev.transcript_hash:
+            raise ValueError("published_result_changed")
+        for k, v in rev.result["baseline"].items():
+            setattr(row, k, v)
+        history = dict(row.provider_result or {})
+        history.pop("published_revision_id", None)
+        row.provider_result = history
+        rev.state = "rolled_back"
+        rev.review = {**rev.review, "rollback": {"reviewer": reviewer, "reason": reason, "at": now().isoformat()}}
+        db.commit()
+        return {"id": rev.id, "state": rev.state}
+
+
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -822,8 +1005,36 @@ def main():
     parser.add_argument("--reviewer", default="")
     parser.add_argument("--reason", default="")
     parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--stage-v2", help="Comma-separated call IDs; no publication or delivery")
+    parser.add_argument("--run", type=int, default=1)
+    parser.add_argument("--review-revision", type=int)
+    parser.add_argument("--publish-revision", type=int)
+    parser.add_argument("--rollback-revision", type=int)
+    parser.add_argument("--activate-rules", choices=[LEGACY_RULE_VERSION, RULE_VERSION])
     args = parser.parse_args()
     init_db()
+    if args.stage_v2:
+        for call_id in [int(x) for x in args.stage_v2.split(",")]:
+            result = stage_revision(call_id, args.run)
+            print(json.dumps(result), flush=True)
+            if result["state"] in ("error", "ambiguous", "running"):
+                break
+        return
+    if args.review_revision:
+        print(json.dumps(review_revision(args.review_revision, args.reviewer, args.reason)))
+        return
+    if args.publish_revision:
+        print(json.dumps(publish_revision(args.publish_revision)))
+        return
+    if args.rollback_revision:
+        print(json.dumps(rollback_revision(args.rollback_revision, args.reviewer, args.reason)))
+        return
+    if args.activate_rules:
+        with SessionLocal() as db:
+            state_set(db, "calls_active_rule_version", args.activate_rules)
+            db.commit()
+        print(json.dumps({"active_rules": args.activate_rules}))
+        return
     if args.close_insufficient:
         print(json.dumps(close_insufficient(args.close_insufficient, args.reviewer, args.reason, apply=args.apply)))
         return

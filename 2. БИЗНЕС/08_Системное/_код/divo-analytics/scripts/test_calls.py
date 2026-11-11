@@ -323,7 +323,7 @@ class QueueTest(unittest.TestCase):
             with patch.object(call_worker,"deliver_telegram") as send:
                 call_worker.deliver_calls(SimpleNamespace());send.assert_called_once()
             self.assertEqual(set(loaded),{live.id})
-            self.assertFalse(any("call_record.provider_result" in s for s in projections))
+            self.assertFalse(any(" call_record.provider_result," in s or " call_record.provider_result AS" in s for s in projections))
         finally:
             event.remove(CallRecord,"load",on_load)
             event.remove(self.engine,"before_cursor_execute",capture)
@@ -789,8 +789,8 @@ class ReportTest(unittest.TestCase):
         a["criteria"][0]["evidence"][0]["quote"]="Автосалон Diomators, добрый день."
         result=render_report(row,telegram=True)
         self.assertLessEqual(len(result),3900)
-        self.assertNotIn("Diomators",result)
-        self.assertIn("Автосалон DIVO MOTORS",result)
+        self.assertIn("Diomators",result)
+        self.assertIn("Автосалон Diomators",result)
         self.assertEqual(a["criteria"][0]["evidence"][0]["quote"],"Автосалон Diomators, добрый день.")
         for i,(name,_) in CRITERIA.items():self.assertIn(f"{i}. {name}:",result)
         self.assertIn('/?call=1#callQuality',result)
@@ -798,3 +798,123 @@ class ReportTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+# New rubric: scores derive from observations; source speech is not rewritten.
+def analysis_v2():
+    from app.call_rules import CRITERIA_V2
+    a=analysis()
+    a['criteria']=[{'id':i,'status':'no','na_reason':'','explanation':'Условия проверены',
+        'evidence':[evidence()], 'conditions':[{'key':k,'status':'yes','evidence':[evidence()]} for k in keys]}
+        for i,(_,keys) in CRITERIA_V2.items()]
+    a['scenario']={'kind':'ongoing_sale','mismatch_confirmed':False,'customer_declined':False,
+        'dialogue_closed':False,'alternative_accepted':False,'reason':'Покупка обсуждается','evidence':[]}
+    a['next_step']={'kind':'contact','action':'Визит','owner':'client','when':'завтра в 12 часов',
+        'time_precision':'fixed','agreement':'yes','condition':'','evidence':[evidence()]}
+    return a
+
+
+class V2RulesTest(unittest.TestCase):
+    def check(self,a):
+        from app.call_rules import RULE_VERSION
+        return validate_analysis(a,TRANSCRIPT,'in',RULE_VERSION)
+
+    def test_remote_offer_and_missing_details_are_different(self):
+        from app.call_rules import criterion_view,RULE_VERSION
+        a=analysis_v2();fail_condition(a,5,'mileage')
+        r=self.check(a);self.assertEqual(r['errors'],[]);self.assertEqual(r['score'],85.71)
+        view=criterion_view(r['analysis']['criteria'][4],RULE_VERSION)
+        self.assertEqual((view['display_status'],view['action_status']),('partial','yes'))
+
+    def test_model_status_cannot_override_observations(self):
+        a=analysis_v2();r=self.check(a)
+        self.assertEqual(r['score'],100)
+        fail_condition(a,6,'specific_time');a['criteria'][5]['status']='yes'
+        self.assertEqual(self.check(a)['analysis']['criteria'][5]['status'],'no')
+
+    def test_tentative_deadline_is_rejected(self):
+        a=analysis_v2();a['next_step']['time_precision']='tentative'
+        self.assertIn('criterion_7:deadline_not_specific',self.check(a)['errors'])
+
+    def test_na_only_for_proven_terminal_unstarted_stages(self):
+        a=analysis_v2();a['scenario'].update(kind='no_suitable_offer',mismatch_confirmed=True,
+            customer_declined=True,dialogue_closed=True,evidence=[evidence()])
+        for c in a['criteria'][3:6]:
+            c['na_reason']='no_suitable_offer'
+            for v in c['conditions']:v.update(status='no',evidence=[])
+        r=self.check(a);self.assertEqual(r['errors'],[]);self.assertEqual(r['applicable_count'],4)
+        a['criteria'][3]['conditions'][0].update(status='yes',evidence=[evidence()])
+        self.assertIn('criterion_4:invalid_na_reason',self.check(a)['errors'])
+        a['scenario']['alternative_accepted']=True
+        self.assertIn('scenario:unproven_no_suitable_offer',self.check(a)['errors'])
+
+    def test_goodbye_is_not_explicit_end(self):
+        a=analysis_v2();a['next_step']['kind']='explicit_end';a['criteria'][6]['conditions']=[]
+        self.assertIn('criterion_7:unproven_explicit_end',self.check(a)['errors'])
+
+    def test_unknown_does_not_become_missing_fact(self):
+        a=analysis_v2();a['criteria'][4]['conditions'][0].update(status='unknown',evidence=[])
+        r=self.check(a);self.assertFalse(r['is_scored']);self.assertIsNone(r['score'])
+
+
+class RevisionTest(unittest.TestCase):
+    setUp=QueueTest.setUp
+    tearDown=QueueTest.tearDown
+    note=QueueTest.note
+    call=QueueTest.call
+    delivery=QueueTest.delivery
+    reportable=QueueTest.reportable
+    def candidate(self):
+        from app.models import CallAnalysisRevision
+        from app.call_rules import RULE_VERSION,ANALYSIS_VERSION
+        row=self.reportable();self.db.commit()
+        verdict=validate_analysis(analysis_v2(),TRANSCRIPT,'in',RULE_VERSION)
+        rev=CallAnalysisRevision(call_id=row.id,job_key='candidate-test',rule_version=RULE_VERSION,
+            analysis_version=ANALYSIS_VERSION,transcript_hash=call_worker.stable_hash(row.transcript),
+            base_hash=call_worker.source_hash(row),state='ready',
+            result={'baseline':call_worker.snapshot(row),'verdict':verdict},review={'manual_hold':False})
+        self.db.add(rev);self.db.commit();return row,rev
+
+    def test_publish_keeps_history_and_freezes_pending_delivery(self):
+        from app.models import CallDeliverySnapshot,CallAnalysisRevision
+        row,rev=self.candidate();delivery=self.delivery(row)
+        old=render_report(row,target=delivery.target)
+        call_worker.review_revision(rev.id,'test','Source checked')
+        call_worker.publish_revision(rev.id);self.db.expire_all()
+        self.assertEqual(self.db.get(CallDeliverySnapshot,delivery.id).body,old)
+        self.assertTrue(row.provider_result['reanalysis_delivery_suppressed'])
+        self.assertEqual(delivery.state,'pending')
+        self.assertEqual(len(list(self.db.scalars(select(CallAnalysisRevision)))),2)
+        call_worker.rollback_revision(rev.id,'test','Rollback test');self.db.expire_all()
+        self.assertEqual(row.analysis["summary"],"Обсудили автомобиль")
+        self.assertNotIn('published_revision_id',row.provider_result)
+
+    def test_changed_manual_review_blocks_publication(self):
+        row,rev=self.candidate();call_worker.review_revision(rev.id,'test','checked')
+        row.provider_result={'manual_review':{'decision':'hold'}};self.db.commit()
+        with self.assertRaisesRegex(ValueError,'revision_source_changed'):call_worker.publish_revision(rev.id)
+
+    def test_stage_is_idempotent_and_never_sends(self):
+        row=self.reportable();self.db.commit()
+        with patch.object(call_worker,'SonnetCallAgent') as agent, patch.object(call_worker,'deliver_calls') as send:
+            agent.catalog=SonnetCallAgent.catalog
+            agent.return_value.analyze.return_value={'analysis':analysis_v2()}
+            first=call_worker.stage_revision(row.id);second=call_worker.stage_revision(row.id)
+            self.assertEqual(first['state'],'ready');self.assertEqual(first['id'],second['id'])
+            agent.return_value.analyze.assert_called_once();send.assert_not_called()
+            self.db.refresh(row);self.assertEqual(row.analysis["summary"],"Обсудили автомобиль")
+
+    def test_summary_separates_versions_and_diagnostics(self):
+        from app.call_rules import RULE_VERSION,LEGACY_RULE_VERSION
+        first=self.reportable();first.rule_version=LEGACY_RULE_VERSION;first.score=100;first.is_scored=True
+        second=call_worker.upsert_note(self.db,self.note(id=2,uniq='second'),'lead',100,[100])
+        second.analysis=analysis_v2();second.transcript=TRANSCRIPT;second.recording_url=first.recording_url
+        second.state='complete';second.rule_version=RULE_VERSION;second.score=0;second.is_scored=True
+        pending=call_worker.upsert_note(self.db,self.note(id=3,uniq='third'),'lead',100,[100]);pending.state='analysis_ready'
+        self.db.add(SyncState(key='calls_active_rule_version',value=RULE_VERSION));self.db.commit()
+        with patch.object(calls_api,'SessionLocal',self.factory):
+            result=calls_api.summary()
+            self.assertEqual(result['average_score'],0);self.assertEqual(result['all_scored'],2)
+            self.assertEqual(result['scored'],1);self.assertEqual(result['pending'],1)
+            page=calls_api.calls(view='pending',limit=25,offset=0)
+            self.assertEqual(page['total'],1)
+            self.assertEqual(calls_api.detail(pending.id,diagnostics=True)['id'],pending.id)

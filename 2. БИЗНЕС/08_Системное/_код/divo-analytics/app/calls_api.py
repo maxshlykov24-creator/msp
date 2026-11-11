@@ -13,11 +13,11 @@ from sqlalchemy.orm import defer
 
 from app.api import _auth_guard
 from app.call_report import CATEGORY_NAMES, CRITERIA, STATE_NAMES, manager_name
-from app.call_rules import MIN_CALL_DURATION_SEC, canonical_company_name, canonicalize_analysis_text_fields
-from app.call_worker import delivery_skip_reason
+from app.call_rules import MIN_CALL_DURATION_SEC, RULE_VERSION, criterion_view, canonical_company_name, canonicalize_analysis_text_fields
+from app.call_worker import delivery_skip_reason, active_rules
 from app.config import settings
 from app.database import SessionLocal
-from app.models import CallDelivery, CallRecord, SyncState
+from app.models import CallDelivery, CallRecord, SyncState, CallAnalysisRevision
 from app.nexara import download_audio
 
 router = APIRouter(prefix="/api/calls", dependencies=[Depends(_auth_guard)])
@@ -45,10 +45,10 @@ def overview_query():
 
 
 def filters(start: date | None, end: date | None, manager: str | None, category: str | None,
-            calibration: bool | None):
+            calibration: bool | None, *, published: bool = True):
     if start and end and start > end:
         raise HTTPException(422, "Начало периода позже конца")
-    conditions = published_conditions()
+    conditions = published_conditions() if published else []
     if calibration is not None:
         conditions.append(CallRecord.is_calibration.is_(calibration))
     if start:
@@ -120,8 +120,9 @@ def summary_row(row):
             "yes_count": row.yes_count, "applicable_count": row.applicable_count,
             "is_scored": row.is_scored, "summary": a.get("summary", ""),
             "outcome": a.get("outcome", {}), "last_error": row.last_error,
-            "review_reason": review_reason(row),
-            "criteria": [{"id": c["id"], "status": c["status"]} for c in a.get("criteria", [])] if row.is_scored else []}
+            "review_reason": review_reason(row), "rule_version": row.rule_version, "analysis_version": row.analysis_version,
+            "scenario": a.get("scenario", {}),
+            "criteria": [{k: v for k, v in criterion_view(c, row.rule_version).items() if k in ("id", "status", "display_status", "display_label")} for c in a.get("criteria", [])] if row.is_scored else []}
 
 
 @router.get("")
@@ -131,7 +132,7 @@ def calls(start: date | None = None, end: date | None = None, manager: str | Non
           view: Literal["all", "scored", "unscored", "review", "unavailable", "pending"] = "all",
           sort: Literal["recent", "score_asc", "score_desc"] = "recent"):
     with SessionLocal() as db:
-        conditions = filters(start, end, manager, category, calibration)
+        conditions = filters(start, end, manager, category, calibration, published=view not in ("review", "pending", "unavailable"))
         if view == "scored":
             conditions.append(CallRecord.is_scored.is_(True))
         elif view == "unscored":
@@ -156,7 +157,17 @@ def summary(start: date | None = None, end: date | None = None, manager: str | N
             category: str | None = None, calibration: bool | None = None):
     with SessionLocal() as db:
         rows = list(db.scalars(overview_query().where(*filters(start, end, manager, category, calibration))))
-        scored = [r for r in rows if r.is_scored]
+        version = active_rules(db)
+        def current(r):
+            return (r.rule_version == RULE_VERSION) == (version == RULE_VERSION)
+        all_scored = [r for r in rows if r.is_scored]
+        scored = [r for r in all_scored if current(r)]
+        versions = []
+        for v in sorted({r.rule_version for r in all_scored}):
+            group = [r for r in all_scored if r.rule_version == v]
+            versions.append({"rule_version": v, "scored": len(group), "average_score": round(sum(r.score for r in group)/len(group), 1)})
+        diagnostic_rows = list(db.execute(select(CallRecord.state, CallRecord.occurred_at).where(
+            *filters(start, end, manager, category, calibration, published=False))))
         completed = [r for r in rows if r.state in ("complete", "needs_review", "insufficient")]
         meeting_count = sum((r.analysis or {}).get("outcome", {}).get("meeting_agreed") is True for r in scored)
         criteria = []
@@ -172,7 +183,7 @@ def summary(start: date | None = None, end: date | None = None, manager: str | N
             uid = row.manager_id if row.manager_verified else None
             groups.setdefault(uid, []).append(row)
         for uid, group in groups.items():
-            eligible = [r for r in group if r.is_scored]
+            eligible = [r for r in group if r.is_scored and current(r)]
             failures = Counter()
             for r in eligible:
                 for c in (r.analysis or {}).get("criteria") or []:
@@ -187,7 +198,7 @@ def summary(start: date | None = None, end: date | None = None, manager: str | N
             select(SyncState).where(SyncState.key.in_(["calls_last_success", "calls_last_collection", "calls_last_error", "calls_start_at"]))
         ))}
         pending_states = ["waiting_recording", "ready", "submitting", "processing", "analysis_ready", "analyzing"]
-        oldest = min((r.occurred_at for r in rows if r.state in pending_states), default=None)
+        oldest = min((r.occurred_at for r in diagnostic_rows if r.state in pending_states), default=None)
         last_collection = states.get("calls_last_collection")
         collection_age = None
         if last_collection:
@@ -198,13 +209,15 @@ def summary(start: date | None = None, end: date | None = None, manager: str | N
         delivery_states = Counter(db.scalars(select(CallDelivery.state).join(CallRecord).where(
             *filters(start, end, manager, category, calibration))))
         return {"total": len(rows), "processed": len(completed), "scored": len(scored),
-                "unscored": len(rows) - len(scored),
+                "unscored": len(rows) - len(all_scored), "all_scored": len(all_scored),
+                "rule_version": version, "versions": versions,
+                "scenario_counts": dict(Counter((r.analysis or {}).get("scenario", {}).get("kind", "legacy") for r in scored)),
                 "average_score": round(sum(r.score for r in scored) / len(scored), 1) if scored else None,
                 "meeting_agreed": meeting_count,
                 "meeting_rate": round(meeting_count * 100 / len(scored), 1) if scored else None,
-                "needs_review": sum(r.state in ("needs_review", "submit_ambiguous", "analysis_ambiguous") for r in rows),
-                "unavailable": sum(r.state in ("recording_unavailable", "missed", "error", "insufficient") for r in rows),
-                "pending": sum(r.state in ("waiting_recording", "ready", "submitting", "processing", "analysis_ready", "analyzing") for r in rows),
+                "needs_review": sum(r.state in ("needs_review", "submit_ambiguous", "analysis_ambiguous") for r in diagnostic_rows),
+                "unavailable": sum(r.state in ("recording_unavailable", "missed", "error", "insufficient") for r in diagnostic_rows),
+                "pending": sum(r.state in ("waiting_recording", "ready", "submitting", "processing", "analysis_ready", "analyzing") for r in diagnostic_rows),
                 "criteria": criteria,
                 "unknown_manager": sum(not r.manager_verified for r in rows),
                 "managers": sorted(managers, key=lambda m: (m["manager_id"] is None, m["manager_name"])),
@@ -222,12 +235,12 @@ def summary(start: date | None = None, end: date | None = None, manager: str | N
 
 
 @router.get("/{call_id}")
-def detail(call_id: int):
+def detail(call_id: int, diagnostics: bool = False):
     with SessionLocal() as db:
         record = db.execute(select(CallRecord, CallRecord.provider_result["manual_review"],
                                    CallRecord.provider_result["manager_resolution"])
                             .options(defer(CallRecord.provider_result, raiseload=True))
-                            .where(CallRecord.id == call_id, *published_conditions())).first()
+                            .where(CallRecord.id == call_id, *( [] if diagnostics else published_conditions()))).first()
         if not record:
             raise HTTPException(404, "Звонок не найден")
         row, manual_review, manager_resolution = record
@@ -236,12 +249,30 @@ def detail(call_id: int):
         result.update({"transcript": row.transcript, "analysis": canonicalize_analysis_text_fields(row.analysis),
                        "validation_errors": row.validation_errors, "rule_version": row.rule_version,
                        "analysis_version": row.analysis_version,
+                       "criteria_view": [criterion_view(c, row.rule_version) for c in (row.analysis or {}).get("criteria", [])],
+                       "revisions": [{"id": v.id, "rule_version": v.rule_version, "state": v.state,
+                                      "published_at": v.published_at.isoformat() if v.published_at else None}
+                                     for v in db.scalars(select(CallAnalysisRevision).where(CallAnalysisRevision.call_id == row.id).order_by(CallAnalysisRevision.id))],
                        "nexara_job_id": row.nexara_job_id,
                        "delivery_skip_reason": "" if deliveries and all(d.state == "sent" for d in deliveries) else delivery_skip_reason(row),
                        "manual_review": manual_review, "manager_resolution": manager_resolution,
                        "deliveries": [{"channel": d.channel, "state": d.state,
                                        "remote_id": d.remote_id, "last_error": d.last_error} for d in deliveries]})
         return result
+
+
+@router.get("/{call_id}/revisions/{revision_id}")
+def revision_detail(call_id: int, revision_id: int):
+    with SessionLocal() as db:
+        revision = db.scalar(select(CallAnalysisRevision).where(
+            CallAnalysisRevision.id == revision_id, CallAnalysisRevision.call_id == call_id,
+            CallAnalysisRevision.state.in_(["archived", "published", "rolled_back"])))
+        if not revision or "snapshot" not in revision.result:
+            raise HTTPException(404, "Сохранённая версия не найдена")
+        saved = revision.result["snapshot"]
+        return {"id": revision.id, "call_id": call_id, "state": revision.state,
+                "snapshot": saved,
+                "criteria_view": [criterion_view(c, saved["rule_version"]) for c in saved.get("analysis", {}).get("criteria", [])]}
 
 
 @router.get("/{call_id}/recording")

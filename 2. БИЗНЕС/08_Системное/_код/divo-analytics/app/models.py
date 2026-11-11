@@ -163,3 +163,31 @@ class CallDelivery(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+
+class CallAnalysisRevision(Base):
+    """Append-only analysis contents; lifecycle and review metadata are mutable."""
+    __tablename__ = "call_analysis_revision"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    call_id: Mapped[int] = mapped_column(ForeignKey("call_record.id"), index=True)
+    job_key: Mapped[str] = mapped_column(String(128), unique=True)
+    rule_version: Mapped[str] = mapped_column(String(32), index=True)
+    analysis_version: Mapped[str] = mapped_column(String(32))
+    transcript_hash: Mapped[str] = mapped_column(String(64))
+    base_hash: Mapped[str] = mapped_column(String(64))
+    state: Mapped[str] = mapped_column(String(32), default="running", index=True)
+    result: Mapped[dict] = mapped_column(JSONB, default=dict)
+    review: Mapped[dict] = mapped_column(JSONB, default=dict)
+    error: Mapped[str] = mapped_column(String(200), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class CallDeliverySnapshot(Base):
+    """Freeze outbound text before the first attempt, independent of later regrading."""
+    __tablename__ = "call_delivery_snapshot"
+    delivery_id: Mapped[int] = mapped_column(ForeignKey("call_delivery.id"), primary_key=True)
+    rule_version: Mapped[str] = mapped_column(String(32))
+    analysis_hash: Mapped[str] = mapped_column(String(64))
+    body: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

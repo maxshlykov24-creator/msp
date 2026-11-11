@@ -141,3 +141,5 @@ button:focus-visible,.cq-drawer summary:focus-visible{outline:2px solid #d1ab64;
 @media(prefers-reduced-motion:reduce){.cq-call-row{transition:none}#callQuality.cq-entering{animation:none}.cq-drawer,.cq-drawer::backdrop{transition:none}.cq-drawer{opacity:1;transform:none}.cq-drawer::backdrop,.cq-drawer.cq-visible::backdrop{background:rgba(0,0,0,.55)}}
 
 @media(max-width:700px){.footer-brand{min-width:0;max-width:100%;flex-wrap:wrap}.footer-brand>div{min-width:0}.footer-brand span{white-space:normal}.cq-criterion-bar{grid-template-columns:165px minmax(0,1fr) 45px}}
+
+.cq-badge.partial,.cq-dot.partial{background:rgba(217,164,65,.15);color:#d9a441}.cq-condition{margin:8px 0;padding:8px;border-left:2px solid #68625a}.cq-condition summary{cursor:pointer}

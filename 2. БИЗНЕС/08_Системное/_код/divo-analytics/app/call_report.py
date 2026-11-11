@@ -4,7 +4,7 @@ import re
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from app.call_rules import (CATEGORY_NAMES, CRITERIA, STATUS_NAMES,
+from app.call_rules import (CATEGORY_NAMES, CRITERIA, STATUS_NAMES, criterion_view,
                             canonical_company_name, canonicalize_analysis_text_fields)
 from app.config import settings
 
@@ -72,14 +72,17 @@ def render_report(call, *, telegram: bool = False, target: str = "") -> str:
     if summary:
         lines += ["", summary[:400 if telegram else 1000]]
     for item in ([] if call.validation_errors else a.get("criteria") or []):
-        label = CRITERIA.get(item.get("id"), ("Критерий", []))[0]
-        lines.append(f"\n{item.get('id')}. {label}: {STATUS_NAMES.get(item.get('status'), 'Требует проверки')}")
+        item = criterion_view(item, call.rule_version)
+        label = item["name"]
+        lines.append(f"\n{item.get('id')}. {label}: {item.get('display_label', STATUS_NAMES.get(item.get('status'), 'Требует проверки'))}")
+        if item.get("action_label") and item["status"] != "na":
+            lines.append(f"{item['action_label']}: {item['action_value']}. Строгий стандарт: {item['display_label']}")
         lines.append(redact_phone(item.get("explanation", ""))[:150 if telegram else 600])
         evidence = evidence_for(item)
         for e in evidence[:2 if telegram else 4]:
             ts = timestamp(e.get("start"))
             # Canonical spelling is a display-only correction; stored evidence stays exact.
-            lines.append((ts + " " if ts else "") + "«" + redact_phone(canonical_company_name(e.get("quote", "")))[:130 if telegram else 500] + "»")
+            lines.append((ts + " " if ts else "") + "«" + redact_phone(e.get("quote", ""))[:130 if telegram else 500] + "»")
     o = a.get("outcome") or {}
     if o:
         meeting = {True: "согласована", False: "не согласована", None: "не выяснено"}.get(o.get("meeting_agreed"))
@@ -107,12 +110,13 @@ def render_report(call, *, telegram: bool = False, target: str = "") -> str:
         # Все семь пунктов сохраняются даже при длинных доказательствах.
         compact = lines[:5] + [summary[:200]]
         for item in ([] if call.validation_errors else a.get("criteria") or []):
-            name = CRITERIA.get(item.get("id"), ("Критерий", []))[0]
+            item = criterion_view(item, call.rule_version)
+            name = item["name"]
             ev = evidence_for(item)
-            quote_line = " · ".join((timestamp(e.get("start")) + " «" + redact_phone(canonical_company_name(e.get("quote", "")))[:70] + "»")
+            quote_line = " · ".join((timestamp(e.get("start")) + " «" + redact_phone(e.get("quote", ""))[:70] + "»")
                                     for e in ev[:2])
-            compact += [f"{item.get('id')}. {name}: {STATUS_NAMES.get(item.get('status'), 'Требует проверки')}",
-                        redact_phone(item.get("explanation", ""))[:90], quote_line]
+            compact += [f"{item.get('id')}. {name}: {item.get('display_label', STATUS_NAMES.get(item.get('status'), 'Требует проверки'))}",
+                        (f"{item['action_label']}: {item['action_value']}. " if item.get("action_label") and item["status"] != "na" else "") + redact_phone(item.get("explanation", ""))[:90], quote_line]
         compact += [line for line in lines if line.startswith(("Результат:", "Время встречи:", "Следующий контакт:", "Приоритет:"))]
         body = "\n".join(compact)
     if len(body) + len(foot) + 2 > limit:
