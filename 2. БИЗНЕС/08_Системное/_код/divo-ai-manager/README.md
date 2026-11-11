@@ -642,3 +642,11 @@ Native target IDs retained. Zeekr and Wey assigned to the existing handoff manag
 NOT completed: 47114820 -> 47052022, 47174258 -> 47174196, 47114828 -> 47094406, 47168380 -> 47069030. Chrome switched from amoCRM to Google Sheets while preparing the next pair. UI actions stopped; asynchronous request asks owner to leave Chrome free for about 10 minutes. Resume only when browser is available and freshly inspect UI. Two disputed pairings excluded. No production code/model changes.
 
 Evidence: VPS 99_АРХИВ/merge-approved-20261109/before.json (all seven pairs, contacts, notes, tasks), phone-evidence.json (private provider messages), verified.json, state-before/after-*.json, runtime-readback.json. No secrets or private snapshots committed.
+
+### 2026-11-11: Volvo XC90 A7216 notes restored
+
+Live Auto.ru readback confirmed three bot replies at 15:19:28, 15:30:56 and 15:33:38 MSK in ar:8290739900d0b47161b94463f246c8a1. All three were queued with provider_binding_missing. Owner screenshot A7216 (four matching incoming texts/times) and live GET talk 7216 confirmed lead 47345282, contact 56902370 and listing identity. Initially only the integration listing note existed.
+
+Backed up state, briefly stopped the single worker, set existing notes-only note_target source=owner_confirmed_case and restarted. Native queue flushed all three replies. Independent CRM readback: each exact reply exists once, pending=0, service active. No buyer messages, identity/phone reuse, stage, model or production code changes. VPS evidence: 99_АРХИВ/volvo-a7216-20261111/before.json and readback.json.
+
+General Auto.ru binding remains unresolved for chats without employee outgoing CRM message ID echoed as provided_id. Avito temporal matching does not currently cover this Auto.ru case. This is one verified case restoration, not a universal fix.
