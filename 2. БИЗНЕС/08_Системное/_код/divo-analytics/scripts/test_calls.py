@@ -987,3 +987,40 @@ class RevisionTest(unittest.TestCase):
         with patch.object(calls_api,'SessionLocal',self.factory):
             status=calls_api.summary()['regrade']
             self.assertEqual(status['status'],'stopped_for_check');self.assertTrue(status['stale'])
+
+    def test_recording_is_available_in_explicit_authenticated_diagnostics(self):
+        import io
+        from fastapi import HTTPException,Request
+        row=self.reportable();row.state='needs_review';self.db.commit()
+        request=Request({'type':'http','method':'GET','path':'/','headers':[]})
+        audio=io.BytesIO(b'x'*1024)
+        with patch.object(calls_api,'SessionLocal',self.factory),patch.object(calls_api,'download_audio',return_value=(audio,'audio/mpeg')) as fetch:
+            with self.assertRaises(HTTPException):calls_api.recording(row.id,request)
+            self.assertEqual(calls_api.recording(row.id,request,diagnostics=True).status_code,200)
+            fetch.assert_called_once()
+        audio.close()
+
+    def test_detail_revision_metadata_does_not_hydrate_paid_payloads(self):
+        row,rev=self.candidate();rev.result={**rev.result,'unused_payload':'x'*500_000};self.db.commit()
+        projections=[]
+        def capture(conn,cursor,statement,parameters,context,executemany):
+            if statement.lstrip().upper().startswith('SELECT'):projections.append(statement.split('FROM',1)[0])
+        event.listen(self.engine,'before_cursor_execute',capture)
+        try:
+            with patch.object(calls_api,'SessionLocal',self.factory):
+                data=calls_api.detail(row.id)
+            self.assertEqual(data['revisions'][0]['id'],rev.id)
+            self.assertFalse(any('call_analysis_revision.result' in s for s in projections))
+        finally:event.remove(self.engine,'before_cursor_execute',capture)
+
+    def test_new_manual_history_blocks_reviewed_publication(self):
+        row,rev=self.candidate();call_worker.review_revision(rev.id,'test','checked')
+        row.provider_result={'reviews':[{'decision':'hold','reason':'new review'}]};self.db.commit()
+        with self.assertRaisesRegex(ValueError,'revision_manual_history_changed'):
+            call_worker.publish_revision(rev.id)
+
+    def test_new_manual_history_blocks_rollback(self):
+        row,rev=self.candidate();call_worker.review_revision(rev.id,'test','checked');call_worker.publish_revision(rev.id)
+        self.db.refresh(row);row.provider_result={**row.provider_result,'reviews':[{'decision':'accepted'}]};self.db.commit()
+        with self.assertRaisesRegex(ValueError,'published_manual_history_changed'):
+            call_worker.rollback_revision(rev.id,'test','rollback')

@@ -844,6 +844,11 @@ def snapshot(row) -> dict:
     return {k: getattr(row, k) for k in SNAPSHOT_FIELDS}
 
 
+def manual_history_hash(row) -> str:
+    provider = row.provider_result or {}
+    return stable_hash({"manual_review": provider.get("manual_review"), "reviews": provider.get("reviews")})
+
+
 def source_hash(row) -> str:
     return stable_hash({"snapshot": snapshot(row), "transcript": row.transcript,
                         "manual_review": (row.provider_result or {}).get("manual_review")})
@@ -895,7 +900,7 @@ def stage_revision(call_id: int, run: int = 1) -> dict:
         rev = CallAnalysisRevision(call_id=call_id, job_key=key, rule_version=RULE_VERSION,
             analysis_version=ANALYSIS_VERSION, transcript_hash=thash, base_hash=source_hash(row),
             state="running", result={"baseline": snapshot(row)},
-            review={"manual_hold": bool((row.provider_result or {}).get("manual_review"))})
+            review={"manual_hold": bool((row.provider_result or {}).get("manual_review") or (row.provider_result or {}).get("reviews"))})
         db.add(rev)
         db.commit()
         rid, transcript, direction, occurred = rev.id, row.transcript, row.direction, row.occurred_at
@@ -984,7 +989,8 @@ def review_revision(revision_id: int, reviewer: str, reason: str) -> dict:
         if checked["errors"]:
             raise ValueError("revision_no_longer_valid")
         rev.result = {**rev.result, "initial_verdict": rev.result["verdict"], "verdict": checked}
-        rev.review = {**rev.review, "reviewer": reviewer, "reason": reason, "at": now().isoformat()}
+        rev.review = {**rev.review, "reviewer": reviewer, "reason": reason, "at": now().isoformat(),
+                      "manual_history_hash": manual_history_hash(row)}
         rev.state = "verified"
         db.commit()
         return {"id": rev.id, "state": rev.state}
@@ -1003,6 +1009,8 @@ def publish_revision(revision_id: int) -> dict:
             raise ValueError("revision_source_changed")
         if stable_hash(row.transcript) != rev.transcript_hash:
             raise ValueError("revision_transcript_changed")
+        if rev.review.get("manual_history_hash") != manual_history_hash(row):
+            raise ValueError("revision_manual_history_changed")
         # Pin unsent reports BEFORE changing the published analysis. Sent history is not fabricated.
         for delivery in db.scalars(select(CallDelivery).where(CallDelivery.call_id == row.id,
                                                               CallDelivery.state == "pending")):
@@ -1019,7 +1027,8 @@ def publish_revision(revision_id: int) -> dict:
         row.category_reason = row.analysis["category_reason"]
         row.state = "insufficient" if row.category == "primary_inbound" and not row.is_scored else "complete"
         row.last_error = ""
-        rev.result = {**rev.result, "snapshot": snapshot(row)}
+        rev.result = {**rev.result, "snapshot": snapshot(row),
+                      "published_manual_history_hash": manual_history_hash(row)}
         rev.state, rev.published_at = "published", now()
         # Prevent regraded history from creating any previously absent outbound deliveries.
         history = dict(row.provider_result or {})
@@ -1040,6 +1049,8 @@ def rollback_revision(revision_id: int, reviewer: str, reason: str) -> dict:
         row = db.scalar(select(CallRecord).where(CallRecord.id == rev.call_id).with_for_update())
         if snapshot(row) != rev.result.get("snapshot") or stable_hash(row.transcript) != rev.transcript_hash:
             raise ValueError("published_result_changed")
+        if rev.result.get("published_manual_history_hash") != manual_history_hash(row):
+            raise ValueError("published_manual_history_changed")
         for k, v in rev.result["baseline"].items():
             setattr(row, k, v)
         history = dict(row.provider_result or {})

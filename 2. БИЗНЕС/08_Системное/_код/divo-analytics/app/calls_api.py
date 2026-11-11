@@ -258,14 +258,17 @@ def detail(call_id: int, diagnostics: bool = False):
         row, manual_review, manager_resolution = record
         deliveries = list(db.scalars(select(CallDelivery).where(CallDelivery.call_id == row.id)))
         result = summary_row(row)
-        result.update({"transcript": row.transcript, "analysis": canonicalize_analysis_text_fields(row.analysis),
+        result.update({"diagnostics": diagnostics, "transcript": row.transcript, "analysis": canonicalize_analysis_text_fields(row.analysis),
                        "validation_errors": row.validation_errors, "rule_version": row.rule_version,
                        "analysis_version": row.analysis_version, "render_version": REPORT_VERSION,
                        "criteria_view": [criterion_view(c, row.rule_version) for c in (row.analysis or {}).get("criteria", [])],
                        "revisions": [{"id": v.id, "rule_version": v.rule_version, "state": v.state,
                                       "published_at": v.published_at.isoformat() if v.published_at else None,
-                                      "audio_review_required": bool((v.review or {}).get("audio_review_required"))}
-                                     for v in db.scalars(select(CallAnalysisRevision).where(CallAnalysisRevision.call_id == row.id).order_by(CallAnalysisRevision.id))],
+                                      "audio_review_required": bool(v.audio_review_required)}
+                                     for v in db.execute(select(CallAnalysisRevision.id, CallAnalysisRevision.rule_version,
+                                         CallAnalysisRevision.state, CallAnalysisRevision.published_at,
+                                         CallAnalysisRevision.review["audio_review_required"].as_boolean().label("audio_review_required"))
+                                         .where(CallAnalysisRevision.call_id == row.id).order_by(CallAnalysisRevision.id))],
                        "nexara_job_id": row.nexara_job_id,
                        "delivery_skip_reason": "" if deliveries and all(d.state == "sent" for d in deliveries) else delivery_skip_reason(row),
                        "manual_review": manual_review, "manager_resolution": manager_resolution,
@@ -289,9 +292,9 @@ def revision_detail(call_id: int, revision_id: int):
 
 
 @router.get("/{call_id}/recording")
-def recording(call_id: int, request: Request):
+def recording(call_id: int, request: Request, diagnostics: bool = False):
     with SessionLocal() as db:
-        url = db.scalar(select(CallRecord.recording_url).where(CallRecord.id == call_id, *published_conditions()))
+        url = db.scalar(select(CallRecord.recording_url).where(CallRecord.id == call_id, func.length(func.trim(CallRecord.recording_url)) > 0, *([] if diagnostics else published_conditions())))
         if not url:
             raise HTTPException(404, "Запись недоступна")
     try:
