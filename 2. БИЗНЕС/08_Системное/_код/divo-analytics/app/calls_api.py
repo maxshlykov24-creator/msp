@@ -214,6 +214,12 @@ def summary(start: date | None = None, end: date | None = None, manager: str | N
             regrade_status = {k: v for k, v in json.loads(regrade.value).items() if k in ("total", "processed", "counts", "status", "updated_at")} if regrade else None
         except (ValueError, TypeError):
             regrade_status = None
+        if regrade_status and regrade_status.get("status") in ("running", "checkpointed"):
+            stamp = regrade.updated_at
+            if stamp.tzinfo is None:
+                stamp = stamp.replace(tzinfo=timezone.utc)
+            if (datetime.now(timezone.utc) - stamp).total_seconds() > 900:
+                regrade_status.update(status="stopped_for_check", stale=True)
         return {"total": len(rows), "regrade": regrade_status, "processed": len(completed), "scored": len(scored),
                 "unscored": len(rows) - len(all_scored), "all_scored": len(all_scored),
                 "rule_version": version, "versions": versions,

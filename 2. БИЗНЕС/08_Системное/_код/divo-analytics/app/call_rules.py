@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 LEGACY_RULE_VERSION = "2026-10-07.1"
 RULE_VERSION = "2026-11-12.1"
 MIN_CALL_DURATION_SEC = 30
-ANALYSIS_VERSION = "sonnet.qa.7"
+ANALYSIS_VERSION = "sonnet.qa.8"
 CATEGORY_NAMES = {
     "primary_inbound": "Первичный входящий продажный",
     "repeat": "Повторный разговор",
@@ -267,7 +267,7 @@ def validate_analysis(raw: dict, transcript: dict, direction: str, rule_version:
     # A known missing mandatory action already proves an AND criterion false;
     # uncertainty in a different subcondition cannot change that verdict.
     complete = complete and all(c.status != "unknown" and
-                                (c.status == "no" or all(v.status != "unknown" for v in c.conditions))
+                                (c.status in ("no", "na") or all(v.status != "unknown" for v in c.conditions))
                                 for c in a.criteria)
     scored = a.category == "primary_inbound" and complete and not errors
     yes = sum(c.status == "yes" for c in a.criteria)
@@ -423,7 +423,12 @@ def analysis_prompt(direction: str, occurred_at: int, rule_version: str = LEGACY
 В описаниях используй DIVO MOTORS; цитаты сохраняет код по ID фрагментов.
 Сначала классифицируй: primary_inbound — первичный входящий о покупке; repeat — явное
 продолжение прошлого разговора с подтверждающей цитатой; outbound — исходящий;
-service — обслуживание или уже купленная машина; irrelevant — нецелевой; insufficient —
+service — обслуживание, уже купленная машина или организационный вопрос клиента
+(проезд, парковка, документы) без содержательного обсуждения покупки;
+irrelevant — ошибочный номер, реклама или действительно постороннее обращение.
+Клиент, который уточняет въезд/парковку к салону, не является нецелевым. Если есть
+явное продолжение прежнего разговора о покупке, выбери repeat с доказательством;
+если подтверждения прошлого разговора нет, чисто организационный звонок — service; insufficient —
 недостаточно данных. Предыдущая переписка сама по себе не делает первый звонок повторным.
 Для repeat нужна category_evidence; исходящий не primary_inbound. Вне primary_inbound criteria=[].
 conversation_occurred=false только если нет живого диалога (автоответчик/недозвон).

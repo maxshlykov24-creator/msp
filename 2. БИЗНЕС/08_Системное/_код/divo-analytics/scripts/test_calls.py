@@ -859,6 +859,14 @@ class V2RulesTest(unittest.TestCase):
         r=self.check(a);self.assertFalse(r['is_scored']);self.assertIsNone(r['score'])
 
 
+    def test_unknown_irrelevant_trade_details_do_not_cancel_a_proven_na(self):
+        a=analysis_v2();a['outcome'].update(trade_in='no_car',trade_in_evidence=[evidence('Для обмена автомобиля нет.')])
+        a['criteria'][4]['na_reason']='no_car'
+        for v in a['criteria'][4]['conditions']:v.update(status='unknown',evidence=[])
+        r=self.check(a);self.assertEqual(r['errors'],[])
+        self.assertTrue(r['is_scored']);self.assertEqual(r['applicable_count'],6)
+
+
 class RevisionTest(unittest.TestCase):
     setUp=QueueTest.setUp
     tearDown=QueueTest.tearDown
@@ -935,7 +943,7 @@ class RevisionTest(unittest.TestCase):
         self.assertEqual(list(self.db.scalars(select(CallDelivery))),[])
 
     def test_correction_is_saved_and_cannot_be_repeated(self):
-        row,rev=self.candidate();rev.state='needs_review'
+        row,rev=self.candidate();rev.state='needs_review';rev.analysis_version='sonnet.qa.7'
         rev.result={**rev.result,'provider':{'analysis':analysis_v2(),'references':{}},
             'verdict':{**rev.result['verdict'],'errors':['test:missing_condition']}}
         self.db.commit()
@@ -946,6 +954,9 @@ class RevisionTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'revision_not_repairable'):call_worker.repair_revision(rev.id)
             agent.return_value.analyze.assert_called_once()
         self.db.refresh(rev);self.assertIn('first_provider',rev.result)
+        self.assertEqual(rev.result['first_analysis_version'],'sonnet.qa.7')
+        from app.call_rules import ANALYSIS_VERSION
+        self.assertEqual(rev.analysis_version,ANALYSIS_VERSION)
 
     def test_connection_before_submission_can_retry_without_ambiguous_charge(self):
         from app.call_rules import RULE_VERSION
@@ -970,3 +981,9 @@ class RevisionTest(unittest.TestCase):
         self.db.refresh(row)
         self.assertEqual((row.state,row.rule_version,row.analysis_version),('complete',RULE_VERSION,ANALYSIS_VERSION))
         self.assertEqual(len(list(self.db.scalars(select(CallAnalysisRevision)))),1)
+
+    def test_stale_history_job_is_not_reported_as_running(self):
+        self.db.add(SyncState(key='calls_regrade_test',value='{"status":"running","total":10,"processed":1}',updated_at=datetime(2020,1,1,tzinfo=timezone.utc)));self.db.commit()
+        with patch.object(calls_api,'SessionLocal',self.factory):
+            status=calls_api.summary()['regrade']
+            self.assertEqual(status['status'],'stopped_for_check');self.assertTrue(status['stale'])

@@ -938,7 +938,8 @@ def repair_revision(revision_id: int) -> dict:
         previous = rev.result["provider"]
         errors = rev.result["verdict"]["errors"] or ["semantic_review: Перечитай весь разговор и проверь каждое условие, особенно конкретные требования клиента, принадлежность реплик и подтверждение сроков. Общий вопрос менеджера не доказывает выявленную потребность. Исправь фактические пропуски и неверные цитаты; верни полный разбор."]
         rev.result = {**rev.result, "correction_started_at": now().isoformat(), "first_provider": previous,
-                      "first_verdict": rev.result["verdict"]}
+                      "first_verdict": rev.result["verdict"], "first_analysis_version": rev.analysis_version}
+        rev.analysis_version = ANALYSIS_VERSION
         rev.state = "correcting"
         transcript, direction, occurred = row.transcript, row.direction, row.occurred_at
         db.commit()
