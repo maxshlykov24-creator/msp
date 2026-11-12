@@ -168,3 +168,12 @@ python3 verify_live.py --vault-access
 Removed cart selection, references and station cart scan. Station now verifies products directly. Added combined task filters (search, marketplace, status, deadline, cell, quantity, sort), inventory filters (demo texture category, cell, balance, sort) and journal filters (search, employee, device, operation, result, time range, seed/current-session source, sort). Selecting found tasks uses the filtered result, capped at 20. All controls use existing custom dropdowns; reload resets filters.
 
 Verification: test_demo.cjs passed locally; extended test_journey.cjs passed locally and on https://ai-msp.ru/lukdecor/ including combined filters, selection, categories, cells, journal time/result and responsive layouts. Viewed stock and journal screenshots. Live app.js/style.css HTTP 200 and hashes match local. Physical TSD not tested. Backup: mansband-bridge:/var/backups/lukdecor-filters-20261112/demo-before.tgz.
+
+
+### 12 ноября: оформление и режим без пояснений
+
+По запросу владельца восстановлена композиция страницы ТСД: слева заголовок, описание и три шага, справа корпус. Две отдельные кнопки: Пройти демонстрацию и Крупный экран. Шапка бургунди, знак MS Product встроен непосредственно из действующего предложения рядом с ЛУКДЕКОР. Кнопка демонстрации на сводке получила контрастную заливку. Раздел Сотрудники исключён также из ТСД.
+
+Кнопка Скрыть пояснения убирает вводные блоки, приглашения, учебные примечания и подвал. Сохраняются операции, ошибки, статусы и краткая отметка Демо. Переключение не сбрасывает складские действия, действует между режимами; обновление страницы возвращает исходное состояние.
+
+Проверено: test_demo.cjs локально; расширенный test_journey.cjs локально и на опубликованном https://ai-msp.ru/lukdecor/ . Полный маршрут, фильтры, скрытие и возврат пояснений, видимость ошибок, отсутствие Сотрудников, логотип, две кнопки и 24 сочетания ширины/режима. Просмотрены снимки компьютера, корпуса и мобильной страницы. Три frontend-файла отвечают HTTP 200 и совпадают с локальными по SHA-256. Реальный ТСД и Telegram не проверялись. Резервная копия: mansband-bridge:/var/backups/lukdecor-layout-20261112/demo-before.tgz.
