@@ -308,6 +308,7 @@ def revision_detail(call_id: int, revision_id: int, candidate: bool = False):
             saved = revision.result["snapshot"]
         return {"id": revision.id, "call_id": call_id, "state": revision.state,
                 "snapshot": saved, "candidate": candidate, "comparison": comparison,
+                "audit_note": (revision.review.get("semantic_audit") or {}).get("note", "") if candidate else "",
                 "criteria_view": [criterion_view(c, saved["rule_version"]) for c in saved.get("analysis", {}).get("criteria", [])]}
 
 
