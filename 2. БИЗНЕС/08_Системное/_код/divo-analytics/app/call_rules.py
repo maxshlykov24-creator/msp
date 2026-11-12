@@ -12,6 +12,14 @@ LEGACY_RULE_VERSION = "2026-10-07.1"
 RULE_VERSION = "2026-11-12.1"
 MIN_CALL_DURATION_SEC = 30
 ANALYSIS_VERSION = "sonnet.qa.10"
+V3_RULE_VERSION = "2026-11-12.2"
+V3_ANALYSIS_VERSION = "sonnet.qa.11"
+SUPPORTED_RULE_VERSIONS = (LEGACY_RULE_VERSION, RULE_VERSION, V3_RULE_VERSION)
+
+
+def analysis_version_for(version: str) -> str:
+    return {LEGACY_RULE_VERSION: "sonnet.qa.6", RULE_VERSION: ANALYSIS_VERSION,
+            V3_RULE_VERSION: V3_ANALYSIS_VERSION}[version]
 CATEGORY_NAMES = {
     "primary_inbound": "Первичный входящий продажный",
     "repeat": "Повторный разговор",
@@ -180,6 +188,12 @@ def _norm(value: str) -> str:
 
 def validate_analysis(raw: dict, transcript: dict, direction: str, rule_version: str = LEGACY_RULE_VERSION) -> dict:
     """Не исправляем догадками: противоречивый результат идёт на проверку без балла."""
+    if rule_version not in SUPPORTED_RULE_VERSIONS:
+        return {"analysis": {}, "errors": ["unsupported_rule_version"], "is_scored": False,
+                "score": None, "yes_count": 0, "applicable_count": 0}
+    if rule_version == V3_RULE_VERSION:
+        from app.call_rules_v3 import validate_v3
+        return validate_v3(raw, transcript, direction)
     try:
         a = (AnalysisV2 if rule_version == RULE_VERSION else Analysis).model_validate(raw)
     except ValidationError as exc:
@@ -330,7 +344,16 @@ class AnalysisV2(Analysis):
 
 
 def criteria_for(version: str) -> dict:
-    return CRITERIA_V2 if version == RULE_VERSION else CRITERIA
+    if version not in SUPPORTED_RULE_VERSIONS:
+        raise ValueError("unsupported_rule_version")
+    return CRITERIA if version == LEGACY_RULE_VERSION else CRITERIA_V2
+
+
+def analysis_schema(version: str):
+    if version == V3_RULE_VERSION:
+        from app.call_rules_v3 import AnalysisV3
+        return AnalysisV3
+    return {LEGACY_RULE_VERSION: Analysis, RULE_VERSION: AnalysisV2}[version]
 
 
 def derive_v2(a: AnalysisV2) -> list[str]:
