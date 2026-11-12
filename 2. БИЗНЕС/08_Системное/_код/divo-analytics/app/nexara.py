@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import re
 import hashlib
 import socket
 import tempfile
@@ -315,7 +316,11 @@ criterion=yes; хотя бы одно conditions=no означает criterion=n
             choice = result["choices"][0]
             if choice.get("finish_reason") != "stop":
                 raise RemoteFailure("agent_output_incomplete")
-            raw = json.loads(choice["message"]["content"])
+            content = choice['message']['content'].strip()
+            # Some adapters wrap JSON mode output in a Markdown fence. Strip only
+            # a complete, unambiguous fence; never search prose for a guessed object.
+            fenced = re.fullmatch(r'```(?:json)?\s*\n([\s\S]*?)\n```', content)
+            raw = json.loads(fenced.group(1) if fenced else content)
             grounded = self.ground(raw, catalog)
             if rule_version == V3_RULE_VERSION:
                 grounded.update(grounded.pop('quality', {}))

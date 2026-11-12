@@ -83,11 +83,20 @@ class RulesV3Test(unittest.TestCase):
         a=raw();a['events']=[event()];a['restrictions']=[dict(kind='no_calls',text='Не звоните',evidence=[ev('Не звоните')])]
         r=self.check(a);self.assertEqual(r['score'],0);self.assertIn('ограничение',r['analysis']['recommendation'])
     def test_unknown_only_blocks_when_score_can_change(self):
-        a=raw();a['speech_clear']=False;a['uncertainties']=[dict(criterion_id=1,reason='Неясное имя',evidence=[])]
+        a=raw();a['speech_clear']=False;a['uncertainties']=[dict(criterion_id=1,reason='Неясное имя',evidence=[],quality_flags=['speech_clear'])]
         self.assertEqual(self.check(a)['score'],0)
         for x in a['criteria'][0]['conditions']:x.update(status='yes',evidence=[ev('Автосалон.')])
         a['criteria'][0]['conditions'][1].update(status='unknown',evidence=[])
         self.assertIsNone(self.check(a)['score'])
+    def test_display_uncertainty_does_not_cancel_proven_condition(self):
+        a=raw();a['events']=[event()]
+        a['uncertainties']=[dict(criterion_id=7,impact='display',reason='Искажено написание',evidence=[])]
+        self.assertEqual(self.check(a)['score'],14.29)
+        a['recording_complete']=False
+        self.assertIsNone(self.check(a)['score'])
+    def test_photo_sender_is_not_appraiser(self):
+        a=raw();a['events']=[event('valuation','','none','client')]
+        self.assertIn('event:e1:valuation_owner_is_appraiser_not_photo_sender',self.check(a)['errors'])
     def test_unknown_versions_rejected(self):
         self.assertIn('unsupported_rule_version',validate_analysis({},TR,'in','future')['errors'])
         for fn,args in ((analysis_schema,('future',)),(analysis_prompt,('in',0,'future'))):
@@ -109,7 +118,7 @@ class RulesV3Test(unittest.TestCase):
         for k in ('meeting_agreed','meeting_when','next_contact','meeting_evidence'):a['outcome'].pop(k)
         client=SonnetCallAgent.__new__(SonnetCallAgent)
         client.client=httpx.Client(transport=httpx.MockTransport(lambda req:httpx.Response(200,json={
-            'choices':[{'finish_reason':'stop','message':{'content':json.dumps(a)}}]})))
+            'choices':[{'finish_reason':'stop','message':{'content':'```json\n'+json.dumps(a)+'\n```'}}]})))
         try:r=client.analyze(TR,'in',0,rule_version=V3_RULE_VERSION)
         finally:client.close()
         self.assertEqual(self.check(r['analysis'])['score'],0)

@@ -398,6 +398,8 @@ def analyze_calls():
                 except AmbiguousSubmission as exc:
                     row.state, row.last_error = "analysis_ambiguous", str(exc)
                 except RemoteFailure as exc:
+                    if hasattr(exc, 'provider_payload'):
+                        row.provider_result = {**history, 'failed_provider_response': exc.provider_payload}
                     if str(exc) == "agent_connection_not_established":
                         # No HTTP request was sent: a delayed retry cannot duplicate a paid analysis.
                         row.state = "analysis_ready"
@@ -905,6 +907,7 @@ def archive_current(db, row, origin: str, provider: dict | None = None):
 def candidate_state(verdict, version):
     analysis = verdict.get('analysis') or {}
     unresolved = version == V3_RULE_VERSION and (
+        any(u.get('criterion_id') == 0 and u.get('impact') != 'display' for u in analysis.get('uncertainties', [])) or
         analysis.get('category') == 'insufficient' or
         (analysis.get('category') == 'primary_inbound' and not verdict.get('is_scored')))
     return 'needs_review' if verdict['errors'] or unresolved else 'ready'
