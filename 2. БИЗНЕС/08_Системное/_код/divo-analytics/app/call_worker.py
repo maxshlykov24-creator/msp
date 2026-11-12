@@ -907,7 +907,9 @@ def archive_current(db, row, origin: str, provider: dict | None = None):
 def candidate_state(verdict, version):
     analysis = verdict.get('analysis') or {}
     unresolved = version == V3_RULE_VERSION and (
-        any(u.get('criterion_id') == 0 and u.get('impact') != 'display' for u in analysis.get('uncertainties', [])) or
+        any(u.get('impact') in ('category','applicability') or
+            (analysis.get('category')=='primary_inbound' and u.get('criterion_id')==0 and u.get('impact')!='display')
+            for u in analysis.get('uncertainties', [])) or
         analysis.get('category') == 'insufficient' or
         (analysis.get('category') == 'primary_inbound' and not verdict.get('is_scored')))
     return 'needs_review' if verdict['errors'] or unresolved else 'ready'

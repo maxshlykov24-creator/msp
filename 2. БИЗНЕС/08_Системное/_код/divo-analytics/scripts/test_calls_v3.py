@@ -35,6 +35,10 @@ class RulesV3Test(unittest.TestCase):
         a=raw();a['events']=[event()];r=self.check(a)
         self.assertEqual(r['errors'],[]);self.assertEqual(r['score'],14.29)
         self.assertEqual(self.check(r['analysis']),r)
+    def test_unknown_owner_does_not_turn_known_deadline_into_failure(self):
+        a=raw();a['events']=[event(owner='unknown')]
+        r=self.check(a);self.assertIsNone(r['score'])
+        self.assertEqual(r['analysis']['criteria'][6]['status'],'unknown')
     def test_materials_dont_count_or_borrow_visit_time(self):
         a=raw();a['events']=[event('materials'),{**event('visit','Завтра','day',status='tentative'),'id':'e2'}]
         self.assertEqual(self.check(a)['analysis']['criteria'][6]['status'],'no')
@@ -83,7 +87,7 @@ class RulesV3Test(unittest.TestCase):
         a=raw();a['events']=[event()];a['restrictions']=[dict(kind='no_calls',text='Не звоните',evidence=[ev('Не звоните')])]
         r=self.check(a);self.assertEqual(r['score'],0);self.assertIn('ограничение',r['analysis']['recommendation'])
     def test_unknown_only_blocks_when_score_can_change(self):
-        a=raw();a['speech_clear']=False;a['uncertainties']=[dict(criterion_id=1,reason='Неясное имя',evidence=[],quality_flags=['speech_clear'])]
+        a=raw();a['speech_clear']=False;a['uncertainties']=[dict(criterion_id=1,reason='Неясное имя',evidence=[],quality_flags=['speech_clear'],condition_keys=['self_name'])]
         self.assertEqual(self.check(a)['score'],0)
         for x in a['criteria'][0]['conditions']:x.update(status='yes',evidence=[ev('Автосалон.')])
         a['criteria'][0]['conditions'][1].update(status='unknown',evidence=[])
@@ -94,6 +98,26 @@ class RulesV3Test(unittest.TestCase):
         self.assertEqual(self.check(a)['score'],14.29)
         a['recording_complete']=False
         self.assertIsNone(self.check(a)['score'])
+    def test_unclear_failed_condition_is_not_an_independent_proven_failure(self):
+        a=raw()
+        for x in a['criteria'][0]['conditions']:x.update(status='yes',evidence=[ev('Автосалон.')])
+        a['criteria'][0]['conditions'][1].update(status='no',evidence=[])
+        a['uncertainties']=[dict(criterion_id=1,impact='score',condition_keys=['self_name'],reason='Неясное имя',evidence=[])]
+        r=self.check(a)
+        self.assertEqual(r['analysis']['criteria'][0]['status'],'unknown');self.assertIsNone(r['score'])
+        a['criteria'][0]['conditions'][0].update(status='no',evidence=[])
+        self.assertEqual(self.check(a)['score'],0)
+    def test_clear_omission_is_not_asr_uncertainty(self):
+        a=raw();a['uncertainties']=[dict(criterion_id=1,impact='score',condition_keys=['salon'],reason='Менеджер не назвал название салона',evidence=[])]
+        r=self.check(a);self.assertEqual(r['score'],0)
+        self.assertEqual(self.check(r['analysis']),r)
+    def test_missing_name_after_introduction_requires_audio(self):
+        a=raw()
+        for x in a['criteria'][0]['conditions']:x.update(status='yes',evidence=[ev('Автосалон.')])
+        text=TEXT+' Меня зовут, я вас слушаю.'
+        tr={'text':text,'duration':60,'segments':[{'text':text,'start':0,'end':60}]}
+        r=validate_analysis(a,tr,'in',V3_RULE_VERSION)
+        self.assertIsNone(r['score']);self.assertEqual(r['analysis']['criteria'][0]['conditions'][1]['status'],'unknown')
     def test_photo_sender_is_not_appraiser(self):
         a=raw();a['events']=[event('valuation','','none','client')]
         self.assertIn('event:e1:valuation_owner_is_appraiser_not_photo_sender',self.check(a)['errors'])

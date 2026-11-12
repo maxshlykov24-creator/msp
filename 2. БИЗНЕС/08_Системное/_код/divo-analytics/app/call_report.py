@@ -8,7 +8,7 @@ from app.call_rules import (CATEGORY_NAMES, CRITERIA, STATUS_NAMES, criterion_vi
                             canonical_company_name, canonicalize_analysis_text_fields)
 from app.config import settings
 
-REPORT_VERSION = "2026-11-12.1"
+REPORT_VERSION = "2026-11-12.2"
 
 STATE_NAMES = {
     "insufficient": "Разбор готов",
@@ -89,12 +89,15 @@ def render_report(call, *, telegram: bool = False, target: str = "") -> str:
     if o:
         meeting = {True: "согласована", False: "не согласована", None: "не выяснено"}.get(o.get("meeting_agreed"))
         trade = {"interest": "интерес", "refused": "отказ", "no_car": "нет автомобиля",
-                 "not_discussed": "не выяснено"}.get(o.get("trade_in"), "не выяснено")
+                 "not_discussed": "не выяснено", "discussed_unclear": "обсуждали, решение не выяснено",
+                 "unknown": "нужна проверка записи"}.get(o.get("trade_in"), "не выяснено")
         lines += ["", f"Результат: встреча {meeting}. Трейд-ин: {trade}."]
         if o.get("meeting_when"):
             lines.append("Время встречи: " + redact_phone(o["meeting_when"])[:200])
         if o.get("next_contact"):
             lines.append("Следующий контакт: " + redact_phone(o["next_contact"])[:200])
+    if a.get('purchase_timing_condition'):
+        lines.append('Условие покупки: ' + redact_phone(a['purchase_timing_condition'])[:300])
     if a.get("recommendation"):
         lines.append("Приоритет: " + redact_phone(a["recommendation"])[:200 if telegram else 600])
     footer = [f"Разбор и транскрипт: {settings.calls_dashboard_url.rstrip('/')}/?call={call.id}#callQuality"]

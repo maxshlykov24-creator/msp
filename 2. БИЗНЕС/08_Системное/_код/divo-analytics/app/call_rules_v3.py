@@ -44,6 +44,7 @@ class Uncertainty(StrictModel):
     criterion_id: int = Field(ge=0, le=7)
     impact: Literal['score', 'category', 'applicability', 'display'] = 'score'
     quality_flags: list[Literal['recording_complete','speech_clear','roles_reliable']] = Field(default_factory=list, max_length=3)
+    condition_keys: list[str] = Field(default_factory=list, max_length=5)
     reason: str = Field(max_length=300)
     evidence: list[Evidence] = Field(max_length=3)
 
@@ -225,12 +226,20 @@ def validate_v3(raw, transcript, direction):
         _set(by[6],'specific_day','yes' if visit and visit.status=='agreed' and visit.when and visit.precision!='none' else 'unknown' if visit and visit.status=='unknown' else 'no',visit.time_evidence if visit else [])
         _set(by[6],'specific_time','yes' if visit and visit.status=='agreed' and precise(visit) else 'unknown' if visit and visit.status=='unknown' else 'no',visit.time_evidence if visit else [])
     no_calls=[r for r in a.restrictions if r.kind in ('no_calls','client_initiates')]
-    def full_event(e):
-        if e.status!='agreed' or not e.agreement_evidence or e.owner=='unknown':return False
+    # "No extra calls" limits unsolicited contact, not an explicitly agreed callback.
+    absolute_no_calls=[r for r in no_calls if not re.search(r'лишн|без надобност',r.text,re.I)]
+    for event in a.events:
+        if (event.type=='callback' and event.status=='agreed' and event.owner in ('manager','both') and absolute_no_calls
+                and max(_end(r.evidence) for r in absolute_no_calls)>=_end(event.agreement_evidence)):
+            event.status='declined'
+            event.evidence=(event.evidence+[e for r in absolute_no_calls for e in r.evidence])[:5]
+    def deadline(e):
         if e.type=='end_contact':return bool(a.scenario.customer_declined and a.scenario.dialogue_closed)
         if e.type not in ('visit','callback'):return False
-        if e.type=='callback' and no_calls and e.owner in ('manager','both') and max(_end(r.evidence) for r in no_calls)>=_end(e.agreement_evidence):return False
         return precise(e) or (e.type=='callback' and e.precision=='day' and bool(e.when and e.time_evidence))
+    def full_event(e):
+        if e.status!='agreed' or not e.agreement_evidence or e.owner=='unknown':return False
+        return deadline(e)
     pending=[e for e in a.events if e.status not in ('completed','declined')]
     step=max(pending,key=lambda e:(full_event(e),e.type in ('visit','callback'),_start(e.evidence)),default=None)
     if 7 in by:
@@ -238,12 +247,37 @@ def validate_v3(raw, transcript, direction):
         if step:
             _set(by[7],'action','yes',step.evidence[:4]);_set(by[7],'owner','yes' if step.owner!='unknown' else 'unknown',step.evidence[:4])
             _set(by[7],'agreement','yes' if step.status=='agreed' else 'unknown' if step.status=='unknown' else 'no',step.agreement_evidence)
-            _set(by[7],'deadline','yes' if full_event(step) else 'unknown' if step.status=='unknown' and step.type in ('visit','callback') else 'no',step.time_evidence if step.type!='end_contact' else step.evidence[:4])
+            _set(by[7],'deadline','yes' if deadline(step) else 'unknown' if step.status=='unknown' and step.type in ('visit','callback') else 'no',step.time_evidence if step.type!='end_contact' else step.evidence[:4])
     sc=a.scenario
     no_offer=(sc.kind=='no_suitable_offer' and sc.mismatch_confirmed and sc.customer_declined and sc.dialogue_closed and not sc.alternative_accepted and sc.mismatch_evidence and sc.refusal_evidence and sc.closure_evidence)
     if sc.kind=='no_suitable_offer' and not no_offer:errors.append('scenario:separate_mismatch_refusal_closure_required')
     if no_offer and not re.search(r'не подходит|не подойд|не интерес|не рассматри|не нужно|не нужен|не надо|не хочу|отказ|не буду|не будем',_text(sc.refusal_evidence),re.I):
         errors.append('scenario:refusal_requires_semantic_review')
+        no_offer=False
+    # An ASR gap is not a proven omission by the manager.
+    if 1 in by:
+        gaps=[s for s in segments if float(s.get('start') or 0)<30 and
+              re.search(r'меня зовут\s*[,.:;]?\s*я вас слушаю',s.get('text',''),re.I)]
+        if gaps:
+            proof=[Evidence(quote=re.search(r'меня зовут\s*[,.:;]?\s*я вас слушаю',s['text'],re.I).group(0),
+                            start=s.get('start'),end=s.get('end')) for s in gaps][:3]
+            _set(by[1],'self_name','unknown',proof)
+            if not any(u.criterion_id==1 and 'self_name' in u.condition_keys for u in a.uncertainties):
+                a.uncertainties.append(Uncertainty(criterion_id=1,impact='score',condition_keys=['self_name'],
+                    reason='После представления в расшифровке отсутствует имя; нужна проверка записи.',evidence=proof))
+    for u in a.uncertainties:
+        if u.impact=='score' and u.criterion_id in by:
+            c=by[u.criterion_id]
+            keys={x.key for x in c.conditions}
+            if any(key not in keys for key in u.condition_keys):errors.append('uncertainty:unknown_condition')
+            affected=[x for x in c.conditions if x.key in u.condition_keys]
+            # Some answers put a clear omission into the uncertainty list. Preserve
+            # the observed no; only actual ambiguity can replace it with unknown.
+            absence=re.search(r'не (?:назва|прозвуч|спрос|уточн|обсужд|указ)|отсутств',u.reason,re.I)
+            ambiguous=re.search(r'неразбор|искаж|оборва|обрыв|неяс|непонят|распоз|ASR|не слыш|не расслыш|возможно',u.reason,re.I)
+            if affected and all(x.status=='no' for x in affected) and absence and not ambiguous and not u.quality_flags:
+                u.impact='display';continue
+            for key in u.condition_keys:_set(c,key,'unknown',u.evidence)
     for c in a.criteria:
         requested_na=c.na_reason;c.na_reason=''
         if c.id==5 and a.outcome.trade_in in ('no_car','refused') and a.outcome.trade_in_evidence:c.na_reason=a.outcome.trade_in
@@ -279,7 +313,15 @@ def validate_v3(raw, transcript, direction):
     a.outcome.meeting_evidence=agreed[-1].agreement_evidence[:4] if agreed else []
     a.outcome.next_contact=(EVENT_LABELS[step.type]+(': '+step.when if step.when else '')) if step and step.type in ('visit','callback') else None
     yes=sum(c.status=='yes' for c in a.criteria);applicable=sum(c.status!='na' for c in a.criteria)
-    blocking=any(u.impact!='display' and (u.criterion_id==0 or (u.criterion_id in by and by[u.criterion_id].status not in ('no','na'))) for u in a.uncertainties)
+    def blocks(u):
+        if u.impact=='display':return False
+        if u.impact in ('category','applicability') or u.criterion_id==0:return True
+        c=by.get(u.criterion_id)
+        if c is None:return False
+        affected=set(u.condition_keys) or {x.key for x in c.conditions if x.status=='unknown'}
+        if not affected:return True  # Cannot prove a DIFFERENT required condition failed.
+        return not any(x.status=='no' and x.key not in affected for x in c.conditions)
+    blocking=any(blocks(u) for u in a.uncertainties)
     scoped_flags={flag for u in a.uncertainties for flag in u.quality_flags}
     quality=all(getattr(a,flag) or (flag in scoped_flags and not blocking)
                 for flag in ('recording_complete','speech_clear','roles_reliable'))
@@ -318,6 +360,8 @@ when — дословная формулировка без вычисления
 6 и 7 код пересчитает по events. Для материалов даже «сейчас» не даёт 7. Для оценки без договорённости о встрече/созвоне тоже не выдумывай callback. end_contact — только явный отказ от дальнейшего контакта плюс подтверждение менеджера, не обычное прощание и не отказ от одной машины.
 restrictions: no_calls/client_initiates/channel/other, text дословно из evidence. Не теряй «не звоните лишний раз» и выбранный MAX/Telegram/WhatsApp/SMS. Не выдумывай мессенджер.
 Применимость: na только5 при доказанном no_car/refused. Для no_suitable_offer нужны ОТДЕЛЬНЫЕ mismatch_evidence, refusal_evidence, closure_evidence: ясная причина и ясный отказ продолжать покупку. Расстояние, отсутствие альтернативы и спасибо сами по себе недостаточны. Без явного отказа ongoing_sale; не исключай пункты. Поздний отказ не стирает начатые этапы. На обычных критериях na_reason="".
+Пример НЕ-отказа: клиент недоволен окрасами, спрашивает другую модель, её нет, говорит «спасибо, до свидания». Это не ясное прекращение подбора из-за несоответствия: ongoing_sale, customer_declined=false, пункты 4–6 применимы. Не используй обычное прощание как refusal_evidence. Это правило действует и при отсутствии любого дальнейшего шага.
 Не путай метки спикеров с разными людьми: восстанавливай роль по смыслу; чужие реплики не приписывай менеджеру. Существенную неопределённость запиши uncertainties с criterion_id (0 для категории/всего разговора), причиной и доказательством. Неразборчивые имена, пропуски, обрыв не дают права на штраф. Неясность несущественного названия машины сама по себе не отменяет все остальные известные условия. При реально плохой связи не повышай quality flags ради балла.
 Если какой-либо флаг quality=false, укажи его имя в quality_flags соответствующей uncertainty. Уточни область влияния: для потери всего начала/конца или неустранимой путаницы ролей criterion_id=0; для локальной неясности только затронутый пункт. Не прикрывай существенную потерю записи неопределённостью названия машины.
+Для impact=score обязательно перечисли затронутые condition_keys. Код делает их unknown; независимое доказанное no другого обязательного условия сохраняет строгий no пункта. Нельзя назвать неизвестное имя достоверно пропущенным действием: «меня зовут, я вас слушаю» => self_name=unknown. Отсутствие вопроса/срока, ясный пропуск или невыясненное решение об обмене после вопроса — достоверное no, НЕ uncertainty. Не создавай uncertainty с причиной «не прозвучало» или «не спросил», если речь ясна. В повторных и сервисных разговорах неопределённость цены/названия — display; она не меняет уже доказанную категорию.
 Предложения условий, вопросы и исправления читай во всём разговоре, включая конец. Не добавляй неподтверждённые сущности. Верни полный JSON по схеме.'''

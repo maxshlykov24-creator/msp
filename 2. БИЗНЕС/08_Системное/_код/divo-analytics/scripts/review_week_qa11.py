@@ -14,15 +14,28 @@ def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('--run',type=int,required=True)
     parser.add_argument('--calls',type=int,nargs='*')
+    parser.add_argument('--checkpoint',action='store_true',help='Stop safely between paid requests')
+    parser.add_argument('--resume',action='store_true',help='Clear an explicit checkpoint request')
     args=parser.parse_args()
     gold=json.loads(Path(__file__).with_name('call_qa11_gold.json').read_text())
     entries=[g for g in gold['calls'] if not args.calls or g['id'] in args.calls]
     key=f'calls_regrade_qa11_week_{args.run}'
+    if args.checkpoint or args.resume:
+        with SessionLocal() as db:
+            state=db.scalar(select(SyncState).where(SyncState.key==key).with_for_update())
+            if not state:raise ValueError('existing_run_required')
+            data=json.loads(state.value);data['checkpoint_requested']=bool(args.checkpoint)
+            state.value=json.dumps(data);db.commit()
+        if args.checkpoint:
+            print('Checkpoint requested; any paid request already in flight will finish.');return
     def progress(result=None,status='running'):
         with SessionLocal() as db:
-            state=db.get(SyncState,key)
+            state=db.scalar(select(SyncState).where(SyncState.key==key).with_for_update())
             data=json.loads(state.value) if state else {'total':len(gold['calls']),'results':{},'rules':gold['rules'],'analysis':gold['analysis']}
             if result:data['results'][str(result['call_id'])]=result
+            if status=='stopped_for_check':data['checkpoint_requested']=True
+            if status=='candidates_awaiting_review' and len(data['results'])<data['total']:status='running'
+            if data.get('checkpoint_requested') and status=='running':status='checkpointed'
             data.update(status=status,processed=len(data['results']),updated_at=datetime.now(timezone.utc).isoformat(),
                         counts=dict(Counter(r['state'] for r in data['results'].values())))
             if not state:state=SyncState(key=key);db.add(state)
@@ -30,6 +43,8 @@ def main():
     progress()
     for g in entries:
         with SessionLocal() as db:
+            if json.loads(db.get(SyncState,key).value).get('checkpoint_requested'):
+                progress(status='checkpointed');return
             row=db.get(CallRecord,g['id'])
             if stable_hash(row.transcript)!=g['transcript_hash'] or source_hash(row)!=g['baseline_hash']:
                 progress(status='source_changed');raise RuntimeError('frozen_source_changed:'+str(g['id']))
