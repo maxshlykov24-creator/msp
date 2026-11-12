@@ -831,6 +831,26 @@ class V2RulesTest(unittest.TestCase):
         fail_condition(a,6,'specific_time');a['criteria'][5]['status']='yes'
         self.assertEqual(self.check(a)['analysis']['criteria'][5]['status'],'no')
 
+    def test_representative_visit_keeps_strict_time_requirement(self):
+        from app.call_rules import RULE_VERSION, criterion_view
+        a=analysis_v2()
+        quote='Мой подборщик приедет завтра в 12 часов. Да, ждём вашего подборщика завтра в 12 часов.'
+        transcript=copy.deepcopy(TRANSCRIPT)
+        transcript['text'] += ' ' + quote
+        transcript['segments'][0]['text'] += ' ' + quote
+        proof=evidence(quote)
+        c=a['criteria'][5];c['evidence']=[proof]
+        for condition in c['conditions']:condition['evidence']=[proof]
+        a['next_step']['action']='Осмотр автомобиля представителем клиента'
+        a['next_step']['evidence']=[proof]
+        r=validate_analysis(a,transcript,'in',RULE_VERSION)
+        self.assertEqual(r['errors'],[])
+        self.assertEqual(r['analysis']['criteria'][5]['status'],'yes')
+        fail_condition(a,6,'specific_time')
+        r=validate_analysis(a,transcript,'in',RULE_VERSION)
+        view=criterion_view(r['analysis']['criteria'][5],RULE_VERSION)
+        self.assertEqual((view['status'],view['display_status']),('no','partial'))
+
     def test_tentative_deadline_is_rejected(self):
         a=analysis_v2();a['next_step']['time_precision']='tentative'
         self.assertIn('criterion_7:deadline_not_specific',self.check(a)['errors'])
