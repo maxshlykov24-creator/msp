@@ -14,7 +14,7 @@ from sqlalchemy.orm import defer
 
 from app.api import _auth_guard
 from app.call_report import CATEGORY_NAMES, CRITERIA, STATE_NAMES, REPORT_VERSION, manager_name
-from app.call_rules import MIN_CALL_DURATION_SEC, RULE_VERSION, criterion_view, canonical_company_name, canonicalize_analysis_text_fields, analysis_version_for
+from app.call_rules import MIN_CALL_DURATION_SEC, RULE_VERSION, V3_RULE_VERSION, criterion_view, canonical_company_name, canonicalize_analysis_text_fields, analysis_version_for, evaluation_fingerprint
 from app.call_worker import delivery_skip_reason, active_rules, source_hash, snapshot
 from app.config import settings
 from app.database import SessionLocal
@@ -295,12 +295,13 @@ def revision_detail(call_id: int, revision_id: int, candidate: bool = False):
             saved = {k: verdict.get(k) for k in ('analysis', 'score', 'is_scored', 'yes_count', 'applicable_count')}
             saved.update(rule_version=revision.rule_version, analysis_version=revision.analysis_version,
                          category=(verdict.get('analysis') or {}).get('category'), validation_errors=verdict.get('errors', []))
-            if revision.review.get('audio_review_required') or revision.review.get('reference_differences'):
+            if revision.review.get('audio_review_required') or revision.review.get('reference_differences') or revision.review.get('semantic_findings'):
                 saved.update(proposed_score=saved['score'], score=None, is_scored=False,
                              review_required=True, audio_review_required=bool(revision.review.get('audio_review_required')))
             row = db.get(CallRecord, call_id)
             previous = snapshot(row)
             comparison = {'published': previous, 'source_unchanged': source_hash(row) == revision.base_hash,
+                          'validation_current': revision.rule_version!=V3_RULE_VERSION or revision.result.get('validation_engine_hash')==evaluation_fingerprint(revision.rule_version),
                           'changed_fields': [k for k in ('score', 'category', 'is_scored', 'applicable_count') if previous.get(k) != saved.get(k)],
                           'publication_required': True}
         else:

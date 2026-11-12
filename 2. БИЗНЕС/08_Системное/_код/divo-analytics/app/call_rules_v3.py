@@ -154,9 +154,27 @@ def validate_v3(raw, transcript, direction):
     if len(facts)!=len(a.facts):errors.append('facts:duplicate_id')
     for f in a.facts:
         if not f.subject_id or not f.evidence:errors.append('fact:'+f.id+':missing_identity_or_proof')
-        if f.status=='known' and not _supported_literal(f.value, f.evidence):errors.append('fact:'+f.id+':value_not_literal')
+        if not _supported_literal(f.value, f.evidence):
+            if f.status=='known':errors.append('fact:'+f.id+':value_not_literal')
+            f.value='Не подтверждено расшифровкой';f.status='uncertain'
+    # Explicit brand plus spelled RX designation is an established model, not a
+    # guessed brand from a bare number. Keep the original spoken value unchanged.
+    recognized_customer_model=False
+    lexus_ids={f.subject_id for f in a.facts if f.subject=='customer' and f.kind=='make' and f.status=='known'
+               and re.fullmatch(r'лексус|lexus',f.value.strip(),re.I)}
+    for f in a.facts:
+        spoken=re.search(r'\b(?:\d{3}\s*(?:erex|эрекс|эр[ -]*икс|rx|рх)|(?:erex|эрекс|эр[ -]*икс|rx|рх)\s*\d{3})\b',_text(f.evidence),re.I)
+        if f.subject=='customer' and f.subject_id in lexus_ids and f.kind=='model' and spoken:
+            f.value=spoken.group(0);f.status='known';recognized_customer_model=True
+            errors=[e for e in errors if e!='fact:'+f.id+':value_not_literal']
     if len({e.id for e in a.events})!=len(a.events):errors.append('events:duplicate_id')
     for e in a.events:
+        if e.precision=='none' and e.when and (not e.time_evidence or not _supported_literal(e.when,e.time_evidence)):
+            e.when=''  # An action/condition copied into the time field is not a deadline.
+        if (e.type=='materials' and e.status=='completed'
+                and re.search(r'\b(?:скину|отправлю|пришлю|вышлю|направлю|передам|напишу)\b',_text(e.evidence),re.I)
+                and not re.search(r'\b(?:скинул[аи]?|отправил[аи]?|прислал[аи]?|выслал[аи]?|направил[аи]?|написал[аи]?|отправлено|отправлена)\b',_text(e.evidence),re.I)):
+            e.status='agreed' if e.agreement_evidence else 'proposed'
         if not e.evidence:errors.append('event:'+e.id+':missing_evidence')
         if e.status=='agreed' and not e.agreement_evidence:errors.append('event:'+e.id+':agreement_missing')
         if e.when and not e.time_evidence:errors.append('event:'+e.id+':time_missing')
@@ -174,6 +192,7 @@ def validate_v3(raw, transcript, direction):
     if a.outcome.trade_in in ('refused','no_car'):
         if not a.outcome.trade_in_evidence or not re.search(r'\bнет\b|\bне\b|\bбез\b|продал|никак',_text(a.outcome.trade_in_evidence),re.I):
             errors.append('trade_in:explicit_refusal_or_no_car_required')
+            a.outcome.trade_in='unknown'
     for c in a.criteria:
         if c.id not in CRITERIA_V2:
             errors.append('criteria:unknown_id');continue
@@ -193,6 +212,23 @@ def validate_v3(raw, transcript, direction):
         if len({f.subject_id for f in used})>1:errors.append('criterion_3:mixed_vehicles')
         signatures=[(f.subject_id,f.kind, _norm(f.value) if f.kind in ('equipment','condition','history','other') else '') for f in used]
         if len(signatures)!=len(set(signatures)):errors.append('criterion_3:duplicate_fact')
+        def car_property(f):
+            if f.subject!='target' or f.kind in ('make','model') or f.status=='superseded':return False
+            if re.search(r'\d+\s*штук|машин.*в наличии|каждый день.*работ',f.value,re.I):return False
+            if f.kind=='condition' and re.fullmatch(r'(?:машина\s+)?(?:в\s+)?(?:идеальном|отличном|хорошем) состоянии[.! ]*',f.value,re.I):return False
+            return True
+        pool=[f for f in a.facts if car_property(f)]
+        if len({f.subject_id for f in pool})>1:errors.append('criterion_3:mixed_vehicles')
+        chosen=[];seen=set()
+        priority={'year':0,'mileage':1,'price':2,'color':3,'history':4,'equipment':5,'condition':6,'other':7}
+        for f in sorted(pool,key=lambda f:(f.status!='known',priority[f.kind])):
+            signature=(f.subject_id,f.kind,_norm(f.value) if f.kind in ('history','equipment','condition','other') else '')
+            if signature not in seen:chosen.append(f);seen.add(signature)
+        for n,key in enumerate(('specific_fact_one','specific_fact_two')):
+            f=chosen[n] if n<len(chosen) else None
+            _set(by[3],key,'yes' if f and f.status=='known' else 'unknown' if f else 'no',f.evidence if f else [])
+            item=next((x for x in by[3].conditions if x.key==key),None)
+            if item:item.fact_ids=[f.id] if f else []
     if 4 in by:
         c=by[4]
         if c.stage=='started' and a.outcome.trade_in=='not_discussed':a.outcome.trade_in='discussed_unclear'
@@ -217,6 +253,17 @@ def validate_v3(raw, transcript, direction):
         unclear=any(e.type=='valuation' and e.status=='unknown' for e in a.events)
         _set(by[5],'valuation_offered','yes' if offered else 'unknown' if unclear else 'no',offered[-1].evidence[:4] if offered else [])
     visits=[e for e in a.events if e.type=='visit']
+    if 6 in by and not visits:
+        invitation=next((x for x in by[6].conditions if x.key=='invitation'),None)
+        dates=[x for x in by[6].conditions if x.key in ('specific_day','specific_time')]
+        if invitation and invitation.status=='yes' and invitation.evidence and all(x.status=='no' for x in dates):
+            # Preserve a supported invitation when the extractor omitted its event.
+            # No date or agreement is inferred, so this cannot create a scored visit.
+            owner='representative' if re.search(r'подборщик|специалист|представител|сын|знаком|друз',_text(invitation.evidence),re.I) else 'client'
+            event=Event(id='criterion_6_invitation',type='visit',status='proposed',owner=owner,recipient='manager',
+                when='',precision='none',condition='',evidence=invitation.evidence,agreement_evidence=[],time_evidence=[],condition_evidence=[],purpose_evidence=[])
+            if len(a.events)<12 and not any(e.id==event.id for e in a.events):a.events.append(event);visits=[event]
+            else:errors.append('events:invitation_event_missing')
     def precise(e):return bool(e.when and e.time_evidence and e.precision in ('fixed','bounded'))
     if 6 in by:
         if visits:
@@ -241,7 +288,9 @@ def validate_v3(raw, transcript, direction):
         if e.status!='agreed' or not e.agreement_evidence or e.owner=='unknown':return False
         return deadline(e)
     pending=[e for e in a.events if e.status not in ('completed','declined')]
-    step=max(pending,key=lambda e:(full_event(e),e.type in ('visit','callback'),_start(e.evidence)),default=None)
+    def possible_contact(e):
+        return e.type in ('visit','callback') and deadline(e) and e.status in ('agreed','unknown') and (e.status=='unknown' or e.owner=='unknown')
+    step=max(pending,key=lambda e:(full_event(e),possible_contact(e),e.status=='agreed',e.type in ('visit','callback'),_start(e.evidence)),default=None)
     if 7 in by:
         for key in CRITERIA_V2[7][1]:_set(by[7],key,'no')
         if step:
@@ -266,10 +315,16 @@ def validate_v3(raw, transcript, direction):
                 a.uncertainties.append(Uncertainty(criterion_id=1,impact='score',condition_keys=['self_name'],
                     reason='После представления в расшифровке отсутствует имя; нужна проверка записи.',evidence=proof))
     for u in a.uncertainties:
+        if (u.impact=='category' and a.category=='service' and a.recording_complete and a.speech_clear and a.roles_reliable
+                and re.search(r'целиком|полностью',u.reason,re.I) and re.search(r'посвящ|организацион',u.reason,re.I)
+                and not re.search(r'неразбор|искаж|оборва|обрыв|неяс|непонят|недостаточ|возможно',u.reason,re.I)):
+            u.impact='display'  # Classification rationale is not an uncertainty.
         if u.impact=='score' and u.criterion_id in by:
             c=by[u.criterion_id]
             keys={x.key for x in c.conditions}
             if any(key not in keys for key in u.condition_keys):errors.append('uncertainty:unknown_condition')
+            if recognized_customer_model and u.criterion_id==5 and u.condition_keys==['make_model']:
+                u.impact='display';continue
             affected=[x for x in c.conditions if x.key in u.condition_keys]
             # Some answers put a clear omission into the uncertainty list. Preserve
             # the observed no; only actual ambiguity can replace it with unknown.

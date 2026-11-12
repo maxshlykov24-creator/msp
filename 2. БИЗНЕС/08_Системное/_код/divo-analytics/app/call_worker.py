@@ -915,7 +915,13 @@ def candidate_state(verdict, version):
     return 'needs_review' if verdict['errors'] or unresolved else 'ready'
 
 
-def stage_revision(call_id: int, run: int = 1, *, rule_version: str = RULE_VERSION) -> dict:
+def candidate_validation_metadata(version):
+    from app.call_rules import evaluation_fingerprint
+    return {'validation_engine_hash': evaluation_fingerprint(version)}
+
+
+def stage_revision(call_id: int, run: int = 1, *, rule_version: str = RULE_VERSION,
+                   correction_revision: int | None = None, findings: list[str] | None = None) -> dict:
     """One durable paid attempt; never clears a live analysis or touches deliveries."""
     with SessionLocal() as db:
         row = db.get(CallRecord, call_id)
@@ -923,28 +929,46 @@ def stage_revision(call_id: int, run: int = 1, *, rule_version: str = RULE_VERSI
             raise ValueError("published_transcript_required")
         thash = stable_hash(row.transcript)
         av = analysis_version_for(rule_version)
+        correction=None
+        previous=None
+        if correction_revision is not None:
+            previous=db.get(CallAnalysisRevision,correction_revision)
+            if (not previous or previous.call_id!=call_id or previous.state not in ('ready','needs_review')
+                    or previous.base_hash!=source_hash(row) or previous.rule_version!=rule_version):
+                raise ValueError('matching_draft_revision_required')
+            if not findings or len(findings)>10:raise ValueError('specific_semantic_findings_required')
+            if previous.review.get('audio_review_required'):raise ValueError('audio_review_required')
+            correction={'references':previous.result['provider']['references'],'errors':findings}
         from app.nexara import SonnetCallAgent as RequestBuilder
-        body, _ = RequestBuilder.request_body(row.transcript, row.direction, row.occurred_at, rule_version=rule_version)
+        body, _ = RequestBuilder.request_body(row.transcript, row.direction, row.occurred_at, rule_version=rule_version, correction=correction)
         configuration = stable_hash({"request": body, "rules": rule_version, "analysis": av})
         key = f"candidate:{call_id}:" + stable_hash({"transcript": thash, "configuration": configuration, "run": run})
         prior = db.scalar(select(CallAnalysisRevision).where(CallAnalysisRevision.job_key == key))
         if prior:
             return {"id": prior.id, "call_id": call_id, "state": prior.state, "existing": True}
+        if previous and previous.review.get('semantic_child_revision'):
+            raise ValueError('semantic_correction_already_attempted')
         rev = CallAnalysisRevision(call_id=call_id, job_key=key, rule_version=rule_version,
             analysis_version=av, transcript_hash=thash, base_hash=source_hash(row),
             state="running", result={"baseline": snapshot(row), "configuration_hash": configuration},
             review={"manual_hold": bool((row.provider_result or {}).get("manual_review") or (row.provider_result or {}).get("reviews"))})
         db.add(rev)
+        db.flush()
+        if previous:
+            previous.review={**previous.review,'semantic_child_revision':rev.id,'semantic_findings':findings}
+            previous.state='needs_review'
+            rev.result={**rev.result,'correction_of':previous.id,'semantic_findings':findings}
         db.commit()
         rid, transcript, direction, occurred = rev.id, row.transcript, row.direction, row.occurred_at
     agent = SonnetCallAgent()
     try:
-        result = agent.analyze(transcript, direction, occurred, rule_version=rule_version)
+        result = agent.analyze(transcript, direction, occurred, rule_version=rule_version,
+                               **({'correction':correction} if correction else {}))
         verdict = validate_analysis(result["analysis"], transcript, direction, rule_version)
         # Persist the paid result before any optional correction request.
         with SessionLocal() as db:
             rev = db.get(CallAnalysisRevision, rid)
-            rev.result = {**rev.result, "provider": result, "verdict": verdict}
+            rev.result = {**rev.result, "provider": result, "verdict": verdict, **candidate_validation_metadata(rule_version)}
             rev.state = candidate_state(verdict, rule_version)
             db.commit()
     except Exception as exc:
@@ -991,7 +1015,7 @@ def repair_revision(revision_id: int) -> dict:
         verdict = validate_analysis(result["analysis"], transcript, direction, rule_version)
         with SessionLocal() as db:
             rev = db.get(CallAnalysisRevision, revision_id)
-            rev.result = {**rev.result, "provider": result, "verdict": verdict}
+            rev.result = {**rev.result, "provider": result, "verdict": verdict, **candidate_validation_metadata(rule_version)}
             rev.state = candidate_state(verdict, rule_version)
             db.commit()
     except Exception as exc:
@@ -1017,6 +1041,8 @@ def review_revision(revision_id: int, reviewer: str, reason: str) -> dict:
         rev = db.scalar(select(CallAnalysisRevision).where(CallAnalysisRevision.id == revision_id).with_for_update())
         if not rev or rev.state != "ready" or rev.result.get("verdict", {}).get("errors"):
             raise ValueError("revision_not_ready")
+        if rev.rule_version==V3_RULE_VERSION and rev.result.get('validation_engine_hash')!=candidate_validation_metadata(rev.rule_version)['validation_engine_hash']:
+            raise ValueError('revision_requires_local_revalidation')
         row = db.get(CallRecord, rev.call_id)
         if db.scalar(select(CallAnalysisRevision.id).where(CallAnalysisRevision.call_id == rev.call_id,
                 CallAnalysisRevision.review["audio_review_required"].as_boolean().is_(True)).limit(1)):

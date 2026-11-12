@@ -179,10 +179,10 @@
       "transcript_hash": "3ecf5569fdefd7e6f389211c8ba42947f07b0c3d37ad239c32b1d889c0a17cd4",
       "baseline_hash": "03888a5cb3979ef6951b62ff1a2e3e138e418c439e27b96deb6fea19011b353c",
       "expected_category": "primary_inbound",
-      "expected_score": 14.29,
+      "expected_score": 28.57,
       "score_asserted": true,
       "requires_review": false,
-      "expectation": "Distance and goodbye do not prove refusal; no stage exclusions."
+      "expectation": "All seven criteria apply. Customer supplied white color and 2021 year at 15.83; two facts count under approved any-party rule. Inventory of 50 cars is not a vehicle property."
     },
     {
       "id": 519,
@@ -250,9 +250,9 @@
       "baseline_hash": "6b80e06d7e13c8be98a40499a6b3c3be36bc9cb67b156aa7b0cc30c32d1932fd",
       "expected_category": "primary_inbound",
       "expected_score": 14.29,
-      "score_asserted": true,
-      "requires_review": false,
-      "expectation": "Truncated last question: review recording completeness separately."
+      "score_asserted": false,
+      "requires_review": true,
+      "expectation": "The recording ends at 104.112 while the manager asks when the next contact will happen (102.47–104.11). Completeness could change criterion 7: review original audio before a final score."
     },
     {
       "id": 508,

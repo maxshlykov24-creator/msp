@@ -6,7 +6,8 @@ from pathlib import Path
 from sqlalchemy import select, func
 from app.database import SessionLocal
 from app.models import CallRecord, CallAnalysisRevision, CallDelivery, SyncState
-from app.call_worker import source_hash, stable_hash
+from app.call_worker import source_hash, stable_hash, candidate_state, now
+from app.call_rules import validate_analysis, evaluation_fingerprint
 
 
 def semantic_checks(call_id, a):
@@ -48,11 +49,35 @@ def semantic_checks(call_id, a):
 
 
 def main():
-    parser=argparse.ArgumentParser();parser.add_argument('--run',type=int,required=True);args=parser.parse_args()
+    parser=argparse.ArgumentParser();parser.add_argument('--run',type=int,required=True)
+    parser.add_argument('--revalidate',action='store_true',help='Recalculate saved observations only; no provider requests')
+    args=parser.parse_args()
     gold=json.loads(Path(__file__).with_name('call_qa11_gold.json').read_text())
     with SessionLocal() as db:
         manifest=db.get(SyncState,f'calls_regrade_qa11_week_{args.run}')
         results=json.loads(manifest.value).get('results',{}) if manifest else {}
+        if args.revalidate:
+            if len(results)!=len(gold['calls']):raise ValueError('complete_frozen_run_required')
+            for g in gold['calls']:
+                revision=db.get(CallAnalysisRevision,results[str(g['id'])]['id']);row=db.get(CallRecord,g['id'])
+                if revision.state not in ('ready','needs_review'):raise ValueError('draft_candidate_required')
+                if source_hash(row)!=g['baseline_hash']:raise ValueError('published_source_changed')
+                v=validate_analysis(revision.result['provider']['analysis'],row.transcript,row.direction,revision.rule_version)
+                history=list(revision.result.get('validation_history',[]))
+                if v!=revision.result['verdict'] or revision.result.get('validation_engine_hash')!=evaluation_fingerprint(revision.rule_version):
+                    history.append({'verdict':revision.result['verdict'],'engine':revision.result.get('validation_engine_hash'),'replaced_at':now().isoformat()})
+                revision.result={**revision.result,'verdict':v,'validation_history':history,'validation_engine_hash':evaluation_fingerprint(revision.rule_version)}
+                differences=[];a=v['analysis']
+                if g['expected_category'] and a.get('category')!=g['expected_category']:differences.append('category')
+                if g['score_asserted'] and v.get('score')!=g['expected_score']:differences.append('score')
+                if g['requires_review']:differences.append('audio_review_required')
+                revision.review={**revision.review,'reference_differences':differences,'reference_note':g['expectation'],
+                    'audio_review_required':g['requires_review'] or revision.review.get('audio_review_required',False)}
+                revision.state=candidate_state(v,revision.rule_version)
+                if differences or revision.review.get('audio_review_required') or revision.review.get('semantic_findings'):revision.state='needs_review'
+                results[str(g['id'])].update(state=revision.state,score=v.get('score'),category=a.get('category'),errors=v['errors'],differences=differences)
+            data=json.loads(manifest.value);data.update(results=results,status='revalidated_awaiting_semantic_review',counts=dict(Counter(r['state'] for r in results.values())))
+            manifest.value=json.dumps(data);db.commit()
         report=[]
         for g in sorted(gold['calls'],key=lambda g:g['id']):
             result=results.get(str(g['id']))

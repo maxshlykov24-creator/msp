@@ -20,6 +20,16 @@ SUPPORTED_RULE_VERSIONS = (LEGACY_RULE_VERSION, RULE_VERSION, V3_RULE_VERSION)
 def analysis_version_for(version: str) -> str:
     return {LEGACY_RULE_VERSION: "sonnet.qa.6", RULE_VERSION: ANALYSIS_VERSION,
             V3_RULE_VERSION: V3_ANALYSIS_VERSION}[version]
+
+
+def evaluation_fingerprint(version: str) -> str:
+    from hashlib import sha256
+    from pathlib import Path
+    if version not in SUPPORTED_RULE_VERSIONS:
+        raise ValueError('unsupported_rule_version')
+    data=Path(__file__).read_bytes()
+    if version==V3_RULE_VERSION:data+=Path(__file__).with_name('call_rules_v3.py').read_bytes()
+    return sha256(data).hexdigest()
 CATEGORY_NAMES = {
     "primary_inbound": "Первичный входящий продажный",
     "repeat": "Повторный разговор",
