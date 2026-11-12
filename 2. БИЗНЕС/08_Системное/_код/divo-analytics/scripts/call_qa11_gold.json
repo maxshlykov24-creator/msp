@@ -191,8 +191,8 @@
       "expected_category": "primary_inbound",
       "expected_score": null,
       "score_asserted": false,
-      "requires_review": false,
-      "expectation": "Second new purchase after completed first: primary; callback tomorrow; manager sends materials."
+      "requires_review": true,
+      "expectation": "Second new purchase after completed first: primary; callback tomorrow; manager sends materials. Unclear opening name and target mileage require audio review; do not force score."
     },
     {
       "id": 483,

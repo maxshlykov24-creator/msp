@@ -1024,8 +1024,11 @@ def review_revision(revision_id: int, reviewer: str, reason: str) -> dict:
         checked = validate_analysis(rev.result["provider"]["analysis"], row.transcript, row.direction, rev.rule_version)
         if checked["errors"]:
             raise ValueError("revision_no_longer_valid")
+        if stable_hash(checked) != stable_hash(rev.result['verdict']):
+            raise ValueError('revision_verdict_changed_before_review')
         rev.result = {**rev.result, "initial_verdict": rev.result["verdict"], "verdict": checked}
         rev.review = {**rev.review, "reviewer": reviewer, "reason": reason, "at": now().isoformat(),
+                      "verdict_hash": stable_hash(checked),
                       "manual_history_hash": manual_history_hash(row)}
         rev.state = "verified"
         db.commit()
@@ -1055,6 +1058,8 @@ def publish_revision(revision_id: int) -> dict:
         verdict = validate_analysis(rev.result["verdict"]["analysis"], row.transcript, row.direction, rev.rule_version)
         if verdict["errors"]:
             raise ValueError("revision_no_longer_valid")
+        if stable_hash(verdict) != rev.review.get('verdict_hash', stable_hash(rev.result['verdict'])):
+            raise ValueError('revision_verdict_changed_since_review')
         for key in ("analysis", "score", "yes_count", "applicable_count", "is_scored"):
             setattr(row, key, verdict[key])
         row.validation_errors = []

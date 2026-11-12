@@ -196,7 +196,7 @@ def summary(start: date | None = None, end: date | None = None, manager: str | N
                              "top_misses": [{"id": i, "name": CRITERIA[i][0], "count": count}
                                             for i, count in failures.most_common(3)]})
         states = {k: v.value for k, v in ((r.key, r) for r in db.scalars(
-            select(SyncState).where(SyncState.key.in_(["calls_last_success", "calls_last_collection", "calls_last_error", "calls_start_at"]))
+            select(SyncState).where(SyncState.key.in_(["calls_last_success", "calls_last_collection", "calls_last_error", "calls_start_at", "calls_analysis_blocked", "calls_analysis_retry_after"]))
         ))}
         pending_states = ["waiting_recording", "ready", "submitting", "processing", "analysis_ready", "analyzing"]
         oldest = min((r.occurred_at for r in diagnostic_rows if r.state in pending_states), default=None)
@@ -236,7 +236,8 @@ def summary(start: date | None = None, end: date | None = None, manager: str | N
                 "manager_options": [{"id": k, "name": v} for k, v in settings.call_manager_names.items()],
                 "categories": CATEGORY_NAMES, "worker": states,
                 "diagnostics": {"collection_age_sec": collection_age,
-                    "billing_blocked": sum(r.state == 'error' and '402' in (r.last_error or '') for r in diagnostic_rows),
+                    "billing_blocked": sum(r.state in ('error','analysis_ready','needs_review') and '402' in (r.last_error or '') for r in diagnostic_rows),
+                    "analysis_paused_for_payment": states.get('calls_analysis_blocked') == 'agent_http_402',
                     "recording_missing": sum(r.state in ('waiting_recording','recording_unavailable') for r in diagnostic_rows),
                     "analysis_ambiguous": sum(r.state == 'analysis_ambiguous' for r in diagnostic_rows),
                     "collection_stale": collection_age is None or collection_age > 300,
@@ -265,11 +266,11 @@ def detail(call_id: int, diagnostics: bool = False):
                        "validation_errors": row.validation_errors, "rule_version": row.rule_version,
                        "analysis_version": row.analysis_version, "render_version": REPORT_VERSION,
                        "criteria_view": [criterion_view(c, row.rule_version) for c in (row.analysis or {}).get("criteria", [])],
-                       "revisions": [{"id": v.id, "rule_version": v.rule_version, "state": v.state,
+                       "revisions": [{"id": v.id, "rule_version": v.rule_version, "analysis_version": v.analysis_version, "state": v.state,
                                       "published_at": v.published_at.isoformat() if v.published_at else None,
                                       "audio_review_required": bool(v.audio_review_required)}
                                      for v in db.execute(select(CallAnalysisRevision.id, CallAnalysisRevision.rule_version,
-                                         CallAnalysisRevision.state, CallAnalysisRevision.published_at,
+                                         CallAnalysisRevision.state, CallAnalysisRevision.analysis_version, CallAnalysisRevision.published_at,
                                          CallAnalysisRevision.review["audio_review_required"].as_boolean().label("audio_review_required"))
                                          .where(CallAnalysisRevision.call_id == row.id).order_by(CallAnalysisRevision.id))],
                        "nexara_job_id": row.nexara_job_id,

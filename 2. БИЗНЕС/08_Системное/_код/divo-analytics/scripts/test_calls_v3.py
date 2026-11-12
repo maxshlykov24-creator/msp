@@ -129,6 +129,28 @@ class RulesV3Test(unittest.TestCase):
         self.assertIn('quality',wire['properties'])
 
 class CandidateV3Test(RevisionTest):
+    def test_changed_calculation_cannot_publish_under_old_approval(self):
+        from app import call_worker
+        row,rev=self.candidate();call_worker.review_revision(rev.id,'test','Checked')
+        changed=copy.deepcopy(rev.result['verdict']);changed['score']=12.34
+        with patch.object(call_worker,'validate_analysis',return_value=changed):
+            with self.assertRaisesRegex(ValueError,'revision_verdict_changed_since_review'):
+                call_worker.publish_revision(rev.id)
+
+    def test_failed_paid_response_is_saved_without_retry(self):
+        from app import call_worker
+        from app.nexara import RemoteFailure, SonnetCallAgent
+        from app.models import CallAnalysisRevision
+        row=self.reportable();failure=RemoteFailure('agent_invalid_output')
+        failure.provider_payload={'id':'known-generation','choices':[]}
+        with patch.object(call_worker,'SonnetCallAgent') as agent:
+            agent.catalog=SonnetCallAgent.catalog
+            agent.return_value.analyze.side_effect=failure
+            first=call_worker.stage_revision(row.id);second=call_worker.stage_revision(row.id)
+            agent.return_value.analyze.assert_called_once()
+        self.assertEqual(first['id'],second['id'])
+        self.assertEqual(self.db.get(CallAnalysisRevision,first['id']).result['failed_provider_response']['id'],'known-generation')
+
     def test_candidate_preview_hides_provider_and_does_not_publish(self):
         from app import calls_api
         row,rev=self.candidate();rev.result={**rev.result,'provider':{'secret':'must_not_leak'}};self.db.commit()

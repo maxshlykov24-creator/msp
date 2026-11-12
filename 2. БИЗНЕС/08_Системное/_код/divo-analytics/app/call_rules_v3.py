@@ -92,6 +92,13 @@ def _text(evidence):
     return ' '.join(e.quote for e in evidence)
 
 
+def _supported_literal(value, evidence):
+    """Allow omitted filler words, never invented tokens or reordered fragments."""
+    wanted=re.findall(r'\w+', _norm(value))
+    available=iter(re.findall(r'\w+', _norm(_text(evidence))))
+    return bool(wanted) and all(any(token==word for token in available) for word in wanted)
+
+
 def _start(evidence):
     return min((e.start for e in evidence if e.start is not None), default=-1)
 
@@ -146,7 +153,7 @@ def validate_v3(raw, transcript, direction):
     if len(facts)!=len(a.facts):errors.append('facts:duplicate_id')
     for f in a.facts:
         if not f.subject_id or not f.evidence:errors.append('fact:'+f.id+':missing_identity_or_proof')
-        if f.status=='known' and (not f.value or _norm(f.value) not in _norm(_text(f.evidence))):errors.append('fact:'+f.id+':value_not_literal')
+        if f.status=='known' and not _supported_literal(f.value, f.evidence):errors.append('fact:'+f.id+':value_not_literal')
     if len({e.id for e in a.events})!=len(a.events):errors.append('events:duplicate_id')
     for e in a.events:
         if not e.evidence:errors.append('event:'+e.id+':missing_evidence')
@@ -163,6 +170,9 @@ def validate_v3(raw, transcript, direction):
         if e.type=='end_contact' and not re.search(r'не звон|сам.*позвон|не.*связыв|не.*контакт',_text(e.evidence),re.I):errors.append('event:'+e.id+':end_contact_not_explicit')
     for r in a.restrictions:
         if not r.evidence or _norm(r.text) not in _norm(_text(r.evidence)):errors.append('restriction:not_grounded')
+    if a.outcome.trade_in in ('refused','no_car'):
+        if not a.outcome.trade_in_evidence or not re.search(r'\bнет\b|\bне\b|\bбез\b|продал|никак',_text(a.outcome.trade_in_evidence),re.I):
+            errors.append('trade_in:explicit_refusal_or_no_car_required')
     for c in a.criteria:
         if c.id not in CRITERIA_V2:
             errors.append('criteria:unknown_id');continue
@@ -189,6 +199,11 @@ def validate_v3(raw, transcript, direction):
         if known and not a.outcome.trade_in_evidence:errors.append('trade_in:missing_evidence')
         _set(c,'exchange_or_sale_plans','yes' if known else 'unknown' if a.outcome.trade_in=='unknown' else 'no',a.outcome.trade_in_evidence if known else [])
     if 5 in by:
+        observed=[f for f in a.facts if f.subject=='customer' and f.evidence]
+        valuation_events=[e for e in a.events if e.type=='valuation' and e.evidence]
+        if observed or valuation_events:
+            by[5].stage='started'
+            by[5].stage_evidence=([e for f in observed for e in f.evidence]+[e for v in valuation_events for e in v.evidence])[:4]
         customer=[f for f in a.facts if f.subject=='customer' and f.status=='known']
         objects={f.subject_id for f in customer}
         if len(objects)>1:errors.append('criterion_5:multiple_customer_vehicles_require_review')
@@ -203,6 +218,8 @@ def validate_v3(raw, transcript, direction):
     visits=[e for e in a.events if e.type=='visit']
     def precise(e):return bool(e.when and e.time_evidence and e.precision in ('fixed','bounded'))
     if 6 in by:
+        if visits:
+            by[6].stage='started';by[6].stage_evidence=[e for v in visits for e in v.evidence][:4]
         visit=max(visits,key=lambda e:(e.status=='agreed' and precise(e),e.status=='agreed',_start(e.evidence)),default=None)
         _set(by[6],'invitation','yes' if visit and visit.status!='unknown' else 'unknown' if visit else 'no',visit.evidence[:4] if visit else [])
         _set(by[6],'specific_day','yes' if visit and visit.status=='agreed' and visit.when and visit.precision!='none' else 'unknown' if visit and visit.status=='unknown' else 'no',visit.time_evidence if visit else [])
@@ -288,13 +305,16 @@ purchase_context: для обычного первичного обращени�
 3: два разных известных факта об одном target subject_id. Они могут быть сообщены ЛЮБОЙ стороной. Для каждого yes в specific_fact_one/two укажи fact_ids. Предположение, вопрос без ответа, опровергнутое значение не факт. Два повтора одного свойства не два факта.
 Факты facts: разделяй target/customer/alternative и конкретные subject_id, make/model/year/mileage/price/color/history/equipment/condition/other. value — короткая ДОСЛОВНАЯ часть доказательства, без нормализации. Не превращай цену в двигатель, «пятисотый» в полную марку/модель, не угадывай Honda/BMW по искажённому ASR. Неясное значение uncertain, исправленное superseded. Для марки и модели автомобиля клиента нужны ОТДЕЛЬНЫЕ make и model.
 4: интерес к обмену/отказ/отсутствие автомобиля могут быть сообщены клиентом без вопроса. Просто наличие машины — не интерес к обмену. Наличные/кредит/лизинг не доказывают отказ от обмена. Если спросили, но не выяснили — discussed_unclear, exchange_or_sale_plans=no. Если речь неразборчива — unknown.
+Упоминание своей машины без обсуждения её обмена/продажи не начинает пункт 4: stage=not_started, trade_in=not_discussed. Это может дать отдельные известные сведения в пункте 5. discussed_unclear требует именно обсуждения решения об обмене/продаже, а не неопределённого намерения, придуманного из владения машиной.
 Для 4–6 stage: started при любом вопросе, предложении или инициативе по этапу, даже без ответа. Сохрани stage_evidence. not_started только если этап вообще не поднимался. Не путай невыполнение с неначатостью.
 5: каждое условие независимо. Известную марку/модель считай даже без интереса к обмену. Дистанционная оценка по фото/VIN равноправна очной. Если клиент попросил предварительно оценить до приезда, менеджер согласился и запросил данные — valuation event agreed с purpose_evidence из запроса оценки и agreement_evidence из ответа менеджера. Фото без цели оценки недостаточно. Данные, обещанные на будущее, ещё неизвестны.
 События events разделяй: visit, callback, materials, valuation, end_contact. Одно событие = одно действие, исполнитель, получатель, срок и условие. Статусы proposed/tentative/agreed/completed/declined/unknown. Уже отправленная визитка completed, не будущий шаг. Пересылка контакта/фото/КП — materials, НЕ callback. Не объединяй отправку визитки сейчас и возможный визит завтра в одном событии.
 Оценку автомобиля клиента выполняет менеджер: valuation.owner=manager. Отправка клиентом фото/данных для оценки — ОТДЕЛЬНОЕ materials с owner=client. Не пропускай это событие и не называй отправителя фотографий исполнителем оценки. Получатель оценки — клиент. Выбранный канал сохраняй по последнему ясному выбору: вопрос «Телеграм или Макс?» не доказывает выбор обоих, ответ «Макс» подтверждает только MAX. В restrictions не переноси список предложенных каналов как принятое ограничение.
+Исполнитель визита — тот, кто приедет, а не приглашающий. «Приезжайте» от менеджера означает visit.owner=client, если речь не о представителе. Не теряй отдельные обещания уточнить технические сведения и сообщить результат (materials, канал может быть неизвестен, это не назначенный созвон). Допущенный осмотр приглашённым специалистом — предложенный визит представителя, даже без точного времени. Ответ «или купить» на вопрос об обмене не является отказом от обмена: решение ещё не определено, discussed_unclear.
 Дословность значения не доказывает, что название распознано: искажённые названия и неполные обозначения сохраняй uncertain. При одном обязательном условии no другая такая неопределённость не блокирует весь балл.
 Для agreed нужны agreement_evidence; обычное спасибо и общие часы работы не доказывают договорённость. «Я думаю/может быть/если будет время приеду» — tentative. Представитель/подборщик/сын равноправен клиенту, owner=representative.
 when — дословная формулировка без вычисления даты. Для callback день «завтра»/«в пятницу» precision=day достаточен. Для visit нужен fixed/bounded: «через 30 минут», «завтра с 10 до 11». «После обеда», «на днях» precision=none. Часы работы не время визита. Сохраняй time_evidence, agreement_evidence и condition_evidence именно ЭТОГО события. Условие из предыдущего обещания не переноси на новое.
+«Сын послезавтра посмотрит, если всё хорошо, сразу куплю» содержит безусловно согласованный визит сына и условную покупку: условие сохрани в purchase_timing_condition, не в visit.condition. Условия связывай с тем действием, которое действительно зависит от них.
 6 и 7 код пересчитает по events. Для материалов даже «сейчас» не даёт 7. Для оценки без договорённости о встрече/созвоне тоже не выдумывай callback. end_contact — только явный отказ от дальнейшего контакта плюс подтверждение менеджера, не обычное прощание и не отказ от одной машины.
 restrictions: no_calls/client_initiates/channel/other, text дословно из evidence. Не теряй «не звоните лишний раз» и выбранный MAX/Telegram/WhatsApp/SMS. Не выдумывай мессенджер.
 Применимость: na только5 при доказанном no_car/refused. Для no_suitable_offer нужны ОТДЕЛЬНЫЕ mismatch_evidence, refusal_evidence, closure_evidence: ясная причина и ясный отказ продолжать покупку. Расстояние, отсутствие альтернативы и спасибо сами по себе недостаточны. Без явного отказа ongoing_sale; не исключай пункты. Поздний отказ не стирает начатые этапы. На обычных критериях na_reason="".

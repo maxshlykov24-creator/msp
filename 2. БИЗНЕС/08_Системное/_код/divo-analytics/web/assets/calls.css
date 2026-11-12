@@ -143,3 +143,6 @@ button:focus-visible,.cq-drawer summary:focus-visible{outline:2px solid #d1ab64;
 @media(max-width:700px){.footer-brand{min-width:0;max-width:100%;flex-wrap:wrap}.footer-brand>div{min-width:0}.footer-brand span{white-space:normal}.cq-criterion-bar{grid-template-columns:165px minmax(0,1fr) 45px}}
 
 .cq-badge.partial,.cq-dot.partial{background:rgba(217,164,65,.15);color:#d9a441}.cq-condition{margin:8px 0;padding:8px;border-left:2px solid #68625a}.cq-condition summary{cursor:pointer}
+
+.cq-revision-button{display:block;width:100%;padding:10px 12px;border:1px solid #3b414b;border-radius:6px;background:#20242c;color:#d7bf91;text-align:left;line-height:1.5;cursor:pointer;overflow-wrap:anywhere}
+#cqSavedVersion details{border-bottom:1px solid #303640;padding:8px 0}#cqSavedVersion summary{cursor:pointer;line-height:1.5;padding:5px 0}#cqSavedVersion blockquote{margin:8px 0;padding:8px 12px;border-left:2px solid #6c6352;color:#c2c7cf;font-size:14px}#cqSavedVersion p{overflow-wrap:anywhere}
