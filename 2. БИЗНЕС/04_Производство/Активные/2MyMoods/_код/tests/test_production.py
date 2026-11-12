@@ -83,6 +83,23 @@ class ProductionTests(unittest.TestCase):
         self.e = Engine(self.tmp.name, self.ms)
         self.product, self.material, self.company, self.factory, self.org = [uid() for _ in range(5)]
         self.ms.stock = {self.product: 100, self.material: 100}
+        # Legacy scenarios now also have real-shaped catalogue/card fixtures.
+        save = self.e.save_recipe
+        def fixture_save(recipe, db=None, propagate=True, actor=None):
+            key = recipe.get('assortment_id')
+            if key and db is None:
+                with self.e.db() as connection:
+                    row = connection.execute("SELECT body FROM catalogues WHERE kind='assortment'").fetchone()
+                    items = json.loads(row['body']) if row else []
+                    card = next((x for x in items if x['id'] == key), None)
+                    if card is None:
+                        card = dict(ref('product', key), id=key, name=recipe.get('assortment_name') or recipe.get('name', 'Test'),
+                                    characteristics=[{'name': 'Размер', 'value': recipe.get('size', '')}])
+                        items.append(card)
+                        connection.execute("INSERT OR REPLACE INTO catalogues VALUES('assortment',0,?)", (json.dumps(items),))
+                    self.ms.docs.setdefault(card['meta']['type'], {}).setdefault(key, copy.deepcopy(card))
+            return save(recipe, db=db, propagate=propagate, actor=actor)
+        self.e.save_recipe = fixture_save
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -1007,7 +1024,8 @@ class ProductionTests(unittest.TestCase):
     def test_supplier_sync_uses_parent_card_and_first_factory(self):
         agent, variant = uid(), uid()
         self.e.set_config({'factories': [{'id': self.factory, 'agent': agent}]})
-        catalogue = [{'id': variant, 'parent_id': self.product, 'meta': {'type': 'variant'}}]
+        catalogue = [{'id': variant, 'name': 'Размер', 'parent_id': self.product, 'meta': {'type': 'variant'}}]
+        self.ms.docs['variant'] = {variant: copy.deepcopy(catalogue[0])}
         with self.e.db() as db:
             db.execute('INSERT INTO catalogues VALUES(?,?,?)', ('assortment', 1, json.dumps(catalogue)))
         recipe = {'assortment_id': variant, 'name': 'Размер', 'stages': [
@@ -1033,7 +1051,8 @@ class ProductionTests(unittest.TestCase):
     def test_supplier_conflict_does_not_overwrite_card(self):
         agent1, agent2, factory2, v1, v2 = [uid() for _ in range(5)]
         self.e.set_config({'factories': [{'id': self.factory, 'agent': agent1}, {'id': factory2, 'agent': agent2}]})
-        catalogue = [{'id': v, 'parent_id': self.product, 'meta': {'type': 'variant'}} for v in (v1,v2)]
+        catalogue = [{'id': v, 'name': str(v), 'parent_id': self.product, 'meta': {'type': 'variant'}} for v in (v1,v2)]
+        self.ms.docs['variant'] = {x['id']: copy.deepcopy(x) for x in catalogue}
         with self.e.db() as db:
             db.execute('INSERT INTO catalogues VALUES(?,?,?)', ('assortment', 1, json.dumps(catalogue)))
         recipes = [{'assortment_id': v, 'name': str(v), 'stages': [{'factory': f, 'materials': []}]} for v,f in [(v1,self.factory),(v2,factory2)]]
@@ -1683,3 +1702,135 @@ class ProductionTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+class SizeReviewTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.ms = FakeMS()
+        self.e = Engine(self.tmp.name, self.ms)
+        self.key, self.material, self.trim, self.factory = [uid() for _ in range(4)]
+        self.card = dict(ref('variant', self.key), id=self.key, name='Топ S-M', parent_id=uid(),
+                         characteristics=[{'name': 'Размер', 'value': 'S-M'}])
+        self.ms.docs['variant'] = {self.key: self.card}
+        with self.e.db() as db:
+            db.execute("INSERT INTO catalogues VALUES('assortment',1,?)", (json.dumps([self.card]),))
+        self.recipe = self.e.save_recipe({'assortment_id': self.key, 'size': 'S-M', 'approved': True,
+            'stages': [{'factory': self.factory, 'work_cost': 1400, 'materials': [
+                {'id': self.material, 'name': 'Пряжа', 'quantity': .34, 'input_quantity': 340, 'input_unit': 'г', 'unit': 'кг', 'size_dependent': True},
+                {'id': self.trim, 'name': 'Кольцо', 'quantity': 2, 'unit': 'шт', 'size_dependent': False},
+                {'id': uid(), 'name': 'Пакет', 'quantity': 1, 'unit': 'шт', 'role': 'packaging'}]}]})
+
+    def change(self, size='XS-S'):
+        self.card['characteristics'][0]['value'] = size
+        self.e.verify_live_sizes([self.key])
+        return self.e.recipes()[0]
+
+    def test_change_clears_only_primary_and_is_idempotent(self):
+        r = self.change()
+        self.assertFalse(r['approved'])
+        self.assertEqual(r['norm_review']['old_size'], 'S-M')
+        self.assertIsNone(r['stages'][0]['materials'][0]['quantity'])
+        self.assertIsNone(r['stages'][0]['materials'][0]['input_quantity'])
+        self.assertEqual(r['stages'][0]['materials'][1:], self.recipe['stages'][0]['materials'][1:])
+        self.assertEqual(r['stages'][0]['work_cost'], 1400)
+        self.assertEqual(self.change()['version'], r['version'])
+        with self.e.db() as db:
+            old = json.loads(db.execute('SELECT body FROM recipe_history WHERE id=? AND version=?', (r['id'], self.recipe['version'])).fetchone()[0])
+        self.assertEqual(old['stages'][0]['materials'][0]['input_quantity'], 340)
+
+    def test_cosmetic_change_preserves_approval_and_values(self):
+        r = self.change(' s – m ')
+        self.assertTrue(r['approved'])
+        self.assertEqual(r['version'], self.recipe['version'])
+        self.assertEqual(r['size'], 'S-M')
+
+    def test_stale_save_and_missing_confirmation_blocked(self):
+        r = self.change()
+        with self.assertRaisesRegex(Review, 'уже изменена'):
+            self.e.save_recipe(self.recipe)
+        r['approved'] = True
+        r['stages'][0]['materials'][0]['input_quantity'] = 360
+        with self.assertRaisesRegex(Review, 'Подтверди'):
+            self.e.save_recipe(r)
+        r['confirm_size_review'] = True
+        r = self.e.save_recipe(r)
+        self.assertTrue(r['approved'])
+        self.assertNotIn('norm_review', r)
+        self.assertAlmostEqual(r['stages'][0]['materials'][0]['quantity'], .36)
+
+    def test_client_cannot_remove_review_metadata(self):
+        r = self.change()
+        r.pop('norm_review')
+        r['approved'] = False
+        saved = self.e.save_recipe(r)
+        self.assertIn('norm_review', saved)
+
+    def test_cannot_approve_blank_quantity(self):
+        r = self.change()
+        r.update(approved=True, confirm_size_review=True)
+        with self.assertRaises(Review):
+            self.e.save_recipe(r)
+        self.assertFalse(self.e.recipes()[0]['approved'])
+
+    def test_unknown_roles_preserved_but_require_classification(self):
+        self.recipe['stages'][0]['materials'][0].pop('size_dependent')
+        self.recipe = self.e.save_recipe(self.recipe)
+        r = self.change()
+        self.assertEqual(r['stages'][0]['materials'][0]['input_quantity'], 340)
+        self.assertTrue(r['norm_review']['needs_primary'])
+        r.update(approved=True, confirm_size_review=True)
+        with self.assertRaisesRegex(Review, 'назначение'):
+            self.e.save_recipe(r)
+
+    def test_incomplete_chain_stops_even_after_new_norm_confirmed(self):
+        chain = {'lines': [{'assortment': ref('variant', self.key), 'recipe': copy.deepcopy(self.recipe)}]}
+        r = self.change()
+        with self.assertRaisesRegex(Review, 'приостановлена'):
+            self.e.guard_chain_sizes(chain)
+        r.update(approved=True, confirm_size_review=True)
+        r['stages'][0]['materials'][0]['input_quantity'] = 360
+        self.e.save_recipe(r)
+        with self.assertRaisesRegex(Review, 'приостановлена'):
+            self.e.guard_chain_sizes(chain)
+        chain['complete'] = True
+        self.e.guard_chain_sizes(chain)
+        self.assertEqual(self.ms.created, [])
+
+    def test_failed_live_read_does_not_change_norm(self):
+        before = self.e.recipes()
+        self.ms.get = lambda *a, **kw: (_ for _ in ()).throw(RuntimeError('offline'))
+        with self.assertRaisesRegex(Review, 'Не удалось проверить'):
+            self.e.verify_live_sizes([self.key])
+        self.assertEqual(self.e.recipes(), before)
+
+    def test_missing_card_is_visible_review_and_repeat_is_noop(self):
+        with self.e.db() as db:
+            self.e.reconcile_recipe_sizes(db, {}, complete=True)
+        r = self.e.recipes()[0]
+        self.assertEqual(r['norm_review']['reason'], 'card_unavailable')
+        with self.e.db() as db:
+            self.e.reconcile_recipe_sizes(db, {}, complete=True)
+        self.assertEqual(self.e.recipes()[0]['version'], r['version'])
+
+    def test_changed_back_still_requires_review(self):
+        first = self.change()
+        second = self.change('S-M')
+        self.assertGreater(second['size_watch']['revision'], first['size_watch']['revision'])
+        self.assertFalse(second['approved'])
+
+    def test_cost_not_zero_for_pending_review(self):
+        self.change()
+        result = self.e.production_costs()[self.key]
+        self.assertIsNone(result.get('cost'))
+        self.assertIn('требует уточнения', result['issue'])
+
+    def test_baseline_detects_existing_mismatch(self):
+        with self.e.db() as db:
+            r = copy.deepcopy(self.recipe)
+            r.pop('size_watch')
+            r['size'] = 'XS'
+            db.execute('UPDATE recipes SET body=?', (json.dumps(r),))
+            self.e.reconcile_recipe_sizes(db, {self.key: self.card}, complete=True)
+        self.assertEqual(self.e.recipes()[0]['norm_review']['old_size'], 'XS')
+

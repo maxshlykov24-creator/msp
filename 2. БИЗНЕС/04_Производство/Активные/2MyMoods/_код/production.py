@@ -347,12 +347,144 @@ class Engine:
                 recipe['history'] = sorted(events, key=lambda event: (event['at'], event['version']), reverse=True)
             return result
 
+    @staticmethod
+    def normalized_size(value):
+        value = re.sub(r'\s*[-–—]\s*', '-', str(value or '').strip())
+        value = re.sub(r'\s+', ' ', value)
+        if not value or value.casefold() == 'без размера':
+            return 'Без размера'
+        return 'one size' if value.casefold() == 'one size' else value.upper()
+
+    @classmethod
+    def card_size(cls, item):
+        for char in item.get('characteristics', []):
+            if str(char.get('name', '')).strip().casefold() == 'размер':
+                return cls.normalized_size(char.get('value'))
+        return 'one size' if re.search(r'one size', item.get('name', ''), re.I) else 'Без размера'
+
+    def reconcile_recipe_sizes(self, db, products, complete=False):
+        """Publish catalogue changes and invalidations in the same transaction."""
+        for row in db.execute('SELECT id,version,body FROM recipes').fetchall():
+            before = json.loads(row['body'])
+            key = before.get('assortment_id')
+            if not key or not complete and key not in products:
+                continue
+            item = products.get(key)
+            recipe = copy.deepcopy(before)
+            unavailable = not item or item.get('archived')
+            size = self.card_size(item) if item else before.get('size_watch', {}).get('size', self.normalized_size(before.get('size')))
+            watch = before.get('size_watch')
+            previous = watch.get('size') if watch else self.normalized_size(before.get('size'))
+            unknown = not watch and not str(before.get('size') or '').strip()
+            changed = size != previous
+            existing = before.get('norm_review') or {}
+            reason = 'card_unavailable' if unavailable else 'size_changed' if changed else 'baseline_unknown' if unknown else ''
+            if reason and not (reason == 'card_unavailable' and existing.get('reason') == reason):
+                recipe['approved'] = False
+                mats = [m for st in recipe.get('stages', []) for m in st.get('materials', []) if m.get('role') != 'packaging']
+                if changed:
+                    for mat in mats:
+                        if mat.get('size_dependent') is True:
+                            mat['quantity'] = None
+                            mat['input_quantity'] = None
+                recipe['norm_review'] = {'reason': reason, 'old_size': previous, 'new_size': size,
+                    'at': now(), 'needs_primary': any(not isinstance(m.get('size_dependent'), bool) for m in mats)}
+            # A restored card still needs explicit confirmation; do not auto-approve.
+            if not unavailable and existing.get('reason') == 'card_unavailable' and not reason:
+                recipe['norm_review'] = dict(existing, reason='card_restored', new_size=size)
+            revision = (watch or {}).get('revision', 0) + (1 if reason and recipe.get('norm_review') != existing else 0)
+            recipe['size_watch'] = {'size': size, 'revision': revision}
+            recipe['size'] = size
+            if item:
+                recipe['assortment_name'] = item.get('name', recipe.get('assortment_name', ''))
+            if recipe == before:
+                continue
+            recipe['version'] = row['version'] + 1
+            db.execute('INSERT OR IGNORE INTO recipe_history VALUES(?,?,?,?)', (row['id'], row['version'], now(), row['body']))
+            db.execute('UPDATE recipes SET version=?,body=? WHERE id=?', (recipe['version'], json.dumps(recipe, ensure_ascii=False), row['id']))
+            changes = [f'Размер: {previous} → {size}. Норма требует проверки.'] if reason else ['Обновлена привязка размера к карточке МоегоСклада']
+            db.execute('INSERT INTO recipe_events VALUES(?,?,?,?,?)', (row['id'], recipe['version'], now(), 'Синхронизация МойСклада', json.dumps(changes, ensure_ascii=False)))
+
+    def verify_live_sizes(self, keys):
+        """Read current cards before approving or using a norm; no MS writes."""
+        keys = set(filter(None, keys))
+        if not keys:
+            return
+        with self.catalogue_lock:
+            with self.db() as db:
+                cached = db.execute("SELECT body FROM catalogues WHERE kind='assortment'").fetchone()
+                products = {x['id']: x for x in json.loads(cached['body'])} if cached else {}
+            fresh = {}
+            for key in sorted(keys):
+                item = products.get(key)
+                if not item or item.get('meta', {}).get('type') not in ('product', 'variant'):
+                    raise Review('Обнови справочник: карточка изделия не найдена')
+                try:
+                    live = self.ms.get('/entity/' + item['meta']['type'] + '/' + key)
+                except Exception as exc:
+                    raise Review('Не удалось проверить актуальный размер в МоемСкладе. Повтори после обновления справочника.') from exc
+                if live.get('id') != key:
+                    raise Review('МойСклад вернул другую карточку изделия')
+                fresh[key] = dict(item, name=live.get('name', item['name']), characteristics=live.get('characteristics', []), archived=live.get('archived', False))
+            with self.db() as db:
+                db.execute('BEGIN IMMEDIATE')
+                self.reconcile_recipe_sizes(db, fresh)
+                products.update(fresh)
+                db.execute("UPDATE catalogues SET body=? WHERE kind='assortment'", (json.dumps(list(products.values()), ensure_ascii=False),))
+
+    def guard_chain_sizes(self, chain):
+        if chain.get('complete'):
+            return
+        self.verify_live_sizes(ident(line['assortment']) for line in chain.get('lines', []))
+        current = {r.get('assortment_id'): r for r in self.recipes()}
+        for line in chain.get('lines', []):
+            key = ident(line['assortment'])
+            recipe = current.get(key, {})
+            saved = line['recipe']
+            old_watch = saved.get('size_watch')
+            new_watch = recipe.get('size_watch')
+            if recipe.get('norm_review') or not recipe.get('approved') or (old_watch != new_watch if old_watch else (new_watch or {}).get('revision', 0) > 0 or self.normalized_size(saved.get('size')) != (new_watch or {}).get('size')):
+                raise Review('Размер или норма изменились после начала обработки. Цепочка приостановлена; нужна сверка уже выполненных списаний.')
+
     def save_recipe(self, recipe, db=None, propagate=True, actor=None):
         if db is None:
+            self.verify_live_sizes([recipe.get('assortment_id')])
             with self.db() as connection:
+                connection.execute('BEGIN IMMEDIATE')
                 return self.save_recipe(recipe, connection, propagate, actor)
         key = str(recipe.get('id') or uuid.uuid4())
         recipe.pop('history', None)
+        old_row = db.execute('SELECT version,body FROM recipes WHERE id=?', (key,)).fetchone()
+        previous = json.loads(old_row['body']) if old_row else {}
+        if old_row and recipe.get('version') != old_row['version']:
+            raise Review('Норма уже изменена или изменился размер. Обнови страницу перед сохранением.')
+        cached = db.execute("SELECT body FROM catalogues WHERE kind='assortment'").fetchone()
+        products = {x['id']: x for x in json.loads(cached['body'])} if cached else {}
+        item = products.get(recipe.get('assortment_id'))
+        rebound = previous and previous.get('assortment_id') != recipe.get('assortment_id')
+        review = previous.get('norm_review')
+        if rebound:
+            review = {'reason': 'card_changed', 'old_size': previous.get('size'), 'new_size': self.card_size(item) if item else ''}
+        if item:
+            size = self.card_size(item)
+            if self.normalized_size(recipe.get('size')) != size:
+                raise Review('Размер в МоемСкладе изменился. Обнови страницу перед сохранением.')
+            recipe['size_watch'] = previous.get('size_watch', {'size': size, 'revision': 0}) if not rebound else {'size': size, 'revision': previous.get('size_watch', {}).get('revision', 0) + 1}
+            recipe['size'] = size
+            recipe['assortment_name'] = item.get('name', recipe.get('assortment_name', ''))
+        if recipe.get('approved') and review:
+            if not recipe.pop('confirm_size_review', False):
+                raise Review('Подтверди проверку нормы для актуального размера')
+            mats = [m for st in recipe.get('stages', []) for m in st.get('materials', []) if m.get('role') != 'packaging']
+            if any(not isinstance(m.get('size_dependent'), bool) for m in mats):
+                raise Review('Укажи назначение каждого материала: основная пряжа или фурнитура')
+            recipe.pop('norm_review', None)
+        elif review:
+            recipe['norm_review'] = review
+        else:
+            recipe.pop('norm_review', None)
+        recipe.pop('confirm_size_review', None)
+
         # Display units never become stock units without dimensional conversion.
         units = {'г': ('mass', 1), 'грамм': ('mass', 1), 'гр': ('mass', 1),
                  'кг': ('mass', 1000), 'м': ('length', 1), 'метр': ('length', 1),
@@ -362,6 +494,11 @@ class Engine:
                 if recipe.get('approved') and not ID.fullmatch(str(material.get('id') or '')):
                     raise Review(f'Этап {stage_index}: выбери материал или убери пустую строку')
                 if 'input_quantity' not in material:
+                    continue
+                if material['input_quantity'] in (None, ''):
+                    if recipe.get('approved'):
+                        raise Review(f'Этап {stage_index}: укажи расход материала {material.get("name") or "без названия"} больше нуля')
+                    material['quantity'] = None
                     continue
                 source = str(material.get('input_unit', '')).lower().strip()
                 target = str(material.get('unit', '')).lower().strip()
@@ -393,6 +530,8 @@ class Engine:
                 packs = [m for stage in recipe['stages'] for m in stage['materials'] if m.get('role') == 'packaging']
                 if len(packs) > 1:
                     raise Review('Зип-пакет можно добавить только на одном этапе')
+        if recipe.get('approved') and (not item or item.get('archived')):
+            raise Review('Карточка изделия недоступна. Обнови справочник и проверь привязку.')
         if recipe.get('assortment_id'):
             for candidate in db.execute('SELECT id,body FROM recipes WHERE id<>?', (key,)):
                 if json.loads(candidate['body']).get('assortment_id') == recipe['assortment_id']:
@@ -443,6 +582,7 @@ class Engine:
     def save_recipe_group(self, recipes, actor=None):
         if not isinstance(recipes, list) or not 1 <= len(recipes) <= 100:
             raise Review('Выбери размеры, в которых внесены изменения')
+        self.verify_live_sizes(r.get('assortment_id') for r in recipes)
         with self.db() as db:
             db.execute('BEGIN IMMEDIATE')
             seen = set()
@@ -675,6 +815,8 @@ class Engine:
                 'composition': composition(r)} for r in rows]
         updated = time.time()
         with self.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            self.reconcile_recipe_sizes(db, {x['id']: x for x in snapshots['assortment']}, complete=True)
             for kind, rows in snapshots.items():
                 db.execute('INSERT OR REPLACE INTO catalogues VALUES(?,?,?)',
                            (kind, updated, json.dumps(rows, ensure_ascii=False)))
@@ -834,6 +976,8 @@ class Engine:
             if not key:
                 continue
             try:
+                if recipe.get('norm_review'):
+                    raise Review('Себестоимость требует уточнения: проверь норму после изменения размера')
                 if not recipe.get('approved'):
                     raise Review('Норма изделия не заполнена и не применена')
                 stages = recipe.get('stages', [])
@@ -989,7 +1133,7 @@ class Engine:
     def recipe_index(self):
         out = {}
         for r in self.recipes():
-            if r.get('approved'):
+            if r.get('approved') and not r.get('norm_review'):
                 key = r['assortment_id']
                 if key in out:
                     raise Review('Две утверждённые нормы одного изделия')
@@ -1019,6 +1163,7 @@ class Engine:
             raise Review('Производственная приёмка должна иметь заказ поставщику')
         self.check_production_order(ident(doc['purchaseOrder']), doc)
         factories = {f['id']: f for f in cfg.get('factories', [])}
+        self.verify_live_sizes(ident(row.get('assortment')) for row in positions)
         index = self.recipe_index()
         lines = []
         for row in positions:
@@ -1405,7 +1550,11 @@ class Engine:
 
     def process_direct_supply(self, value):
         chain, number = self.chain(value)
+        if chain:
+            self.guard_chain_sizes(chain)
         current = self.ms.get('/entity/supply/' + value)
+        if not chain:
+            self.verify_live_sizes(ident(row.get('assortment')) for row in self.ms.positions('supply', value))
         current, receipt_number = self.number_receipt(current)
         if chain and chain.get('workflow') == 'finished_receipt':
             self.number_direct_losses(value, receipt_number, chain)
@@ -1444,6 +1593,7 @@ class Engine:
             chain.update(allow_negative=force, workflow='finished_receipt', material_groups=groups,
                          link_fields=fields[:len(groups)], cost_snapshot=cost, losses={}, complete=False)
             number = self.save_chain(value, chain)
+        self.guard_chain_sizes(chain)
         cfg = self.config()
         if chain['material_groups'] and not ID.fullmatch(cfg.get('loss_receipt_attribute', '')):
             raise Review('Не настроено поле приёмки в списании')
@@ -1533,6 +1683,7 @@ class Engine:
         else:
             chain = self.plan_supply(value)
             number = self.save_chain(value, chain)
+        self.guard_chain_sizes(chain)
         by_factory = defaultdict(list)
         for line in chain['lines']:
             by_factory[line['recipe']['stages'][0]['factory']].append(line)
@@ -1555,10 +1706,12 @@ class Engine:
         for cid, num, chain in self.all_chains():
             for oid, group in list(chain.get('outbound', {}).items()):
                 if oid == value:
+                    self.guard_chain_sizes(chain)
                     accepted = ident(doc.get('state')) == self.config()['states']['move']['Доработка принята']
                     return self.returns(cid, num, chain, oid, group, accepted)
                 prefix = group['name'] + '/'
                 if doc.get('name', '').startswith(prefix):
+                    self.guard_chain_sizes(chain)
                     if not re.fullmatch(re.escape(prefix) + r'\d{2,}', doc['name']):
                         raise Review('Некорректный суффикс возврата')
                     return self.returns(cid, num, chain, oid, group, False)
