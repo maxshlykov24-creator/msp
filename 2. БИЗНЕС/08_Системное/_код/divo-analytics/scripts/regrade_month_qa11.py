@@ -14,9 +14,37 @@ from app.nexara import SonnetCallAgent
 from app.amo_client import AmoClient
 
 
+def resume_payment_run(db,key):
+    """Only an explicit HTTP 402 may reopen a rejected attempt after owner payment."""
+    state=db.scalar(select(SyncState).where(SyncState.key==key).with_for_update());m=json.loads(state.value)
+    if not m.get('stop_requested'):raise ValueError('payment_pause_required')
+    rejected=[r for r in m['results'].values() if r['state']=='error']
+    if not rejected:raise ValueError('payment_rejections_required')
+    revisions=[]
+    for result in rejected:
+        rev=db.get(CallAnalysisRevision,result['id'])
+        if rev.state!='error' or rev.error!='agent_http_402':raise ValueError('confirmed_payment_rejection_required')
+        revisions.append((result,rev))
+    for result,rev in revisions:
+        data=dict(rev.result);history=list(data.get('payment_decline_history',[]))
+        history.append({'at':now().isoformat(),'error':rev.error,'correction_started_at':data.get('correction_started_at')})
+        data['payment_decline_history']=history
+        if data.get('provider') and data.get('verdict'):
+            data.pop('correction_started_at',None);rev.state='needs_review';rev.error=''
+        else:
+            data['rejected_job_key']=rev.job_key;rev.job_key=rev.job_key+f':denied:{rev.id}'
+        rev.result=data
+        m.setdefault('payment_denials',[]).append(result);m['results'].pop(str(result['call_id']))
+    m.update(stop_requested=False,status='running',processed=len(m['results']),counts=dict(Counter(r['state'] for r in m['results'].values())),updated_at=now().isoformat())
+    state.value=json.dumps(m)
+    from app.call_worker import state_set
+    state_set(db,'calls_analysis_blocked','');state_set(db,'calls_analysis_retry_after','');db.commit()
+    return {'resumed_rejected_attempts':len(rejected),'already_published':m['processed']}
+
+
 def main():
     p=argparse.ArgumentParser();p.add_argument('--run',type=int,required=True);p.add_argument('--month',required=True)
-    p.add_argument('--prepare',action='store_true');p.add_argument('--shard',type=int,default=0);p.add_argument('--shards',type=int,default=1)
+    p.add_argument('--prepare',action='store_true');p.add_argument('--resume-payment',action='store_true');p.add_argument('--shard',type=int,default=0);p.add_argument('--shards',type=int,default=1)
     args=p.parse_args();start=int(datetime.strptime(args.month,'%Y-%m').replace(tzinfo=ZoneInfo('Europe/Moscow')).timestamp())
     key=f'calls_regrade_month_{args.month}_{args.run}'
     def save(result=None,status='running'):
@@ -27,6 +55,9 @@ def main():
             if status=='stopped_for_check':m['stop_requested']=True
             m['status']='stopped_for_check' if m.get('stop_requested') else ('finished' if m['processed']==len(m['analysis_ids']) else status)
             st.value=json.dumps(m);db.commit()
+    if args.resume_payment:
+        with SessionLocal() as db:print(json.dumps(resume_payment_run(db,key)))
+        return
     if args.prepare:
         with SessionLocal() as db:
             if db.get(SyncState,key):raise ValueError('manifest_already_exists')

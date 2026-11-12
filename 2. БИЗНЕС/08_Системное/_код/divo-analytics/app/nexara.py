@@ -309,7 +309,18 @@ criterion=yes; хотя бы одно conditions=no означает criterion=n
         if response.status_code >= 500:
             raise AmbiguousSubmission(f"agent_http_{response.status_code}_ambiguous")
         if response.status_code >= 400:
-            raise RemoteFailure(f"agent_http_{response.status_code}")
+            failure=RemoteFailure(f"agent_http_{response.status_code}")
+            if response.status_code==402:
+                try:
+                    error=response.json().get('error',{})
+                    if not isinstance(error,dict):error={}
+                    metadata=error.get('metadata') or {}
+                    failure.provider_payload={'http_status':402,'error':{
+                        'message':str(error.get('message',''))[:600],'code':error.get('code'),
+                        'limit_source':metadata.get('limit_source') if isinstance(metadata,dict) else None}}
+                except (ValueError,AttributeError):
+                    failure.provider_payload={'http_status':402,'error':{'message':'Payment required'}}
+            raise failure
         result = None
         try:
             result = response.json()

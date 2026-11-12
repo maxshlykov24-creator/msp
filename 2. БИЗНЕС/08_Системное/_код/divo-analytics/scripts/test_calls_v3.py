@@ -100,6 +100,17 @@ class RulesV3Test(unittest.TestCase):
         self.assertEqual(r['analysis']['events'][0]['type'],'vehicle_transport')
         self.assertEqual(r['score'],0);self.assertFalse(r['analysis']['outcome']['meeting_agreed'])
 
+    def test_payment_error_retains_safe_reason_without_provider_identifiers(self):
+        from app.nexara import SonnetCallAgent,RemoteFailure
+        agent=SonnetCallAgent.__new__(SonnetCallAgent)
+        agent.client=httpx.Client(transport=httpx.MockTransport(lambda r:httpx.Response(402,json={
+            'error':{'message':'Insufficient credits','code':402,'metadata':{'limit_source':'account_balance','user_id':'private-id'}},'user_id':'private-id'})))
+        try:
+            with self.assertRaises(RemoteFailure) as caught:agent.analyze(TR,'in',0,rule_version=V3_RULE_VERSION)
+            payload=caught.exception.provider_payload
+            self.assertEqual(payload['error']['limit_source'],'account_balance');self.assertNotIn('private-id',str(payload))
+        finally:agent.close()
+
     def test_callback_specific_day_counts(self):
         a=raw();a['events']=[event()];r=self.check(a)
         self.assertEqual(r['errors'],[]);self.assertEqual(r['score'],14.29)
@@ -309,6 +320,23 @@ class CandidateV3Test(RevisionTest):
         self.assertIn(row.id,list(self.db.scalars(select(CallRecord.id).where(*calls_api.published_conditions()))))
         row.rule_version='2026-11-12.1';self.db.commit()
         self.assertNotIn(row.id,list(self.db.scalars(select(CallRecord.id).where(*calls_api.published_conditions()))))
+
+    def test_payment_resume_reuses_paid_first_response_and_rejects_ambiguous(self):
+        from scripts.regrade_month_qa11 import resume_payment_run
+        from app.models import SyncState
+        row,rev=self.candidate();rev.state='error';rev.error='agent_http_402'
+        rev.result={**rev.result,'correction_started_at':'paid-correction-rejected'}
+        original=copy.deepcopy(rev.result['provider']);job_key=rev.job_key
+        manifest={'stop_requested':True,'results':{str(row.id):{'id':rev.id,'call_id':row.id,'state':'error'}}}
+        self.db.add(SyncState(key='month-test',value=json.dumps(manifest)));self.db.commit()
+        r=resume_payment_run(self.db,'month-test');self.assertEqual(r['resumed_rejected_attempts'],1)
+        self.assertEqual(rev.result['provider'],original);self.assertEqual(rev.job_key,job_key)
+        self.assertNotIn('correction_started_at',rev.result);self.assertEqual(rev.state,'needs_review')
+        self.assertEqual(len(rev.result['payment_decline_history']),1)
+        rev.state='error';rev.error='agent_transport_ambiguous'
+        self.db.get(SyncState,'month-test').value=json.dumps(manifest);self.db.commit()
+        with self.assertRaisesRegex(ValueError,'confirmed_payment_rejection_required'):resume_payment_run(self.db,'month-test')
+        self.assertEqual(rev.state,'error')
 
     def test_failed_paid_response_is_saved_without_retry(self):
         from app import call_worker
