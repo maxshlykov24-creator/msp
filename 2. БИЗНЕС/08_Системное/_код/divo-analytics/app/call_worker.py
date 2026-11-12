@@ -1083,7 +1083,7 @@ def publish_revision(revision_id: int) -> dict:
                                                               CallDelivery.state == "pending")):
             freeze_delivery(db, delivery, row)
         archive_current(db, row, "before_reanalysis")
-        verdict = validate_analysis(rev.result["verdict"]["analysis"], row.transcript, row.direction, rev.rule_version)
+        verdict = validate_analysis(rev.result["provider"]["analysis"], row.transcript, row.direction, rev.rule_version)
         if verdict["errors"]:
             raise ValueError("revision_no_longer_valid")
         if stable_hash(verdict) != rev.review.get('verdict_hash', stable_hash(rev.result['verdict'])):

@@ -20,6 +20,12 @@ def semantic_checks(call_id, a):
         if not ok:issues.append(label)
     if call_id in (505,517,518):
         require(all(criteria.get(i,{}).get('status')!='na' for i in (4,5,6)),'unsupported_stage_exclusion')
+    if call_id==489:
+        require(any(e['type']=='visit' and e['owner']=='representative' and not e['condition'] for e in events),'inspector_independent_of_transport')
+        require(any(e['type']=='vehicle_transport' for e in events),'transport_not_customer_visit')
+        require(any(e['type']=='materials' and any('ЕГР' in proof['quote'] or 'чуть позже' in proof['quote'] for proof in e['evidence']) for e in events),'egr_followup_preserved')
+    if call_id==506:
+        require(all(not e['when'] for e in events if e['type']=='callback'),'callback_promise_not_deadline')
     if call_id==518:require(criteria.get(4,{}).get('stage')=='started','trade_stage_was_started')
     if call_id==488:require(criteria.get(7,{}).get('status')=='no','card_does_not_count')
     if call_id==479:

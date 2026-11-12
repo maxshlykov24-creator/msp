@@ -20,7 +20,7 @@ class Fact(StrictModel):
 
 class Event(StrictModel):
     id: str
-    type: Literal['visit', 'callback', 'materials', 'valuation', 'end_contact']
+    type: Literal['visit', 'callback', 'materials', 'valuation', 'end_contact', 'vehicle_transport']
     status: Literal['proposed', 'tentative', 'agreed', 'completed', 'declined', 'unknown']
     owner: Literal['manager', 'client', 'representative', 'both', 'unknown']
     recipient: Literal['manager', 'client', 'representative', 'both', 'unknown']
@@ -32,6 +32,7 @@ class Event(StrictModel):
     time_evidence: list[Evidence] = Field(max_length=3)
     condition_evidence: list[Evidence] = Field(max_length=3)
     purpose_evidence: list[Evidence] = Field(max_length=3)
+    supersedes: list[str] = Field(default_factory=list, max_length=3)
 
 
 class Restriction(StrictModel):
@@ -70,6 +71,7 @@ class ScenarioV3(Scenario):
 
 
 class AnalysisV3(AnalysisV2):
+    validation_issues: list[str] = Field(default_factory=list, max_length=100)
     criteria: list[CriterionV3] = Field(max_length=7)
     outcome: OutcomeV3
     scenario: ScenarioV3
@@ -84,7 +86,7 @@ class AnalysisV3(AnalysisV2):
 
 
 EVENT_LABELS = {'visit':'Визит для осмотра', 'callback':'Обратный звонок',
-    'materials':'Передача информации', 'valuation':'Оценка автомобиля', 'end_contact':'Завершение контакта'}
+    'materials':'Передача информации', 'valuation':'Оценка автомобиля', 'vehicle_transport':'Доставка автомобиля в сервис', 'end_contact':'Завершение контакта'}
 EVENT_STATUS = {'proposed':'предложено','tentative':'предварительно','agreed':'согласовано',
     'completed':'выполнено','declined':'отклонено','unknown':'неясно'}
 
@@ -118,12 +120,39 @@ def _empty(errors):
     return {'analysis':{},'errors':errors,'is_scored':False,'score':None,'yes_count':0,'applicable_count':0}
 
 
+# A model precision label is not proof of a date. Keep vague time for display only.
+_DAY = r'\b(?:сегодня|завтра|послезавтра|понедельник\w*|вторник\w*|сред[ау]|четверг\w*|пятниц\w*|суббот\w*|воскресень\w*)\b|\b\d{1,2}[./]\d{1,2}(?:[./]\d{2,4})?\b|\b\d{1,2}\s+(?:января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)\b'
+_RELATIVE = r'через\s+(?:(?:\d+|один|одну|два|две|три|четыре|пять|десять|пятнадцать|двадцать|тридцать|сорок|полтора|пару)\s+)?(?:минут\w*|час\w*|полчаса)|(?:минут\w*|час\w*)\s+через\s+(?:\d+|два|три|десять|пятнадцать|двадцать|тридцать|сорок)'
+_CLOCK = r'\b\d{1,2}:\d{2}\b|\b(?:в|к)\s+\d{1,2}(?:\s*(?:час|утра|вечера|дня))?\b|\bс\s+\d{1,2}\s+до\s+\d{1,2}\b'
+_VAGUE = r'позже|потом|когда-нибудь|как получится|как смогу|на днях|недел|после обеда|до вечера|в течение дня|утром|вечером'
+
+def _time_precision(when):
+    text=_norm(when)
+    if re.search(_RELATIVE,text):return 'bounded'
+    if re.search(_DAY,text):
+        return 'bounded' if re.search(_CLOCK,text) else 'day'
+    return 'none'
+
+def _temporal_text(text):
+    return bool(re.search(_DAY+'|'+_RELATIVE+'|'+_CLOCK+'|'+_VAGUE,_norm(text)))
+
+def _fact_question(f):
+    # Only the clause containing the value matters, not another question in a long quote.
+    clauses=[part for e in f.evidence for part in re.findall(r'[^.!?]+[.!?]?',e.quote)
+             if _supported_literal(f.value,[Evidence(quote=part,start=e.start,end=e.end)])]
+    if f.kind in ('make','model') and any(re.search(r'у меня|у нас|мой|моя',part,re.I) for part in clauses):return False
+    return bool(clauses) and all(part.rstrip().endswith('?') for part in clauses)
+
+def _confirmation(text):
+    return bool(re.search(r'^\s*(?:да(?:[ ,—-]+да)*|все верно|верно|правильно|совершенно верно|именно так)\b|\bда,? все верно\b',_norm(text))) and not re.search(r'\b(?:но|нет|неверно|не так)\b',_norm(text))
+
+
 def validate_v3(raw, transcript, direction):
     try:
         a=AnalysisV3.model_validate(raw)
     except ValidationError as exc:
         return _empty([f"schema:{'.'.join(map(str,e['loc']))}:{e['type']}" for e in exc.errors(include_input=False)])
-    errors=[]
+    errors=list(a.validation_issues)
     segments=transcript.get('segments') or []
     source=transcript.get('text') or ' '.join(s.get('text','') for s in segments)
     duration=max([float(transcript.get('duration') or 0),*[float(s.get('end') or 0) for s in segments]])
@@ -157,6 +186,26 @@ def validate_v3(raw, transcript, direction):
         if not _supported_literal(f.value, f.evidence):
             if f.status=='known':errors.append('fact:'+f.id+':value_not_literal')
             f.value='Не подтверждено расшифровкой';f.status='uncertain'
+    # A quoted question needs its answer. Preserve the whole chain in the rendered proof.
+    for f in a.facts:
+        if f.status!='known' or not _fact_question(f):continue
+        question_end=max((e.end for e in f.evidence if '?' in e.quote and e.end is not None and _supported_literal(f.value,[e])),default=-1)
+        confirmations=[e for e in f.evidence if e.start is not None and e.start>=question_end and _confirmation(e.quote)]
+        following=sorted((seg for seg in segments if question_end<=float(seg.get('start') or 0)<=question_end+6),key=lambda seg:seg.get('start',0))
+        if not confirmations and following and _confirmation(following[0].get('text','')):
+            seg=following[0];proof=Evidence(quote=seg['text'],start=seg['start'],end=seg['end'])
+            if len(f.evidence)<4:f.evidence.append(proof);confirmations=[proof]
+        if not confirmations:f.status='uncertain'
+    for f in a.facts:
+        if f.kind=='mileage' and not re.search(r'\d',f.value) and re.search(r'оригинальн|реальный',f.value,re.I):f.kind='history'
+    # Contradictory current values are not silently resolved by list order.
+    groups={}
+    for f in a.facts:
+        if f.status=='known' and f.kind in ('make','model','year','mileage','price','color'):
+            groups.setdefault((f.subject,f.subject_id,f.kind),[]).append(f)
+    for group in groups.values():
+        if len({_norm(f.value) for f in group})>1:
+            for f in group:f.status='uncertain'
     # Explicit brand plus spelled RX designation is an established model, not a
     # guessed brand from a bare number. Keep the original spoken value unchanged.
     recognized_customer_model=False
@@ -169,8 +218,21 @@ def validate_v3(raw, transcript, direction):
             errors=[e for e in errors if e!='fact:'+f.id+':value_not_literal']
     if len({e.id for e in a.events})!=len(a.events):errors.append('events:duplicate_id')
     for e in a.events:
-        if e.precision=='none' and e.when and (not e.time_evidence or not _supported_literal(e.when,e.time_evidence)):
-            e.when=''  # An action/condition copied into the time field is not a deadline.
+        if e.type=='visit' and e.owner=='manager' and re.search(r'эвакуатор',e.condition,re.I) and re.search(r'эвакуатор',_text(e.evidence),re.I):
+            e.type='vehicle_transport'
+        if e.when and not _temporal_text(e.when):
+            e.when='';e.precision='none';e.time_evidence=[]
+        if e.type in ('visit','callback'):
+            e.precision=_time_precision(e.when)
+            if e.type=='visit' and re.search(r'работаем|режим работы|открыт[ыо]|часы работы',_text(e.time_evidence),re.I) and not re.search(r'приед|подъед|ждем|ждём|встреч',_text(e.time_evidence),re.I):
+                e.precision='none'
+            if e.type=='visit' and e.status=='agreed' and e.condition:
+                # An unresolved condition does not establish an unconditional appointment.
+                e.status='tentative'
+        if (e.type=='visit' and e.owner=='representative' and e.condition
+                and re.search(r'эвакуатор|доставк.*сервис',e.condition,re.I)
+                and re.search(r'два варианта|или',_text(e.evidence),re.I)):
+            errors.append('event:'+e.id+':alternative_condition_requires_review')
         if (e.type=='materials' and e.status=='completed'
                 and re.search(r'\b(?:скину|отправлю|пришлю|вышлю|направлю|передам|напишу)\b',_text(e.evidence),re.I)
                 and not re.search(r'\b(?:скинул[аи]?|отправил[аи]?|прислал[аи]?|выслал[аи]?|направил[аи]?|написал[аи]?|отправлено|отправлена)\b',_text(e.evidence),re.I)):
@@ -190,7 +252,12 @@ def validate_v3(raw, transcript, direction):
     for r in a.restrictions:
         if not r.evidence or _norm(r.text) not in _norm(_text(r.evidence)):errors.append('restriction:not_grounded')
     if a.outcome.trade_in in ('refused','no_car'):
-        if not a.outcome.trade_in_evidence or not re.search(r'\bнет\b|\bне\b|\bбез\b|продал|никак',_text(a.outcome.trade_in_evidence),re.I):
+        proof=_text(a.outcome.trade_in_evidence)
+        negative=bool(re.search(r'\bнет\b|\bне\b|\bбез\b|продал|никак',proof,re.I))
+        topic=bool(re.search(r'обмен|трейд|trade.?in|(?:машин|автомобил).*\bнет\b|нет.*(?:машин|автомобил)|продал',proof,re.I))
+        # A refusal concerning financing cannot serve as a refusal of exchange.
+        finance_only=bool(re.search(r'(?:кредит|лизинг)\w*\s+не\s+(?:нуж|рассмат)|не\s+(?:нуж|рассмат)\w*\s+(?:кредит|лизинг)',proof,re.I))
+        if not a.outcome.trade_in_evidence or not negative or not topic or finance_only:
             errors.append('trade_in:explicit_refusal_or_no_car_required')
             a.outcome.trade_in='unknown'
     for c in a.criteria:
@@ -209,7 +276,7 @@ def validate_v3(raw, transcript, direction):
             if x.status=='yes':
                 if not selected or any(f.status!='known' or f.subject!='target' for f in selected):errors.append('criterion_3:unproven_target_fact')
                 used.extend(selected)
-        if len({f.subject_id for f in used})>1:errors.append('criterion_3:mixed_vehicles')
+
         signatures=[(f.subject_id,f.kind, _norm(f.value) if f.kind in ('equipment','condition','history','other') else '') for f in used]
         if len(signatures)!=len(set(signatures)):errors.append('criterion_3:duplicate_fact')
         def car_property(f):
@@ -218,7 +285,13 @@ def validate_v3(raw, transcript, direction):
             if f.kind=='condition' and re.fullmatch(r'(?:машина\s+)?(?:в\s+)?(?:идеальном|отличном|хорошем) состоянии[.! ]*',f.value,re.I):return False
             return True
         pool=[f for f in a.facts if car_property(f)]
-        if len({f.subject_id for f in pool})>1:errors.append('criterion_3:mixed_vehicles')
+        vehicles={}
+        for f in pool:vehicles.setdefault(f.subject_id,[]).append(f)
+        def complete_count(group):
+            return len({(f.kind,_norm(f.value) if f.kind in ('history','equipment','condition','other') else '') for f in group if f.status=='known'})
+        if len({f.subject_id for f in used})>1 and not any(complete_count(g)>=2 for g in vehicles.values()):errors.append('criterion_3:mixed_vehicles')
+        if any(complete_count(g)>=2 for g in vehicles.values()):errors=[e for e in errors if e!='criterion_3:unproven_target_fact']
+        if vehicles:pool=max(vehicles.values(),key=lambda group:(complete_count(group),len(group)))
         chosen=[];seen=set()
         priority={'year':0,'mileage':1,'price':2,'color':3,'history':4,'equipment':5,'condition':6,'other':7}
         for f in sorted(pool,key=lambda f:(f.status!='known',priority[f.kind])):
@@ -252,6 +325,18 @@ def validate_v3(raw, transcript, direction):
         offered=[e for e in a.events if e.type=='valuation' and e.status in ('proposed','agreed','completed') and e.purpose_evidence]
         unclear=any(e.type=='valuation' and e.status=='unknown' for e in a.events)
         _set(by[5],'valuation_offered','yes' if offered else 'unknown' if unclear else 'no',offered[-1].evidence[:4] if offered else [])
+    event_by_id={e.id:e for e in a.events}
+    for e in a.events:
+        for prior_id in e.supersedes:
+            prior=event_by_id.get(prior_id)
+            if not prior or prior is e or prior.type!=e.type or _start(e.evidence)<_start(prior.evidence):
+                errors.append('event:'+e.id+':invalid_supersedes');continue
+            if not re.search(r'отмен|не приед|не смогу|вместо|перенос|перенес|давайте.*(?:лучше|друг)',_text(e.evidence),re.I):
+                errors.append('event:'+e.id+':supersedes_proof_missing');continue
+            prior.status='declined'
+        if e.status=='declined' and not e.supersedes and not any(e.id in update.supersedes for update in a.events):
+            earlier=[p for p in a.events if p is not e and p.type==e.type and p.status=='agreed' and _start(p.evidence)<=_start(e.evidence)]
+            if earlier:errors.append('event:'+e.id+':unlinked_cancellation')
     visits=[e for e in a.events if e.type=='visit']
     if 6 in by and not visits:
         invitation=next((x for x in by[6].conditions if x.key=='invitation'),None)
@@ -381,6 +466,7 @@ def validate_v3(raw, transcript, direction):
     quality=all(getattr(a,flag) or (flag in scoped_flags and not blocking)
                 for flag in ('recording_complete','speech_clear','roles_reliable'))
     scored=a.category=='primary_inbound' and a.conversation_occurred is not False and quality and not blocking and not errors and all(c.status!='unknown' for c in a.criteria)
+    a.validation_issues=sorted(set(errors))
     return {'analysis':a.model_dump(),'errors':sorted(set(errors)),'is_scored':scored,'score':round(100*yes/applicable,2) if scored and applicable else None,'yes_count':yes,'applicable_count':applicable}
 
 
@@ -399,13 +485,13 @@ purchase_context: для обычного первичного обращени�
 1: нужно название салона, а не просто слово автосалон. Нечёткое имя после «меня зовут» — unknown; ясное имя клиента не надо переспрашивать.
 В uncertainties укажи impact: score, category, applicability либо display. Если ясно, что прозвучало конкретное название салона, но ASR исказил его написание, сам факт представления салона подтверждён; точное написание не восстанавливай, это impact=display. Это не относится к обрывку «автосалон...» без названия или «меня зовут...» без имени: такие пропуски могут менять балл. Не ставь yes для неуслышанного имени. Неопределённость марки выбранной машины сама по себе не мешает оценить факты её года, пробега, цены, если понятно, о какой машине речь.
 2: срок ПОКУПКИ, а не визита. «Послезавтра осмотрит сын, если всё хорошо — сразу заберу» устанавливает условный срок покупки: purchase_time=yes, сохрани purchase_timing_condition и evidence. Условие без срока события не задаёт срока покупки. Конкретные вопросы о цене/состоянии/условиях — requirement=yes; одно название модели и желание посмотреть — нет.
-3: два разных известных факта об одном target subject_id. Они могут быть сообщены ЛЮБОЙ стороной. Для каждого yes в specific_fact_one/two укажи fact_ids. Предположение, вопрос без ответа, опровергнутое значение не факт. Два повтора одного свойства не два факта.
+3: два разных известных факта об одном target subject_id. Они могут быть сообщены ЛЮБОЙ стороной. Для каждого yes в specific_fact_one/two укажи fact_ids. Предположение, вопрос без ответа, опровергнутое значение не факт. Два повтора одного свойства не два факта. Если факт уточняют вопросом, включи в evidence и вопрос, и подтверждающий ответ. Противоречивые значения одного свойства не отмечай оба known: при явном исправлении прежнее superseded, без разрешения противоречия оба uncertain. Несколько target автомобилей допустимы, но два факта должны принадлежать одному из них.
 Факты facts: разделяй target/customer/alternative и конкретные subject_id, make/model/year/mileage/price/color/history/equipment/condition/other. value — короткая ДОСЛОВНАЯ часть доказательства, без нормализации. Не превращай цену в двигатель, «пятисотый» в полную марку/модель, не угадывай Honda/BMW по искажённому ASR. Неясное значение uncertain, исправленное superseded. Для марки и модели автомобиля клиента нужны ОТДЕЛЬНЫЕ make и model.
 4: интерес к обмену/отказ/отсутствие автомобиля могут быть сообщены клиентом без вопроса. Просто наличие машины — не интерес к обмену. Наличные/кредит/лизинг не доказывают отказ от обмена. Если спросили, но не выяснили — discussed_unclear, exchange_or_sale_plans=no. Если речь неразборчива — unknown.
 Упоминание своей машины без обсуждения её обмена/продажи не начинает пункт 4: stage=not_started, trade_in=not_discussed. Это может дать отдельные известные сведения в пункте 5. discussed_unclear требует именно обсуждения решения об обмене/продаже, а не неопределённого намерения, придуманного из владения машиной.
 Для 4–6 stage: started при любом вопросе, предложении или инициативе по этапу, даже без ответа. Сохрани stage_evidence. not_started только если этап вообще не поднимался. Не путай невыполнение с неначатостью.
 5: каждое условие независимо. Известную марку/модель считай даже без интереса к обмену. Дистанционная оценка по фото/VIN равноправна очной. Если клиент попросил предварительно оценить до приезда, менеджер согласился и запросил данные — valuation event agreed с purpose_evidence из запроса оценки и agreement_evidence из ответа менеджера. Фото без цели оценки недостаточно. Данные, обещанные на будущее, ещё неизвестны.
-События events разделяй: visit, callback, materials, valuation, end_contact. Одно событие = одно действие, исполнитель, получатель, срок и условие. Статусы proposed/tentative/agreed/completed/declined/unknown. Уже отправленная визитка completed, не будущий шаг. Пересылка контакта/фото/КП — materials, НЕ callback. Не объединяй отправку визитки сейчас и возможный визит завтра в одном событии.
+События events разделяй: visit, callback, materials, valuation, end_contact, vehicle_transport. Доставка машины эвакуатором в сторонний сервис — vehicle_transport, не визит покупателя/представителя и не назначенный контакт; баллы 6–7 за неё не начисляются. Одно событие = одно действие, исполнитель, получатель, срок и условие. Статусы proposed/tentative/agreed/completed/declined/unknown. Уже отправленная визитка completed, не будущий шаг. Пересылка контакта/фото/КП — materials, НЕ callback. Не объединяй отправку визитки сейчас и возможный визит завтра в одном событии. Для отмены или переноса отдельным событием укажи supersedes=[id прежнего события], процитируй отмену/перенос. Отдельные альтернативы (приезд специалиста либо доставка машины в сервис) не связывай общим условием: эвакуатор относится только к доставке, не к приезду специалиста.
 Оценку автомобиля клиента выполняет менеджер: valuation.owner=manager. Отправка клиентом фото/данных для оценки — ОТДЕЛЬНОЕ materials с owner=client. Не пропускай это событие и не называй отправителя фотографий исполнителем оценки. Получатель оценки — клиент. Выбранный канал сохраняй по последнему ясному выбору: вопрос «Телеграм или Макс?» не доказывает выбор обоих, ответ «Макс» подтверждает только MAX. В restrictions не переноси список предложенных каналов как принятое ограничение.
 Исполнитель визита — тот, кто приедет, а не приглашающий. «Приезжайте» от менеджера означает visit.owner=client, если речь не о представителе. Не теряй отдельные обещания уточнить технические сведения и сообщить результат (materials, канал может быть неизвестен, это не назначенный созвон). Допущенный осмотр приглашённым специалистом — предложенный визит представителя, даже без точного времени. Ответ «или купить» на вопрос об обмене не является отказом от обмена: решение ещё не определено, discussed_unclear.
 Дословность значения не доказывает, что название распознано: искажённые названия и неполные обозначения сохраняй uncertain. При одном обязательном условии no другая такая неопределённость не блокирует весь балл.

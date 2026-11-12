@@ -193,7 +193,7 @@ class SonnetCallAgent:
                 props={key:obj['properties'].pop(key) for key in keys}
                 obj['properties'][name]={'type':'object','additionalProperties':False,'properties':props,'required':list(props)}
                 obj['required']=list(obj['properties'])
-            drop(schema, ('summary','category_reason','recommendation','next_step'))
+            drop(schema, ('summary','category_reason','recommendation','next_step','validation_issues'))
             schema['$defs'].pop('NextStep')
             group(schema, 'quality', ('recording_complete','speech_clear','roles_reliable','conversation_occurred'))
             group(schema, 'purchase', ('purchase_context','purchase_context_evidence','purchase_timing_condition','purchase_timing_evidence'))

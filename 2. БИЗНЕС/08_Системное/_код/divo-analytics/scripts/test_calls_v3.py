@@ -31,6 +31,75 @@ def fact(i,kind,value,subject='customer',subject_id='one'):
 
 class RulesV3Test(unittest.TestCase):
     def check(self,a):return validate_analysis(a,TR,'in',V3_RULE_VERSION)
+    def check_extra(self,a,extra):
+        text=TEXT+' '+extra
+        return validate_analysis(a,{'text':text,'duration':60,'segments':[{'text':text,'start':0,'end':60}]},'in',V3_RULE_VERSION)
+    def test_vague_time_cannot_be_promoted_by_precision_label(self):
+        for label in ('day','bounded','fixed'):
+            a=raw();a['events']=[event(when='Позже',precision=label)]
+            r=self.check_extra(a,'Позже');self.assertEqual(r['score'],0)
+            self.assertEqual(r['analysis']['events'][0]['precision'],'none')
+    def test_callback_action_is_not_time(self):
+        a=raw();a['events']=[event(when='Перезвоню в пятницу.',precision='day')]
+        a['events'][0]['when']='Перезвоню';a['events'][0]['time_evidence']=[ev('Перезвоню')]
+        r=self.check(a);self.assertEqual(r['analysis']['events'][0]['when'],'');self.assertEqual(r['score'],0)
+    def test_financing_refusal_does_not_exclude_trade(self):
+        a=raw();a['outcome'].update(trade_in='refused',trade_in_evidence=[ev('Кредит не нужен')])
+        r=self.check_extra(a,'Кредит не нужен');self.assertNotEqual(r['analysis']['criteria'][4]['status'],'na');self.assertIsNone(r['score'])
+    def test_unlinked_cancellation_holds_old_appointment(self):
+        a=raw();a['events']=[event('visit','Через полчаса','bounded','client'),{**event('visit','Через полчаса','bounded','client',status='declined'),'id':'cancel','evidence':[ev('Отменяем этот приезд, не приеду.')]}]
+        r=self.check_extra(a,'Отменяем этот приезд, не приеду.');self.assertIsNone(r['score']);self.assertIn('event:cancel:unlinked_cancellation',r['errors'])
+        a['events'][1]['supersedes']=['e1'];r=self.check_extra(a,'Отменяем этот приезд, не приеду.')
+        self.assertEqual(r['score'],0);self.assertFalse(r['analysis']['outcome']['meeting_agreed'])
+        self.assertEqual(r,self.check_extra(r['analysis'],'Отменяем этот приезд, не приеду.'))
+    def test_event_link_requires_explicit_correction(self):
+        a=raw();a['events']=[event(),{**event(),'id':'later','supersedes':['e1']}]
+        self.assertIn('event:later:supersedes_proof_missing',self.check(a)['errors'])
+    def test_conditional_visit_is_tentative(self):
+        a=raw();a['events']=[event('visit','Через полчаса','bounded','client')]
+        a['events'][0].update(condition='если успею',condition_evidence=[ev('если успею')])
+        r=self.check_extra(a,'если успею');self.assertEqual(r['score'],0);self.assertFalse(r['analysis']['outcome']['meeting_agreed'])
+    def test_conflicting_current_values_need_resolution(self):
+        a=raw();a['facts']=[fact('y1','year','2020','target'),fact('y2','year','2021','target'),fact('m','mileage','30000','target')]
+        r=self.check_extra(a,'Год 2021.');self.assertIsNone(r['score'])
+        a['facts'][0]['status']='superseded';self.assertEqual(self.check_extra(a,'Год 2021.')['score'],14.29)
+    def test_second_vehicle_does_not_block_complete_first(self):
+        a=raw();a['facts']=[fact('y','year','2020','target'),fact('m','mileage','30000','target'),fact('other','color','красный','target','two')]
+        r=self.check_extra(a,'красный');self.assertEqual(r['score'],14.29);self.assertEqual(r['errors'],[])
+    def test_unanswered_question_is_not_known_fact(self):
+        a=raw();a['facts']=[fact('year','year','2021','target'),fact('m','mileage','30000','target')]
+        a['facts'][0]['evidence']=[ev('Год 2021?')]
+        r=self.check_extra(a,'Год 2021?');self.assertIsNone(r['score']);self.assertEqual(r['analysis']['facts'][0]['status'],'uncertain')
+    def test_confirmation_is_added_to_question_proof_once(self):
+        a=raw();a['facts']=[fact('year','year','2021','target')];a['facts'][0]['evidence']=[{'quote':'Год 2021?','start':1,'end':2}]
+        tr={'text':'Год 2021? Да, верно.','duration':4,'segments':[{'text':'Год 2021?','start':1,'end':2},{'text':'Да, верно.','start':2.2,'end':3}]}
+        a['category_evidence']=[];r=validate_analysis(a,tr,'in',V3_RULE_VERSION)
+        self.assertEqual(len(r['analysis']['facts'][0]['evidence']),2)
+        self.assertEqual(r,validate_analysis(r['analysis'],tr,'in',V3_RULE_VERSION))
+    def test_original_and_numeric_mileage_are_not_conflicting(self):
+        a=raw();a['facts']=[fact('m','mileage','30000','target'),fact('h','mileage','пробег оригинальный','target')]
+        self.assertEqual(self.check_extra(a,'пробег оригинальный')['score'],14.29)
+    def test_diagnostic_errors_survive_normalized_revalidation(self):
+        a=raw();a['facts']=[fact('x','make','BMW')];a['facts'][0]['evidence']=[ev('RX350')]
+        r=self.check(a);self.assertEqual(r,self.check(r['analysis']));self.assertIn('fact:x:value_not_literal',r['errors'])
+
+    def test_business_hours_are_not_appointment_time(self):
+        a=raw();a['events']=[event('visit','сегодня с 10 до 18','bounded','client')]
+        a['events'][0]['time_evidence']=[ev('сегодня с 10 до 18 работаем')]
+        self.assertEqual(self.check_extra(a,'сегодня с 10 до 18 работаем')['score'],0)
+    def test_independent_inspector_not_conditioned_on_transport(self):
+        a=raw();a['events']=[event('visit','','none','representative',status='proposed')]
+        a['events'][0].update(condition='эвакуатор',condition_evidence=[ev('эвакуатор')],evidence=[ev('два варианта: специалист или эвакуатор')])
+        r=self.check_extra(a,'два варианта: специалист или эвакуатор')
+        self.assertIn('event:e1:alternative_condition_requires_review',r['errors'])
+
+    def test_vehicle_transport_is_not_a_customer_visit(self):
+        a=raw();a['events']=[event('visit','Через полчаса','bounded','manager')]
+        a['events'][0].update(condition='эвакуатор',condition_evidence=[ev('эвакуатор')],evidence=[ev('доставим на эвакуаторе')])
+        r=self.check_extra(a,'эвакуатор, доставим на эвакуаторе')
+        self.assertEqual(r['analysis']['events'][0]['type'],'vehicle_transport')
+        self.assertEqual(r['score'],0);self.assertFalse(r['analysis']['outcome']['meeting_agreed'])
+
     def test_callback_specific_day_counts(self):
         a=raw();a['events']=[event()];r=self.check(a)
         self.assertEqual(r['errors'],[]);self.assertEqual(r['score'],14.29)

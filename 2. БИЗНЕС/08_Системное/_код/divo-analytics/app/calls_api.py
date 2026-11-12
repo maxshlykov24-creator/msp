@@ -15,7 +15,7 @@ from sqlalchemy.orm import defer
 from app.api import _auth_guard
 from app.call_report import CATEGORY_NAMES, CRITERIA, STATE_NAMES, REPORT_VERSION, manager_name
 from app.call_rules import MIN_CALL_DURATION_SEC, RULE_VERSION, V3_RULE_VERSION, criterion_view, canonical_company_name, canonicalize_analysis_text_fields, analysis_version_for, evaluation_fingerprint
-from app.call_worker import delivery_skip_reason, active_rules, source_hash, snapshot
+from app.call_worker import stable_hash, delivery_skip_reason, active_rules, source_hash, snapshot
 from app.config import settings
 from app.database import SessionLocal
 from app.models import CallDelivery, CallRecord, SyncState, CallAnalysisRevision
@@ -295,7 +295,7 @@ def revision_detail(call_id: int, revision_id: int, candidate: bool = False):
             saved = {k: verdict.get(k) for k in ('analysis', 'score', 'is_scored', 'yes_count', 'applicable_count')}
             saved.update(rule_version=revision.rule_version, analysis_version=revision.analysis_version,
                          category=(verdict.get('analysis') or {}).get('category'), validation_errors=verdict.get('errors', []))
-            if revision.review.get('audio_review_required') or revision.review.get('reference_differences') or revision.review.get('semantic_findings'):
+            if revision.state == 'needs_review' or verdict.get('errors') or revision.review.get('audio_review_required') or revision.review.get('reference_differences') or revision.review.get('semantic_findings'):
                 saved.update(proposed_score=saved['score'], score=None, is_scored=False,
                              review_required=True, audio_review_required=bool(revision.review.get('audio_review_required')))
             row = db.get(CallRecord, call_id)
@@ -308,7 +308,7 @@ def revision_detail(call_id: int, revision_id: int, candidate: bool = False):
             saved = revision.result["snapshot"]
         return {"id": revision.id, "call_id": call_id, "state": revision.state,
                 "snapshot": saved, "candidate": candidate, "comparison": comparison,
-                "audit_note": (revision.review.get("semantic_audit") or {}).get("note", "") if candidate else "",
+                "audit_note": (revision.review.get("semantic_audit") or {}).get("note", "") if candidate and (revision.review.get("semantic_audit") or {}).get("verdict_hash")==stable_hash(revision.result.get("verdict")) else "",
                 "criteria_view": [criterion_view(c, saved["rule_version"]) for c in saved.get("analysis", {}).get("criteria", [])]}
 
 
