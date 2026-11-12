@@ -257,15 +257,16 @@ def summary(start: date | None = None, end: date | None = None, manager: str | N
 def detail(call_id: int, diagnostics: bool = False):
     with SessionLocal() as db:
         record = db.execute(select(CallRecord, CallRecord.provider_result["manual_review"],
-                                   CallRecord.provider_result["manager_resolution"])
+                                   CallRecord.provider_result["manager_resolution"],
+                                   CallRecord.provider_result["reanalysis_delivery_suppressed"].as_boolean())
                             .options(defer(CallRecord.provider_result, raiseload=True))
                             .where(CallRecord.id == call_id, *( [] if diagnostics else published_conditions()))).first()
         if not record:
             raise HTTPException(404, "Звонок не найден")
-        row, manual_review, manager_resolution = record
+        row, manual_review, manager_resolution, delivery_history_only = record
         deliveries = list(db.scalars(select(CallDelivery).where(CallDelivery.call_id == row.id)))
         result = summary_row(row)
-        result.update({"diagnostics": diagnostics, "transcript": row.transcript, "analysis": canonicalize_analysis_text_fields(row.analysis),
+        result.update({"diagnostics": diagnostics, "delivery_history_only": bool(delivery_history_only), "transcript": row.transcript, "analysis": canonicalize_analysis_text_fields(row.analysis),
                        "validation_errors": row.validation_errors, "rule_version": row.rule_version,
                        "analysis_version": row.analysis_version, "render_version": REPORT_VERSION,
                        "criteria_view": [criterion_view(c, row.rule_version) for c in (row.analysis or {}).get("criteria", [])],
