@@ -921,6 +921,20 @@ async def ensure_lead_async(snap: dict, doc: dict) -> dict:
         except Exception:
             log.warning("чат %s: история площадки ожидает повторного чтения", cid)
     try:
+        if cid.startswith("ar:") and not (doc.get("crm") or {}).get("verified_binding"):
+            try:
+                await asyncio.wait_for(recover_autoru_binding(cid), timeout=45)
+            except Exception:
+                log.warning("чат %s: связь Авто.ру ожидает проверки", cid)
+            fresh = store.load_doc(cid)
+            if (fresh.get("crm") or {}).get("verified_binding"):
+                doc.setdefault("crm", {})["verified_binding"] = fresh["crm"]["verified_binding"]
+            if (fresh.get("crm") or {}).get("note_target"):
+                lid = await asyncio.to_thread(_note_lead, cid, fresh)
+                if not lid:
+                    raise RuntimeError("Auto.ru notes link requires revalidation")
+                snap["chat_url"] = amo_client.lead_url(lid)
+                return snap  # Notes/link proof does not authorize CRM sales writes.
         if cid.startswith("av:") and not (doc.get("crm") or {}).get("verified_binding"):
             try:
                 await asyncio.wait_for(recover_avito_time_link(cid, doc), timeout=45)
@@ -2434,7 +2448,7 @@ async def tick() -> None:
                 and datetime.fromisoformat(alert.get("started_at") or "").timestamp() >= time.time() - 4 * 86400)
         except (ValueError, TypeError):
             recent_avito_handoff = False
-        if (state.get("note_pending") or (state.get("verified_binding") and alert.get("tg"))
+        if (state.get("note_pending") or ((state.get("verified_binding") or state.get("note_target")) and alert.get("tg"))
                 or recent_avito_handoff):
             schedule_notes(str(cid))
         if state.get("handoff_pending") or (ping_allowed(alert) and not alert.get("tg")):

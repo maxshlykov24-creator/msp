@@ -4163,3 +4163,40 @@ def test_nov12_notes_definitive_refusal_and_timeout():
             assert row["error_code"]==code
             assert bool(row.get("post_started")) == (code==0)
     asyncio.run(run(429));asyncio.run(run(0))
+
+
+def test_nov12_autoru_correlation_link_never_creates_sale():
+    import asyncio
+    from unittest.mock import patch
+    from tools.rehearse import Sandbox
+    from bot import crm,store
+    async def run():
+        with Sandbox():
+            cid="ar:link-only"
+            d=store.load_doc(cid);d["crm"]={"note_target":{"source":"autoru_incoming_sequence"}};store.save_doc(cid,d)
+            async def noop(*args,**kwargs):pass
+            with patch.object(crm,"recover_autoru_binding",side_effect=noop),patch.object(crm,"_note_lead",return_value=321),patch.object(crm,"ensure_lead",side_effect=AssertionError("Sale mutation forbidden")):
+                r=await crm.ensure_lead_async({"chat_id":cid,"channel":"Авто.ру"},d)
+                assert r["chat_url"].endswith("/321")
+    asyncio.run(run())
+
+
+def test_nov12_new_exact_binding_used_before_handoff():
+    import asyncio
+    from unittest.mock import patch
+    from tools.rehearse import Sandbox
+    from bot import crm,store
+    async def run():
+        with Sandbox():
+            cid="ar:exact-fresh"
+            d=store.load_doc(cid)
+            async def recover(*args):
+                fresh=store.load_doc(cid)
+                fresh["crm"]={"verified_binding":{"lead_id":321}}
+                store.save_doc(cid,fresh)
+            def ensure(snap,doc):
+                assert doc["crm"]["verified_binding"]["lead_id"]==321
+                return snap
+            with patch.object(crm,"recover_autoru_binding",side_effect=recover),patch.object(crm,"ensure_lead",side_effect=ensure):
+                await crm.ensure_lead_async({"chat_id":cid,"channel":"Авто.ру"},d)
+    asyncio.run(run())
