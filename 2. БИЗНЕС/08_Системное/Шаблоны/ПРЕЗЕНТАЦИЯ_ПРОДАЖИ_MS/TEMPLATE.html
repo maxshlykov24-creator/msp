@@ -11,18 +11,19 @@
 <style>
 
   :root{
-    --bg:#000000;
-    --card:#1C1C1E;
-    --card-2:#2C2C2E;
-    --ink:#F5F5F7;
-    --body:#A1A1A6;
-    --mute:#6E6E73;
+    /* MS Product: актуальная палитра бургунди, БРЕНД/web-kit. */
+    --bg:#130b10;
+    --card:#21131b;
+    --card-2:#321e29;
+    --ink:#f5edf0;
+    --body:#c1adb6;
+    --mute:#a48e99;
     --line:rgba(255,255,255,.08);
-    --a1:#5B7CDE;
-    --a2:#8AA4F0;
-    --a1-rgb:91,124,222;
-    --a2-rgb:138,164,240;
-    --ink-rgb:245,245,247;
+    --a1:#b56e87;
+    --a2:#d9a7b8;
+    --a1-rgb:181,110,135;
+    --a2-rgb:217,167,184;
+    --ink-rgb:245,237,240;
     --ease:cubic-bezier(.25,1,.5,1);
     --ease-io:cubic-bezier(.45,.05,.55,.95);
     --font:'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
@@ -156,7 +157,7 @@
   @keyframes fade{from{opacity:0;transform:translate3d(26px,0,0)}to{opacity:1;transform:none}}
   @keyframes fade-back{from{opacity:0;transform:translate3d(-26px,0,0)}to{opacity:1;transform:none}}
 
-  .grad{background:linear-gradient(105deg,#F5F5F7 0%, var(--a2) 55%, var(--a1) 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+  .grad{background:linear-gradient(105deg,#f5edf0 0%, var(--a2) 55%, var(--a1) 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
   .dot,.grad .dot{color:var(--a1) !important;-webkit-text-fill-color:var(--a1) !important;background:none !important}
   .kicker{font-family:var(--font-mono);font-weight:600;letter-spacing:.08em;text-transform:uppercase;font-size:13px;margin-bottom:20px;color:var(--a2)}
 
@@ -190,7 +191,7 @@
     transition:transform .06s linear,border-color .4s var(--ease),box-shadow .4s var(--ease);
   }
   .card.hero,.phase.hl,.bonus.hero{
-    border-color:rgba(var(--a1-rgb),.4);background:linear-gradient(165deg,#252830 0%,#1C1C1E 100%);
+    border-color:rgba(var(--a1-rgb),.4);background:linear-gradient(165deg,#321e29 0%,#21131b 100%);
     box-shadow:0 0 46px -18px rgba(var(--a1-rgb),.5);
   }
   .card:hover,.anchor:hover,.phase:hover,.bonus:hover,.step:hover,.mock:hover,.shot-card:hover{
@@ -243,7 +244,7 @@
 
   .ms-badge{position:fixed;top:26px;right:8vw;display:flex;align-items:center;gap:10px;z-index:15}
   .ms-badge img{height:32px;width:auto;filter:drop-shadow(0 0 14px rgba(var(--a2-rgb),.3))}
-  .ms-badge .ms-name{font-family:var(--font);font-size:14px;font-weight:600;letter-spacing:-.02em;color:rgba(245,245,247,.42);white-space:nowrap}
+  .ms-badge .ms-name{font-family:var(--font);font-size:14px;font-weight:600;letter-spacing:-.02em;color:rgba(245,237,240,.42);white-space:nowrap}
 
   .nav{position:absolute;bottom:26px;right:8vw;display:flex;gap:8px;z-index:10}
   .nav button{width:38px;height:38px;border-radius:50%;border:1px solid var(--line);background:var(--card);color:var(--ink);font-size:16px;cursor:pointer;transition:border-color .2s,background .2s}
@@ -662,8 +663,8 @@
       const m = v.match(/(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
       return m ? [+m[1], +m[2], +m[3]] : fallback;
     }
-    const c1 = rgbToken("--a1-rgb", [91,124,222]);
-    const c2 = rgbToken("--a2-rgb", [138,164,240]);
+    const c1 = rgbToken("--a1-rgb", [181,110,135]);
+    const c2 = rgbToken("--a2-rgb", [217,167,184]);
 
     const SPRITE = 64, HALF = SPRITE / 2;
     const sprite = document.createElement("canvas");
