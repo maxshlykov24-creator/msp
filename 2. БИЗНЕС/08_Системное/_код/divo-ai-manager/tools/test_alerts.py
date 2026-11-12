@@ -3865,7 +3865,7 @@ def test_nov06_note_target_is_not_customer_identity():
     d={'autoru':{'url':'https://auto.ru/cars/used/sale/1160099508-1c24e0b7/'},'crm':{'note_target':{
         'source':'owner_confirmed_case','chat_id':'ar:test','talk_id':7137,'contact_id':99,'item_id':'1160099508-1c24e0b7'}}}
     lead={'id':321,'custom_fields_values':[{'field_id':2051461,'values':[{'value':d['autoru']['url']}]}], '_embedded':{'contacts':[{'id':99}]}}
-    with patch.object(crm.amo_client,'request',return_value=(200,{'entity_type':'lead','entity_id':321,'contact_id':99})), patch.object(crm.amo_client,'get_lead',return_value=lead):
+    with patch.object(crm.amo_client,'request',return_value=(200,{'entity_type':'lead','entity_id':321,'contact_id':99,'origin':'amo.ext.31941682'})), patch.object(crm.amo_client,'get_lead',return_value=lead):
         assert crm._note_lead('ar:test',d)==321
     with patch.object(crm.amo_client,'find_widget_lead',return_value=None):
         assert crm._verified_marketplace_lead({'channel':'Авто.ру','chat_id':'ar:test','url':d['autoru']['url']},d) is None
@@ -4079,3 +4079,87 @@ def test_nov09_recent_handoff_scheduled_without_notes_or_binding():
             except StopTick: pass
     asyncio.run(run())
     assert scheduled==['av:test-schedule']
+
+
+def test_nov12_autoru_incoming_correlation():
+    from unittest.mock import patch
+    from tools import amo_client as a
+    room = "268d4425ea6dea91e76be7ad7fea691c"
+    url = "https://auto.ru/cars/used/sale/1160689626-7ad634f7/"
+    refs = [{"id": str(t), "at": t} for t in [1000, 1020, 1060]]
+    def run(delays=(5, 3, 2), name="Human name", talks=(7,), extra=False, partial=False, same_item=True):
+        lead = {"id": 10, "pipeline_id": a.PIPELINE_TECH, "status_id": 123,
+                "_embedded": {"contacts": [{"id": 20}]},
+                "custom_fields_values": [{"field_id": a.FIELD_LISTING_URL, "values": [{"value": url if same_item else "https://auto.ru/cars/used/sale/9999999999-aaaaaaaa/"}]}]}
+        def request(path, params=None, **kwargs):
+            if path == "/api/v4/events":
+                rows = [{"type": "incoming_chat_message", "created_at": r["at"]+d,
+                         "value_after": [{"message": {"id": str(t)+r["id"], "talk_id": t, "origin": "amo.ext.31941682"}}]}
+                        for t in talks for r, d in zip(refs, delays)]
+                if extra:
+                    rows.append({"type":"incoming_chat_message", "created_at":1040, "value_after":[{"message":{"id":"extra","talk_id":7,"origin":"amo.ext.31941682"}}]})
+                return 200, {"_embedded": {"events": rows}, "_links": {"next": {"href":"next"}} if partial else {}}
+            if "contacts" in path:
+                return 200, {"id":20, "name":name}
+            return 200, {"entity_type":"lead", "entity_id":10, "contact_id":20, "origin":"amo.ext.31941682"}
+        with patch.object(a,"request",side_effect=request), patch.object(a,"get_lead",return_value=lead):
+            return a.autoru_incoming_lead(room,refs,url)
+    assert run()["_correlation_source"] == "autoru_incoming_sequence"
+    assert run(name=room)["_correlation_source"] == "autoru_room_id"
+    assert run(delays=(5,30,2)) is None
+    assert run(talks=(7,8)) is None
+    assert run(extra=True) is None
+    assert run(same_item=False) is None
+    try:
+        run(partial=True)
+        raise AssertionError("Incomplete pagination accepted")
+    except a.AmoError:
+        pass
+    refs[:] = refs[:2]
+    assert run() is None
+    assert run(name=room) is not None
+
+
+def test_nov12_notes_uncertain_does_not_block_later():
+    import asyncio
+    from unittest.mock import patch
+    from tools.rehearse import Sandbox
+    from bot import crm,store
+    async def run():
+        with Sandbox():
+            cid="ar:notes-isolation"
+            d=store.load_doc(cid)
+            d["crm"]={"note_pending":[{"id":"old","text":"first","lead_id":10,"before_id":0,"post_started":1}, {"id":"new","text":"second"}]}
+            store.save_doc(cid,d)
+            writes=[]
+            def request(path,params=None,**kwargs):
+                if path.endswith("/99"):
+                    return 200,{"id":99,"params":{"text":"second"}}
+                return 200,{"_embedded":{"notes":[]}}
+            def write(path,body,**kwargs):
+                writes.append(body)
+                return {"_embedded":{"notes":[{"id":99}]}}
+            with patch.object(crm,"_note_lead",return_value=10),patch.object(crm.amo_client,"request",side_effect=request),patch.object(crm.amo_client,"write",side_effect=write):
+                await crm._flush_notes_locked(cid)
+            state=store.load_doc(cid)["crm"]
+            assert len(writes)==1 and writes[0][0]["params"]["text"]=="second"
+            assert [r["id"] for r in state["note_pending"]]==["old"]
+            assert state["note_receipts"]["new"]["note_id"]==99
+    asyncio.run(run())
+
+
+def test_nov12_notes_definitive_refusal_and_timeout():
+    import asyncio
+    from unittest.mock import patch
+    from tools.rehearse import Sandbox
+    from bot import crm,store
+    async def run(code):
+        with Sandbox():
+            cid="ar:notes-error"
+            d=store.load_doc(cid);d["crm"]={"note_pending":[{"id":"one","text":"first"}]};store.save_doc(cid,d)
+            with patch.object(crm,"_note_lead",return_value=10),patch.object(crm.amo_client,"request",return_value=(200,{"_embedded":{"notes":[]}})),patch.object(crm.amo_client,"write",side_effect=crm.amo_client.AmoError(code,"test")):
+                await crm._flush_notes_locked(cid)
+            row=store.load_doc(cid)["crm"]["note_pending"][0]
+            assert row["error_code"]==code
+            assert bool(row.get("post_started")) == (code==0)
+    asyncio.run(run(429));asyncio.run(run(0))

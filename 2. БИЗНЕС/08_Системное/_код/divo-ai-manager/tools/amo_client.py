@@ -736,6 +736,94 @@ def avito_timed_message_lead(refs: list[dict], url: str) -> dict | None:
     return candidates[0] if len(candidates) == 1 else None
 
 
+def autoru_incoming_lead(room_id: str, refs: list[dict], url: str) -> dict | None:
+    """Notes/link-only correlation. Never authorizes contact or phone reuse.
+
+    Integration events have no text and arrive later than provider messages.
+    Compare the complete incoming sequence in a bounded window, never bot
+    outgoing messages which the integration does not mirror. Fail closed on
+    extra events, timestamp ties, ambiguous talks or incomplete pagination.
+    """
+    item = listing_item_id(url)
+    if not item or not re.fullmatch(r"[0-9a-f]{24,40}", room_id or ""):
+        return None
+    unique = {}
+    for row in refs:
+        if row.get("id") and row.get("at"):
+            mid, at = str(row["id"]), int(row["at"])
+            if mid in unique and unique[mid] != at:
+                return None
+            unique[mid] = at
+    ordered = sorted((at, mid) for mid, at in unique.items())
+    if not ordered:
+        return None
+    # Keep full last-day incoming sequence, capped without splitting a second.
+    ordered = [r for r in ordered if r[0] >= ordered[-1][0] - 86400][-20:]
+    if len({r[0] for r in ordered}) != len(ordered):
+        return None
+    lo, hi = ordered[0][0], ordered[-1][0]
+    groups = {}
+    for page in range(1, 21):
+        code, data = request("/api/v4/events", {
+            "filter[type]": "incoming_chat_message",
+            "filter[created_at][from]": lo, "filter[created_at][to]": hi + 10,
+            "limit": 100, "page": page,
+        }, attempts=1)
+        if code not in (200, 204):
+            raise AmoError(code, "Auto.ru incoming events unavailable")
+        for event in items(data, "events"):
+            if event.get("type") != "incoming_chat_message":
+                continue
+            for value in event.get("value_after") or []:
+                msg = value.get("message") or {}
+                if msg.get("origin") != "amo.ext.31941682":
+                    continue
+                if not msg.get("talk_id") or not msg.get("id") or not event.get("created_at"):
+                    raise AmoError(0, "Incomplete Auto.ru incoming event")
+                group = groups.setdefault(int(msg["talk_id"]), {})
+                mid, at = str(msg["id"]), int(event["created_at"])
+                if mid in group and group[mid] != at:
+                    raise AmoError(0, "Conflicting Auto.ru event")
+                group[mid] = at
+        if not (data.get("_links") or {}).get("next"):
+            break
+    else:
+        raise AmoError(0, "Auto.ru incoming pagination incomplete")
+    candidates = []
+    for tid, group in groups.items():
+        rows = sorted((at, mid) for mid, at in group.items())
+        if (len(rows) != len(ordered) or len({r[0] for r in rows}) != len(rows)
+                or not all(0 <= b[0] - a[0] <= 10 for a, b in zip(ordered, rows))):
+            continue
+        code, talk = request("/api/v4/talks/%s" % tid, attempts=1)
+        if code != 200:
+            raise AmoError(code, "Auto.ru candidate talk unavailable")
+        if (talk.get("origin") != "amo.ext.31941682" or talk.get("entity_type") != "lead"
+                or not talk.get("contact_id")):
+            continue
+        lead = get_lead(int(talk["entity_id"]))
+        if (lead.get("is_deleted") or lead.get("status_id") in CLOSED
+                or lead.get("pipeline_id") not in {PIPELINE_TECH, PIPELINE_SALES}
+                or listing_item_id(lead_listing_url(lead)) != item
+                or {int(c["id"]) for c in lead.get("_embedded", {}).get("contacts", [])}
+                   != {int(talk["contact_id"])}):
+            continue
+        code, contact = request("/api/v4/contacts/%s" % talk["contact_id"], attempts=1)
+        if code != 200:
+            raise AmoError(code, "Auto.ru candidate contact unavailable")
+        exact_room = str(contact.get("name") or "").strip() == room_id
+        if not exact_room and (len(rows) < 3 or hi - lo < 30):
+            continue
+        lead["_provider_contact_id"] = int(talk["contact_id"])
+        lead["_provider_talk_id"] = tid
+        lead["_correlation_source"] = "autoru_room_id" if exact_room else "autoru_incoming_sequence"
+        lead["_correlation_evidence"] = [
+            {"provider_id": a[1], "provider_at": a[0], "crm_id": b[1], "crm_at": b[0]}
+            for a, b in zip(ordered, rows)]
+        candidates.append(lead)
+    return candidates[0] if len(candidates) == 1 else None
+
+
 def autoru_message_lead(refs: list[dict], url: str) -> dict | None:
     """Resolve an integration reply by its exact CRM message UUID, never by name.
 

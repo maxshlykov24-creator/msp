@@ -1578,11 +1578,12 @@ def _note_lead(chat_id: str, doc: dict) -> int | None:
     # Owner-confirmed destination is only for notes, never customer identity,
     # contact/phone reuse, sales creation or manager assignment.
     target = (doc.get("crm") or {}).get("note_target") or {}
-    if (target.get("source") == "owner_confirmed_case" and target.get("chat_id") == chat_id
+    if (target.get("source") in {"owner_confirmed_case", "autoru_room_id", "autoru_incoming_sequence"} and target.get("chat_id") == chat_id
             and target.get("talk_id") and target.get("contact_id")
             and target.get("item_id") == amo_client.listing_item_id(src.get("url", ""))):
         code, talk = amo_client.request("/api/v4/talks/%s" % int(target["talk_id"]))
-        if code != 200 or not talk or talk.get("entity_type") != "lead":
+        if (code != 200 or not talk or talk.get("entity_type") != "lead"
+                or (chat_id.startswith("ar:") and talk.get("origin") != "amo.ext.31941682")):
             return None
         if int(talk.get("contact_id") or 0) != int(target["contact_id"]):
             return None
@@ -1639,7 +1640,7 @@ async def recover_autoru_binding(chat_id: str) -> None:
     source = doc.get("autoru") or {}
     if not source.get("me") or not source.get("url"):
         return
-    if state.get("verified_binding") or time.time() < state.get("binding_retry_at", 0):
+    if state.get("verified_binding") or state.get("note_target") or time.time() < state.get("binding_retry_at", 0):
         return
     doc.setdefault("crm", {})["binding_retry_at"] = time.time() + 300
     store.save_doc(chat_id, doc)
@@ -1654,10 +1655,21 @@ async def recover_autoru_binding(chat_id: str) -> None:
     refs = [{"id": str(m["provided_id"]), "at": created_of(m)} for m in messages
             if m.get("provided_id") and m.get("room_id") == chat_id[3:]
             and is_out(m, str(source.get("me") or ""))]
-    if not refs:
-        return
-    lead = await asyncio.to_thread(amo_client.autoru_message_lead, refs, source.get("url", ""))
+    lead = (await asyncio.to_thread(amo_client.autoru_message_lead, refs, source.get("url", ""))) if refs else None
     if not lead:
+        incoming = [{"id": str(m["id"]), "at": created_of(m)} for m in messages
+                    if m.get("id") and m.get("room_id") == chat_id[3:]
+                    and not is_out(m, str(source.get("me") or ""))]
+        lead = await asyncio.to_thread(amo_client.autoru_incoming_lead, chat_id[3:], incoming, source.get("url", ""))
+        if lead:
+            current = store.load_doc(chat_id)
+            current.setdefault("crm", {})["note_target"] = {
+                "source": lead["_correlation_source"], "chat_id": chat_id,
+                "item_id": amo_client.listing_item_id(source.get("url", "")),
+                "talk_id": lead["_provider_talk_id"], "contact_id": lead["_provider_contact_id"],
+                "evidence": lead["_correlation_evidence"],
+            }
+            store.save_doc(chat_id, current)
         return
     current = store.load_doc(chat_id)
     current.setdefault("crm", {})["verified_binding"] = {
@@ -1681,7 +1693,7 @@ async def _refresh_bound_alert_link_locked(chat_id: str) -> None:
     doc = store.load_doc(chat_id)
     state = doc.get("crm") or {}
     alert = state.get("alert") or {}
-    if not bot or not alert.get("tg") or not (state.get("verified_binding") or state.get("message_time_link")):
+    if not bot or not alert.get("tg") or not (state.get("verified_binding") or state.get("message_time_link") or state.get("note_target")):
         return
     if alert.get("picked") not in (None, "", "button") or (not alert.get("active") and not alert.get("picked")):
         return
@@ -1695,6 +1707,9 @@ async def _refresh_bound_alert_link_locked(chat_id: str) -> None:
     if state.get("verified_binding"):
         lead = await asyncio.to_thread(_verified_marketplace_lead, snap, doc)
         url = amo_client.lead_url(int(lead["id"])) if lead else ""
+    elif chat_id.startswith("ar:") and state.get("note_target"):
+        lid = await asyncio.to_thread(_note_lead, chat_id, doc)
+        url = amo_client.lead_url(lid) if lid else ""
     else:
         url = await asyncio.to_thread(avito_time_link, chat_id, doc)
     if not url:
@@ -1814,6 +1829,12 @@ async def _flush_notes_locked(chat_id: str) -> None:
             row = next((r for r in state.get("note_pending", []) if r["id"] == queued["id"]), None)
             if row is None:
                 continue
+            if time.time() < row.get("retry_at", 0):
+                continue
+            if row.get("post_started") and row.get("lead_id") != lead_id:
+                row["error"] = "target_changed_with_uncertain_post"
+                store.save_doc(chat_id, doc)
+                continue
             if "before_id" not in row or row.get("lead_id") != lead_id:
                 row["before_id"] = max((int(n["id"]) for n in notes), default=0)
                 row["lead_id"] = lead_id
@@ -1822,17 +1843,41 @@ async def _flush_notes_locked(chat_id: str) -> None:
                             n.get("note_type") == "common" and
                             note_text_equal((n.get("params") or {}).get("text", ""), row["text"]) for n in notes)
             if not delivered:
+                if row.get("attempts", 0) >= 5 and not row.get("post_started"):
+                    row["error"] = "attempt_limit_reached"
+                    store.save_doc(chat_id, doc)
+                    continue
                 if row.get("post_started"):
-                    raise RuntimeError("CRM note outcome uncertain; reconcile before retry")
+                    row["error"] = "post_outcome_uncertain"
+                    store.save_doc(chat_id, doc)
+                    continue  # Do not block later independent messages.
                 row["post_started"] = time.time()
+                row["attempts"] = row.get("attempts", 0) + 1
                 store.save_doc(chat_id, doc)
-                result = await asyncio.to_thread(amo_client.write, "/api/v4/leads/%s/notes" % lead_id, [{
-                    "note_type": "common", "params": {"text": row["text"]},
-                    "is_need_to_trigger_digital_pipeline": False,
-                }], attempts=1)
+                try:
+                    result = await asyncio.to_thread(amo_client.write, "/api/v4/leads/%s/notes" % lead_id, [{
+                        "note_type": "common", "params": {"text": row["text"]},
+                        "is_need_to_trigger_digital_pipeline": False,
+                    }], attempts=1)
+                except Exception as exc:
+                    fresh = store.load_doc(chat_id)
+                    failed = next((r for r in fresh.setdefault("crm", {}).get("note_pending", []) if r["id"] == row["id"]), None)
+                    if failed is not None:
+                        code = getattr(exc, "code", 0)
+                        failed["error"] = type(exc).__name__
+                        failed["error_code"] = code
+                        failed["error_at"] = time.time()
+                        # Definitive refusal, unlike timeout/5xx: request was not accepted.
+                        if code in {400, 401, 403, 404, 422, 429}:
+                            failed.pop("post_started", None)
+                            failed["retry_at"] = time.time() + min(3600, 60 * 2 ** failed.get("attempts", 1))
+                        store.save_doc(chat_id, fresh)
+                    log.warning("CRM note failure chat=%s message=%s type=%s code=%s", chat_id, row["id"], type(exc).__name__, getattr(exc, "code", 0))
+                    continue
                 saved_notes = amo_client.items(result or {}, "notes")
                 if not saved_notes:
-                    raise RuntimeError("CRM note write returned no note id")
+                    log.warning("CRM note returned no ID chat=%s message=%s", chat_id, row["id"])
+                    continue  # Durable post_started remains uncertain, do not resend.
                 for saved in saved_notes:
                     notes.append({"id": saved["id"], "note_type": "common", "params": {"text": row["text"]}})
             # Confirm the exact content by a fresh GET before acknowledging.
@@ -1853,17 +1898,22 @@ async def _flush_notes_locked(chat_id: str) -> None:
             check_code, checked = await asyncio.to_thread(amo_client.request,
                 "/api/v4/leads/%s/notes/%s" % (lead_id, note_id))
             if check_code != 200 or not note_text_equal((checked or {}).get("params", {}).get("text", ""), row["text"]):
-                raise RuntimeError("CRM note readback failed")
+                log.warning("CRM note readback pending chat=%s note=%s code=%s", chat_id, note_id, check_code)
+                continue
             doc = store.load_doc(chat_id)
             state = doc.setdefault("crm", {})
             state["note_pending"] = [r for r in state.get("note_pending", []) if r["id"] != row["id"]]
             state.setdefault("autoru_noted", []).append(row["id"])
             state["autoru_noted"] = list(dict.fromkeys(state["autoru_noted"]))
             state["note_lead_id"] = lead_id
+            state.setdefault("note_receipts", {})[row["id"]] = {"lead_id": lead_id, "note_id": note_id, "confirmed_at": time.time()}
             # После await перечитали документ: новые входящие и очередь сохраняются.
             store.save_doc(chat_id, doc)
-    except Exception:
-        log.warning("чат %s: примечание ожидает повторной записи в amo", chat_id)
+    except Exception as exc:
+        current = store.load_doc(chat_id)
+        current.setdefault("crm", {})["note_error"] = {"type": type(exc).__name__, "code": getattr(exc, "code", 0), "at": time.time()}
+        store.save_doc(chat_id, current)
+        log.warning("чат %s: примечание ожидает повторной записи в amo (%s, code=%s)", chat_id, type(exc).__name__, getattr(exc, "code", 0))
 
 
 def remember_out(chat_id: str | int, payload: Any) -> None:
