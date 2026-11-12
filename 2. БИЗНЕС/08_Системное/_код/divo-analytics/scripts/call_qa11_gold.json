@@ -1,0 +1,328 @@
+{
+  "rules": "2026-11-12.2",
+  "analysis": "sonnet.qa.11",
+  "period": "2026-11-09T00:00:00+03:00/2026-11-12T10:48:08+03:00",
+  "status": "transcript_reference_audio_uncertainties_preserved",
+  "calls": [
+    {
+      "id": 489,
+      "transcript_hash": "eef943c212e1b38d429d2ac3a7bb18f007e965f646403dc3cf98857b687ad51e",
+      "baseline_hash": "f78901e5041d0c07639c93114338cd866723a6902c24a907964168990fbe3566",
+      "expected_category": "primary_inbound",
+      "expected_score": 28.57,
+      "score_asserted": true,
+      "requires_review": false,
+      "expectation": "External inspector was discussed; preserve promise to check EGR."
+    },
+    {
+      "id": 490,
+      "transcript_hash": "342637ec0ac2bdcbfb1ff7d0fa7dc04e250c62e98d171669410f127e3ca9df1c",
+      "baseline_hash": "498b04bc36647794bbff5a05fb78b2c80ed4529d840f5fe01c9c65c9f546aa45",
+      "expected_category": "primary_inbound",
+      "expected_score": 14.29,
+      "score_asserted": true,
+      "requires_review": false,
+      "expectation": "Unclear self-name cannot affect failed salon condition."
+    },
+    {
+      "id": 492,
+      "transcript_hash": "df75f2eada0ed9e4369413ef19534cc5d8d5db5c22eb70388e55cf395a8033a7",
+      "baseline_hash": "e9cd2f35504045ec41c3ea1d5d3bcd676618f2d2b68e03415d8b208a38f071db",
+      "expected_category": "primary_inbound",
+      "expected_score": 14.29,
+      "score_asserted": true,
+      "requires_review": false,
+      "expectation": "1.2–1.4 million is price; visit not agreed."
+    },
+    {
+      "id": 512,
+      "transcript_hash": "d1a46532036140935092a05b0f87854076122811adc88f5a3277242fd3642660",
+      "baseline_hash": "70581af68c65ad8d2e7ad405ed6fbb1809564d95fbb9bcc6856c64a45819bce2",
+      "expected_category": "primary_inbound",
+      "expected_score": 28.57,
+      "score_asserted": true,
+      "requires_review": false,
+      "expectation": "Neutral unclear make; cash not trade refusal."
+    },
+    {
+      "id": 478,
+      "transcript_hash": "3c9300e8e5cf2b2d04833a5ae7e66fc16a3d3adabaff609c3601d941876656ba",
+      "baseline_hash": "ac0b16e577e2c0c6e073c412760e00c994d5e33017ab2171a70f2088fd5eb990",
+      "expected_category": "repeat",
+      "expected_score": null,
+      "score_asserted": false,
+      "requires_review": false,
+      "expectation": "Same purchase; trade discussed, decision unclear."
+    },
+    {
+      "id": 479,
+      "transcript_hash": "801cbf4fbc52ca3aeee1ba6fa50713464addd80fa050f6a0d04b2455c14704f3",
+      "baseline_hash": "6ef1b800417732eb70c2e9d63d507ecbf7e05940628bd880c4101a46eec50010",
+      "expected_category": "primary_inbound",
+      "expected_score": 57.14,
+      "score_asserted": true,
+      "requires_review": false,
+      "expectation": "Confirmed representative/buyer arrival in half an hour."
+    },
+    {
+      "id": 480,
+      "transcript_hash": "a7df8ca327d67ef2fc5c8eb81ce4e188b38609ff785afdc19bf2c0a80eba7370",
+      "baseline_hash": "68de64bc2e2858a9e9d18efb0855d2260f6042b57ff33fa9a35e2b0e8fec81ae",
+      "expected_category": "service",
+      "expected_score": null,
+      "score_asserted": false,
+      "requires_review": false,
+      "expectation": "Service navigation."
+    },
+    {
+      "id": 513,
+      "transcript_hash": "c0051aae427ae33a6518aa717e7436a7797db3fa9e2dc47a3924559b2449a63d",
+      "baseline_hash": "b303b906c487ed5c34f5f5efb77bfd3dfb22b88f35d35e39840fb623f5f2448b",
+      "expected_category": "primary_inbound",
+      "expected_score": 42.86,
+      "score_asserted": true,
+      "requires_review": false,
+      "expectation": "Remote valuation agreed; make/model not guessed; MAX preserved."
+    },
+    {
+      "id": 514,
+      "transcript_hash": "7bd1fe0c82067a6f9cad322d7c6b39f7d1cfb5baf508485e84253c941e302c44",
+      "baseline_hash": "af5148a7c2eaa274d903459515189454b46f709566912e8d3a63231da2f5d41c",
+      "expected_category": "primary_inbound",
+      "expected_score": null,
+      "score_asserted": false,
+      "requires_review": true,
+      "expectation": "Unclear self-name; hypothetical trade does not prove interest."
+    },
+    {
+      "id": 515,
+      "transcript_hash": "30e872f47ee9a8343c3d0ef6fb09a1328b37ba749daf9bd5aa083655b9664570",
+      "baseline_hash": "29d30e17ae245621e8dc3c4a735f15dacec00398d7cc174bea4d5345a97a0a59",
+      "expected_category": "primary_inbound",
+      "expected_score": 28.57,
+      "score_asserted": true,
+      "requires_review": false,
+      "expectation": "No invented make/model or messenger; tentative visit."
+    },
+    {
+      "id": 517,
+      "transcript_hash": "999987156eea656ee9789bd5f1811cb2c0c5097649ab66addd1020c537e378fd",
+      "baseline_hash": "b3d3e2b1486085ee92739500a8a211f50fd760afb7e69970160879fad2723715",
+      "expected_category": "primary_inbound",
+      "expected_score": 14.29,
+      "score_asserted": true,
+      "requires_review": false,
+      "expectation": "No clear refusal to continue; no exclusions."
+    },
+    {
+      "id": 518,
+      "transcript_hash": "87a0b78915acb5872c392534a8d1bdb682ac8d24550fa31b9155088dd58dca76",
+      "baseline_hash": "84450f4e7dc42e22c88b256f0b8fcfbdfba7f08082b647db68cc4f09887a5080",
+      "expected_category": "primary_inbound",
+      "expected_score": 28.57,
+      "score_asserted": true,
+      "requires_review": false,
+      "expectation": "Trade question means started stage; no explicit refusal: all seven apply."
+    },
+    {
+      "id": 477,
+      "transcript_hash": "9b530a231fa073be632764d5e263f97d4649800dff1c036e8ff5c29ee6b4e038",
+      "baseline_hash": "db8b7c360e314a32fc328e57bc5cef57b26fd2bdf6c9d22c78b3ba43b1c76442",
+      "expected_category": "primary_inbound",
+      "expected_score": 28.57,
+      "score_asserted": true,
+      "requires_review": false,
+      "expectation": "No timed visit."
+    },
+    {
+      "id": 502,
+      "transcript_hash": "46e2f0d0d9b10f062c082b5a8a2baa1cc17ecb1592dd98ed66781c330f746fb4",
+      "baseline_hash": "407ff8a0b24d0afc420c219d9ba73e2da2e3d3897ed49348728079a918c672b1",
+      "expected_category": "service",
+      "expected_score": null,
+      "score_asserted": false,
+      "requires_review": false,
+      "expectation": "Service; do not invent manager name."
+    },
+    {
+      "id": 481,
+      "transcript_hash": "a0303248af28a62215f751689beda83186a9e3ec06c11ef0c3f548877895b575",
+      "baseline_hash": "6e633862c62f730d9c12c1aa2ec734d715d07cd4e1b35cb2b5b7768cd25cd29a",
+      "expected_category": "service",
+      "expected_score": null,
+      "score_asserted": false,
+      "requires_review": false,
+      "expectation": "Service navigation."
+    },
+    {
+      "id": 504,
+      "transcript_hash": "96c5d73fda550df63b6ac0e7b699b4be41d38e68952022e510209714d520cbe2",
+      "baseline_hash": "e390209ab22ec8ac896396467d42c6445c881a225e84d333a667b56f59e33229",
+      "expected_category": "primary_inbound",
+      "expected_score": 28.57,
+      "score_asserted": true,
+      "requires_review": false,
+      "expectation": "Materials promised, not completed; sender manager."
+    },
+    {
+      "id": 482,
+      "transcript_hash": "bfcd4faae6a66129ec79b2633abca6a00dd0bd486b1ce342bcd2dceb89943c05",
+      "baseline_hash": "268e51663f59b7c05205dd4b350d757a33bcdfd416e6d8b31cd6d4b6c47fdde2",
+      "expected_category": null,
+      "expected_score": null,
+      "score_asserted": false,
+      "requires_review": true,
+      "expectation": "Material speech/category uncertainty; no score."
+    },
+    {
+      "id": 505,
+      "transcript_hash": "3ecf5569fdefd7e6f389211c8ba42947f07b0c3d37ad239c32b1d889c0a17cd4",
+      "baseline_hash": "03888a5cb3979ef6951b62ff1a2e3e138e418c439e27b96deb6fea19011b353c",
+      "expected_category": "primary_inbound",
+      "expected_score": 14.29,
+      "score_asserted": true,
+      "requires_review": false,
+      "expectation": "Distance and goodbye do not prove refusal; no stage exclusions."
+    },
+    {
+      "id": 519,
+      "transcript_hash": "6c857367b668ec3db587d6c118b89ebc5a761870ada9aa9157ae32f071c08976",
+      "baseline_hash": "564664454724d2cf2831211553445d8f8b62c6c5356dd93bb183f0f0dc88b9a2",
+      "expected_category": "primary_inbound",
+      "expected_score": null,
+      "score_asserted": false,
+      "requires_review": false,
+      "expectation": "Second new purchase after completed first: primary; callback tomorrow; manager sends materials."
+    },
+    {
+      "id": 483,
+      "transcript_hash": "f829d8dbfb8d0999688b89769bb442e42afc275af4493a3e49831977fc9fa79b",
+      "baseline_hash": "97b219a507704db8897138509ad4a378dcda774a94798f0c3a2af4c374a80fd5",
+      "expected_category": "primary_inbound",
+      "expected_score": 14.29,
+      "score_asserted": true,
+      "requires_review": false,
+      "expectation": "Do not infer today from unclear ASR; video is materials."
+    },
+    {
+      "id": 506,
+      "transcript_hash": "d0bf415ef2e819c7cce480b696959a917bd242e6ded9f6e23df5a686d813eab0",
+      "baseline_hash": "918bd8050af1c2b0195f1f0ff628021861cdecf206de795e2f70cbd625d245c6",
+      "expected_category": "primary_inbound",
+      "expected_score": null,
+      "score_asserted": false,
+      "requires_review": true,
+      "expectation": "Unclear self-name can change score: review audio."
+    },
+    {
+      "id": 507,
+      "transcript_hash": "2c476bd50f15359e2370833bc86661e1f967b043428cd956da092e7331e47f3f",
+      "baseline_hash": "1ed1862c6d807768d76ecfc4ca1a164626039ac775a95667e5cace41c9a7ea12",
+      "expected_category": "primary_inbound",
+      "expected_score": null,
+      "score_asserted": false,
+      "requires_review": true,
+      "expectation": "Unclear salon/name can change score: review audio; neutral vehicle."
+    },
+    {
+      "id": 484,
+      "transcript_hash": "549fdd9517391a1e9d75dfd893095fba0d9222f97e67f00a351aa33f939ac36d",
+      "baseline_hash": "c44f06a275b366322b8da7dadc63bbc760f8639e531239e1072c98d1549e06e5",
+      "expected_category": "primary_inbound",
+      "expected_score": 28.57,
+      "score_asserted": true,
+      "requires_review": false,
+      "expectation": "Friday callback counts; availability condition belongs to a different event."
+    },
+    {
+      "id": 520,
+      "transcript_hash": "92b8c21fd686e6e9ce79c37432277aa13134f0f6661a49af8817c6c3f5f91043",
+      "baseline_hash": "f6e2605c9b4e6f9bc192236d6f3ede37028f17a5e90b668de7d0f506c30193ef",
+      "expected_category": "primary_inbound",
+      "expected_score": 0,
+      "score_asserted": true,
+      "requires_review": false,
+      "expectation": "Generic salon is not salon name; no guessed platform."
+    },
+    {
+      "id": 486,
+      "transcript_hash": "ab19341381ac72efb8f67834a2a5420e208bc55fba8c7c361fbfe0c06d4cee83",
+      "baseline_hash": "6b80e06d7e13c8be98a40499a6b3c3be36bc9cb67b156aa7b0cc30c32d1932fd",
+      "expected_category": "primary_inbound",
+      "expected_score": 14.29,
+      "score_asserted": true,
+      "requires_review": false,
+      "expectation": "Truncated last question: review recording completeness separately."
+    },
+    {
+      "id": 508,
+      "transcript_hash": "ea3e1c9bcb0fa81e46031035959d7d9a976aa5da7da41b99c8fb56bfe47772e3",
+      "baseline_hash": "acdefcd47c0d5a59828d212a118d36f086b6d1b3264f6b83eb4568c3e70164e6",
+      "expected_category": "primary_inbound",
+      "expected_score": 42.86,
+      "score_asserted": true,
+      "requires_review": false,
+      "expectation": "Conditional purchase time yes; Lexus RX350 known; representative visit without time."
+    },
+    {
+      "id": 509,
+      "transcript_hash": "72814ac20d7a87490f8bbeb5c35168c05152adf64d701f04e063c97d6bf91ec7",
+      "baseline_hash": "441e0bdd33249837383bb2a23361938353a7484839d238eb438c4394026af4a2",
+      "expected_category": "repeat",
+      "expected_score": null,
+      "score_asserted": false,
+      "requires_review": false,
+      "expectation": "Immediate continuation of same purchase."
+    },
+    {
+      "id": 487,
+      "transcript_hash": "36bc953f54766596ca98880111bb0224386dfec3c9eadc7e773638b46b811584",
+      "baseline_hash": "992eeb1bbce94a019ed7e7e207d572b8ab8a148c2182916c1a3810c8180ed57a",
+      "expected_category": "primary_inbound",
+      "expected_score": 14.29,
+      "score_asserted": true,
+      "requires_review": false,
+      "expectation": "Corrected mileage supersedes prior value; no guessed make."
+    },
+    {
+      "id": 510,
+      "transcript_hash": "6fab57d5f85e3aea9234f85b8d23b3f811b98419fbfc1d8910abd8d8d83abc23",
+      "baseline_hash": "22fb961b03eb12518bf432e5c0bf4b449ac1930cd4594c8d6fc2fc0621c77aea",
+      "expected_category": "primary_inbound",
+      "expected_score": 28.57,
+      "score_asserted": true,
+      "requires_review": false,
+      "expectation": "Thanks after opening hours not visit agreement."
+    },
+    {
+      "id": 488,
+      "transcript_hash": "9354278249ad021eba41ed068790b59740be9745829393bd2c912ca06380caa6",
+      "baseline_hash": "b8ea4b1d5d19677195fb1288094aebd94fa3713abdb3653cb40b3126ccef0a06",
+      "expected_category": "primary_inbound",
+      "expected_score": 14.29,
+      "score_asserted": true,
+      "requires_review": false,
+      "expectation": "Card is materials; tentative visit without time; criterion 7 no."
+    },
+    {
+      "id": 511,
+      "transcript_hash": "44d71466b754d7b4fd306109b0ef5fbd5785588e9a844fbb5886dbbd74528563",
+      "baseline_hash": "204eef95f05cf2cebc5ca4aabb727794ce42862a412cb45f796dec1f7972bc35",
+      "expected_category": "primary_inbound",
+      "expected_score": null,
+      "score_asserted": false,
+      "requires_review": true,
+      "expectation": "Trade response ambiguous; credit not refusal; preserve no extra calls."
+    },
+    {
+      "id": 476,
+      "transcript_hash": "8b1984ddf0f602e3fce5d7cae8ff3ac44cccffad87c699443e0b1b37fee1adb8",
+      "baseline_hash": "757deac92feb0e22ae8b2ed3fa10b010a9c57b09002dd8c8597a4a38371f40d3",
+      "expected_category": "primary_inbound",
+      "expected_score": 28.57,
+      "score_asserted": true,
+      "requires_review": false,
+      "expectation": "Tentative visit; completed card; neutral uncertain vehicle."
+    }
+  ]
+}

@@ -284,6 +284,7 @@ class QueueTest(unittest.TestCase):
 
     def reportable(self):
         r=self.call();r.recording_url="https://example.invalid/recording";r.transcript=TRANSCRIPT
+        r.rule_version='2026-10-07.1';r.analysis_version='sonnet.qa.6'
         r.analysis=analysis();r.analysis["summary"]="Обсудили автомобиль";r.state="complete";self.db.commit()
         settings.calls_telegram_enabled=True;settings.calls_telegram_bot_token="test";settings.calls_telegram_chat_id="100"
         settings.calls_amo_enabled=False
@@ -703,6 +704,7 @@ class QueueTest(unittest.TestCase):
         for i in range(1,5):
             r=call_worker.upsert_note(self.db,self.note(id=i,uniq=f"filter-{i}"),"lead",100,[100])
             r.state="insufficient" if i<3 else "complete"
+            r.rule_version='2026-10-07.1';r.analysis_version='sonnet.qa.6'
             r.analysis=analysis();r.transcript=TRANSCRIPT;r.recording_url="https://example.invalid/audio"
             r.is_scored=i>=3;r.score=(100 if i==3 else 50) if i>=3 else None
         self.db.commit()
@@ -806,7 +808,7 @@ class ReportTest(unittest.TestCase):
                             analysis=a,manager_verified=False,manager_id=None,is_calibration=False,
                             is_scored=True,yes_count=7,applicable_count=7,score=100,
                             category="primary_inbound",category_reason="Входящий",state="complete",
-                            lead_ids=[100],rule_version="test",validation_errors=[])
+                            lead_ids=[100],rule_version="2026-10-07.1",validation_errors=[])
         a["criteria"][0]["evidence"][0]["quote"]="Автосалон Diomators, добрый день."
         result=render_report(row,telegram=True)
         self.assertLessEqual(len(result),3900)
@@ -966,7 +968,7 @@ class RevisionTest(unittest.TestCase):
         first=self.reportable();first.rule_version=LEGACY_RULE_VERSION;first.score=100;first.is_scored=True
         second=call_worker.upsert_note(self.db,self.note(id=2,uniq='second'),'lead',100,[100])
         second.analysis=analysis_v2();second.transcript=TRANSCRIPT;second.recording_url=first.recording_url
-        second.state='complete';second.rule_version=RULE_VERSION;second.score=0;second.is_scored=True
+        second.state='complete';second.rule_version=RULE_VERSION;second.analysis_version='sonnet.qa.10';second.score=0;second.is_scored=True
         pending=call_worker.upsert_note(self.db,self.note(id=3,uniq='third'),'lead',100,[100]);pending.state='analysis_ready'
         self.db.add(SyncState(key='calls_active_rule_version',value=RULE_VERSION));self.db.commit()
         with patch.object(calls_api,'SessionLocal',self.factory):

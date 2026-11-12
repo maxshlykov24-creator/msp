@@ -137,6 +137,8 @@ def validate_v3(raw, transcript, direction):
     if a.category!='primary_inbound' and a.criteria:errors.append('criteria:non_primary_must_be_empty')
     if a.category=='repeat' and (a.purchase_context!='same_purchase' or not a.purchase_context_evidence):errors.append('category:repeat_requires_same_purchase')
     if a.category=='primary_inbound' and a.purchase_context not in ('new_need','unknown'):errors.append('category:primary_purchase_conflict')
+    if a.category=='primary_inbound' and a.purchase_context=='unknown' and not any(u.criterion_id==0 for u in a.uncertainties):errors.append('category:unknown_purchase_requires_review')
+    if a.purchase_timing_condition and not a.purchase_timing_evidence:errors.append('purchase_time:condition_requires_evidence')
     if a.conversation_occurred is False and (a.category!='insufficient' or not a.category_evidence):errors.append('category:no_conversation_requires_proof')
     facts={f.id:f for f in a.facts}
     if len(facts)!=len(a.facts):errors.append('facts:duplicate_id')
@@ -158,9 +160,11 @@ def validate_v3(raw, transcript, direction):
     for r in a.restrictions:
         if not r.evidence or _norm(r.text) not in _norm(_text(r.evidence)):errors.append('restriction:not_grounded')
     for c in a.criteria:
+        if c.id not in CRITERIA_V2:
+            errors.append('criteria:unknown_id');continue
         if sorted(x.key for x in c.conditions)!=sorted(CRITERIA_V2[c.id][1]):errors.append(f'criterion_{c.id}:missing_or_duplicate_conditions')
         for x in c.conditions:
-            if x.status=='yes' and not x.evidence:errors.append(f'criterion_{c.id}:{x.key}:missing_evidence')
+            if c.id in (1,2,3) and x.status=='yes' and not x.evidence:errors.append(f'criterion_{c.id}:{x.key}:missing_evidence')
             if any(i not in facts for i in x.fact_ids):errors.append(f'criterion_{c.id}:{x.key}:unknown_fact')
         if c.id in (4,5,6) and c.stage=='started' and not c.stage_evidence:errors.append(f'criterion_{c.id}:stage_proof_missing')
     # Established property values may originate from either party, but must concern one vehicle.
@@ -172,7 +176,7 @@ def validate_v3(raw, transcript, direction):
                 if not selected or any(f.status!='known' or f.subject!='target' for f in selected):errors.append('criterion_3:unproven_target_fact')
                 used.extend(selected)
         if len({f.subject_id for f in used})>1:errors.append('criterion_3:mixed_vehicles')
-        signatures=[(f.subject_id,f.kind,_norm(f.value)) for f in used]
+        signatures=[(f.subject_id,f.kind, _norm(f.value) if f.kind in ('equipment','condition','history','other') else '') for f in used]
         if len(signatures)!=len(set(signatures)):errors.append('criterion_3:duplicate_fact')
     if 4 in by:
         c=by[4]
@@ -190,14 +194,15 @@ def validate_v3(raw, transcript, direction):
             if yes:_set(by[5],key,'yes',[e for f in selected for e in f.evidence][:4])
             elif next((x.status for x in by[5].conditions if x.key==key),None)=='yes':errors.append('criterion_5:'+key+':unproven_customer_fact')
         offered=[e for e in a.events if e.type=='valuation' and e.status in ('proposed','agreed','completed') and e.purpose_evidence]
-        _set(by[5],'valuation_offered','yes' if offered else 'no',offered[-1].evidence[:4] if offered else [])
+        unclear=any(e.type=='valuation' and e.status=='unknown' for e in a.events)
+        _set(by[5],'valuation_offered','yes' if offered else 'unknown' if unclear else 'no',offered[-1].evidence[:4] if offered else [])
     visits=[e for e in a.events if e.type=='visit']
     def precise(e):return bool(e.when and e.time_evidence and e.precision in ('fixed','bounded'))
     if 6 in by:
         visit=max(visits,key=lambda e:(e.status=='agreed' and precise(e),e.status=='agreed',_start(e.evidence)),default=None)
         _set(by[6],'invitation','yes' if visit and visit.status!='unknown' else 'unknown' if visit else 'no',visit.evidence[:4] if visit else [])
-        _set(by[6],'specific_day','yes' if visit and visit.status=='agreed' and visit.when and visit.precision!='none' else 'no',visit.time_evidence if visit else [])
-        _set(by[6],'specific_time','yes' if visit and visit.status=='agreed' and precise(visit) else 'no',visit.time_evidence if visit else [])
+        _set(by[6],'specific_day','yes' if visit and visit.status=='agreed' and visit.when and visit.precision!='none' else 'unknown' if visit and visit.status=='unknown' else 'no',visit.time_evidence if visit else [])
+        _set(by[6],'specific_time','yes' if visit and visit.status=='agreed' and precise(visit) else 'unknown' if visit and visit.status=='unknown' else 'no',visit.time_evidence if visit else [])
     no_calls=[r for r in a.restrictions if r.kind in ('no_calls','client_initiates')]
     def full_event(e):
         if e.status!='agreed' or not e.agreement_evidence or e.owner=='unknown':return False
@@ -212,7 +217,7 @@ def validate_v3(raw, transcript, direction):
         if step:
             _set(by[7],'action','yes',step.evidence[:4]);_set(by[7],'owner','yes' if step.owner!='unknown' else 'unknown',step.evidence[:4])
             _set(by[7],'agreement','yes' if step.status=='agreed' else 'unknown' if step.status=='unknown' else 'no',step.agreement_evidence)
-            _set(by[7],'deadline','yes' if full_event(step) else 'no',step.time_evidence if step.type!='end_contact' else step.evidence[:4])
+            _set(by[7],'deadline','yes' if full_event(step) else 'unknown' if step.status=='unknown' and step.type in ('visit','callback') else 'no',step.time_evidence if step.type!='end_contact' else step.evidence[:4])
     sc=a.scenario
     no_offer=(sc.kind=='no_suitable_offer' and sc.mismatch_confirmed and sc.customer_declined and sc.dialogue_closed and not sc.alternative_accepted and sc.mismatch_evidence and sc.refusal_evidence and sc.closure_evidence)
     if sc.kind=='no_suitable_offer' and not no_offer:errors.append('scenario:separate_mismatch_refusal_closure_required')

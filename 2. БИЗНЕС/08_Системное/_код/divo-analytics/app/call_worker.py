@@ -902,6 +902,14 @@ def archive_current(db, row, origin: str, provider: dict | None = None):
     return rev
 
 
+def candidate_state(verdict, version):
+    analysis = verdict.get('analysis') or {}
+    unresolved = version == V3_RULE_VERSION and (
+        analysis.get('category') == 'insufficient' or
+        (analysis.get('category') == 'primary_inbound' and not verdict.get('is_scored')))
+    return 'needs_review' if verdict['errors'] or unresolved else 'ready'
+
+
 def stage_revision(call_id: int, run: int = 1, *, rule_version: str = RULE_VERSION) -> dict:
     """One durable paid attempt; never clears a live analysis or touches deliveries."""
     with SessionLocal() as db:
@@ -910,10 +918,10 @@ def stage_revision(call_id: int, run: int = 1, *, rule_version: str = RULE_VERSI
             raise ValueError("published_transcript_required")
         thash = stable_hash(row.transcript)
         av = analysis_version_for(rule_version)
-        configuration = stable_hash({"model": settings.calls_sonnet_model, "rules": rule_version,
-            "analysis": av, "prompt": analysis_prompt(row.direction, row.occurred_at, rule_version),
-            "schema": analysis_schema(rule_version).model_json_schema()})
-        key = f"candidate:{call_id}:{rule_version}:{thash}:{configuration}:{run}"
+        from app.nexara import SonnetCallAgent as RequestBuilder
+        body, _ = RequestBuilder.request_body(row.transcript, row.direction, row.occurred_at, rule_version=rule_version)
+        configuration = stable_hash({"request": body, "rules": rule_version, "analysis": av})
+        key = f"candidate:{call_id}:" + stable_hash({"transcript": thash, "configuration": configuration, "run": run})
         prior = db.scalar(select(CallAnalysisRevision).where(CallAnalysisRevision.job_key == key))
         if prior:
             return {"id": prior.id, "call_id": call_id, "state": prior.state, "existing": True}
@@ -932,11 +940,13 @@ def stage_revision(call_id: int, run: int = 1, *, rule_version: str = RULE_VERSI
         with SessionLocal() as db:
             rev = db.get(CallAnalysisRevision, rid)
             rev.result = {**rev.result, "provider": result, "verdict": verdict}
-            rev.state = "needs_review" if verdict["errors"] else "ready"
+            rev.state = candidate_state(verdict, rule_version)
             db.commit()
     except Exception as exc:
         with SessionLocal() as db:
             rev = db.get(CallAnalysisRevision, rid)
+            if hasattr(exc, 'provider_payload'):
+                rev.result = {**rev.result, 'failed_provider_response': exc.provider_payload}
             rev.state = "ambiguous" if isinstance(exc, AmbiguousSubmission) else "error"
             rev.error = str(exc) if isinstance(exc, (RemoteFailure, AmbiguousSubmission)) else type(exc).__name__
             db.commit()
@@ -977,11 +987,13 @@ def repair_revision(revision_id: int) -> dict:
         with SessionLocal() as db:
             rev = db.get(CallAnalysisRevision, revision_id)
             rev.result = {**rev.result, "provider": result, "verdict": verdict}
-            rev.state = "needs_review" if verdict["errors"] else "ready"
+            rev.state = candidate_state(verdict, rule_version)
             db.commit()
     except Exception as exc:
         with SessionLocal() as db:
             rev = db.get(CallAnalysisRevision, revision_id)
+            if hasattr(exc, 'provider_payload'):
+                rev.result = {**rev.result, 'failed_provider_response': exc.provider_payload}
             rev.state = "ambiguous" if isinstance(exc, AmbiguousSubmission) else "error"
             rev.error = str(exc) if isinstance(exc, (RemoteFailure, AmbiguousSubmission)) else type(exc).__name__
             db.commit()

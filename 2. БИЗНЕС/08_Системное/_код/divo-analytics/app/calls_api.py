@@ -14,8 +14,8 @@ from sqlalchemy.orm import defer
 
 from app.api import _auth_guard
 from app.call_report import CATEGORY_NAMES, CRITERIA, STATE_NAMES, REPORT_VERSION, manager_name
-from app.call_rules import MIN_CALL_DURATION_SEC, RULE_VERSION, criterion_view, canonical_company_name, canonicalize_analysis_text_fields
-from app.call_worker import delivery_skip_reason, active_rules
+from app.call_rules import MIN_CALL_DURATION_SEC, RULE_VERSION, criterion_view, canonical_company_name, canonicalize_analysis_text_fields, analysis_version_for
+from app.call_worker import delivery_skip_reason, active_rules, source_hash, snapshot
 from app.config import settings
 from app.database import SessionLocal
 from app.models import CallDelivery, CallRecord, SyncState, CallAnalysisRevision
@@ -160,14 +160,14 @@ def summary(start: date | None = None, end: date | None = None, manager: str | N
         rows = list(db.scalars(overview_query().where(*filters(start, end, manager, category, calibration))))
         version = active_rules(db)
         def current(r):
-            return (r.rule_version == RULE_VERSION) == (version == RULE_VERSION)
+            return r.rule_version == version and r.analysis_version == analysis_version_for(version)
         all_scored = [r for r in rows if r.is_scored]
         scored = [r for r in all_scored if current(r)]
         versions = []
-        for v in sorted({r.rule_version for r in all_scored}):
-            group = [r for r in all_scored if r.rule_version == v]
-            versions.append({"rule_version": v, "scored": len(group), "average_score": round(sum(r.score for r in group)/len(group), 1)})
-        diagnostic_rows = list(db.execute(select(CallRecord.state, CallRecord.occurred_at).where(
+        for v, av in sorted({(r.rule_version, r.analysis_version) for r in all_scored}):
+            group = [r for r in all_scored if (r.rule_version, r.analysis_version) == (v, av)]
+            versions.append({"rule_version": v, "analysis_version": av, "scored": len(group), "average_score": round(sum(r.score for r in group)/len(group), 1)})
+        diagnostic_rows = list(db.execute(select(CallRecord.state, CallRecord.occurred_at, CallRecord.last_error).where(
             *filters(start, end, manager, category, calibration, published=False))))
         completed = [r for r in rows if r.state in ("complete", "needs_review", "insufficient")]
         meeting_count = sum((r.analysis or {}).get("outcome", {}).get("meeting_agreed") is True for r in scored)
@@ -222,7 +222,7 @@ def summary(start: date | None = None, end: date | None = None, manager: str | N
                 regrade_status.update(status="stopped_for_check", stale=True)
         return {"total": len(rows), "regrade": regrade_status, "processed": len(completed), "scored": len(scored),
                 "unscored": len(rows) - len(all_scored), "all_scored": len(all_scored),
-                "rule_version": version, "versions": versions,
+                "rule_version": version, "analysis_version": analysis_version_for(version), "versions": versions,
                 "scenario_counts": dict(Counter((r.analysis or {}).get("scenario", {}).get("kind", "legacy") for r in scored)),
                 "average_score": round(sum(r.score for r in scored) / len(scored), 1) if scored else None,
                 "meeting_agreed": meeting_count,
@@ -236,6 +236,9 @@ def summary(start: date | None = None, end: date | None = None, manager: str | N
                 "manager_options": [{"id": k, "name": v} for k, v in settings.call_manager_names.items()],
                 "categories": CATEGORY_NAMES, "worker": states,
                 "diagnostics": {"collection_age_sec": collection_age,
+                    "billing_blocked": sum(r.state == 'error' and '402' in (r.last_error or '') for r in diagnostic_rows),
+                    "recording_missing": sum(r.state in ('waiting_recording','recording_unavailable') for r in diagnostic_rows),
+                    "analysis_ambiguous": sum(r.state == 'analysis_ambiguous' for r in diagnostic_rows),
                     "collection_stale": collection_age is None or collection_age > 300,
                     "oldest_pending_at": oldest, "deliveries": dict(delivery_states),
                     "process_from": settings.calls_process_from, "delivery_from": settings.calls_delivery_from},
@@ -278,16 +281,31 @@ def detail(call_id: int, diagnostics: bool = False):
 
 
 @router.get("/{call_id}/revisions/{revision_id}")
-def revision_detail(call_id: int, revision_id: int):
+def revision_detail(call_id: int, revision_id: int, candidate: bool = False):
     with SessionLocal() as db:
         revision = db.scalar(select(CallAnalysisRevision).where(
             CallAnalysisRevision.id == revision_id, CallAnalysisRevision.call_id == call_id,
-            CallAnalysisRevision.state.in_(["archived", "published", "rolled_back"])))
-        if not revision or "snapshot" not in revision.result:
+            CallAnalysisRevision.state.in_(["ready", "needs_review", "verified"] if candidate else ["archived", "published", "rolled_back"])))
+        if not revision or ("verdict" if candidate else "snapshot") not in revision.result:
             raise HTTPException(404, "Сохранённая версия не найдена")
-        saved = revision.result["snapshot"]
+        comparison = None
+        if candidate:
+            verdict = revision.result['verdict']
+            saved = {k: verdict.get(k) for k in ('analysis', 'score', 'is_scored', 'yes_count', 'applicable_count')}
+            saved.update(rule_version=revision.rule_version, analysis_version=revision.analysis_version,
+                         category=(verdict.get('analysis') or {}).get('category'), validation_errors=verdict.get('errors', []))
+            if revision.review.get('audio_review_required') or revision.review.get('reference_differences'):
+                saved.update(proposed_score=saved['score'], score=None, is_scored=False,
+                             review_required=True, audio_review_required=bool(revision.review.get('audio_review_required')))
+            row = db.get(CallRecord, call_id)
+            previous = snapshot(row)
+            comparison = {'published': previous, 'source_unchanged': source_hash(row) == revision.base_hash,
+                          'changed_fields': [k for k in ('score', 'category', 'is_scored', 'applicable_count') if previous.get(k) != saved.get(k)],
+                          'publication_required': True}
+        else:
+            saved = revision.result["snapshot"]
         return {"id": revision.id, "call_id": call_id, "state": revision.state,
-                "snapshot": saved,
+                "snapshot": saved, "candidate": candidate, "comparison": comparison,
                 "criteria_view": [criterion_view(c, saved["rule_version"]) for c in saved.get("analysis", {}).get("criteria", [])]}
 
 
