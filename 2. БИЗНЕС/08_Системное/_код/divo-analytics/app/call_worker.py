@@ -261,8 +261,15 @@ def refresh_recording(db, row: CallRecord, amo: AmoClient):
     db.commit()
 
 
+def processing_context(previous: dict | None) -> dict:
+    """Keep local review/delivery controls across external transcription responses."""
+    keys = ("reanalysis_delivery_suppressed", "manual_review", "reviews",
+            "week_review_probe", "week_review_batch", "manager_resolution")
+    return {key: previous[key] for key in keys if key in (previous or {})}
+
+
 def finish_result(row: CallRecord, result: dict):
-    row.provider_result = result
+    row.provider_result = {**result, **processing_context(row.provider_result)}
     # Pure diarization returns the transcript itself; legacy combined jobs wrap it.
     transcript = result.get("transcription") or (result if "text" in result or "segments" in result else {})
     if not isinstance(transcript, dict):
@@ -523,7 +530,7 @@ def process_calls(amo: AmoClient):
                             row.state = "submitting"
                             row.rule_version = active_rules(db)
                             row.analysis_version = ANALYSIS_VERSION if row.rule_version == RULE_VERSION else "sonnet.qa.6"
-                            row.provider_result = {"submitted_at": now().isoformat()}
+                            row.provider_result = {**processing_context(row.provider_result), "submitted_at": now().isoformat()}
                             db.commit()
                             row.nexara_job_id = nexara.submit(audio, mime, row.direction, row.occurred_at)
                             row.state = "processing"

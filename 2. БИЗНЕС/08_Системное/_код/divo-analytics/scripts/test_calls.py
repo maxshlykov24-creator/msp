@@ -393,6 +393,27 @@ class QueueTest(unittest.TestCase):
         self.assertEqual({key:r.provider_result[key] for key in raw},raw)
         self.assertEqual(r.nexara_job_id,"paid-job")
 
+    def test_week_review_controls_survive_transcription_without_reports(self):
+        r=self.reportable();r.state='ready';r.analysis={};r.transcript={}
+        r.provider_result={'reanalysis_delivery_suppressed':True,
+                           'week_review_batch':'2026-11-09', 'reviews':[{'reason':'kept'}]}
+        self.db.commit()
+        settings.calls_process_enabled=True;settings.nexara_api_key='test'
+        settings.calls_recording_hosts='example.invalid';settings.calls_analysis_enabled=True
+        with patch.object(call_worker,'NexaraClient') as nx,patch.object(call_worker,'download_audio') as download:
+            download.return_value=(SimpleNamespace(close=lambda:None),'audio/mpeg')
+            nx.return_value.submit.return_value='week-job'
+            call_worker.process_calls(SimpleNamespace())
+        self.db.refresh(r)
+        self.assertTrue(r.provider_result['reanalysis_delivery_suppressed'])
+        call_worker.finish_result(r,{'transcription':TRANSCRIPT,'reanalysis_delivery_suppressed':False})
+        self.assertTrue(r.provider_result['reanalysis_delivery_suppressed'])
+        self.assertEqual(r.provider_result['reviews'],[{'reason':'kept'}])
+        r.state='complete';r.analysis=analysis();self.db.commit()
+        with patch.object(call_worker,'deliver_telegram') as send:
+            call_worker.deliver_calls(SimpleNamespace());send.assert_not_called()
+        self.assertEqual(list(self.db.scalars(select(CallDelivery))),[])
+
     def test_submit_timeout_does_not_resubmit(self):
         r=self.call();r.state="ready";r.recording_url="https://example.invalid/a.mp3";self.db.commit()
         settings.calls_process_enabled=True;settings.nexara_api_key="test";settings.calls_recording_hosts="example.invalid"
