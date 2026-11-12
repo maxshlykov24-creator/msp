@@ -1834,3 +1834,33 @@ class SizeReviewTests(unittest.TestCase):
             self.e.reconcile_recipe_sizes(db, {self.key: self.card}, complete=True)
         self.assertEqual(self.e.recipes()[0]['norm_review']['old_size'], 'XS')
 
+
+    def test_multiple_primary_materials_reset_across_stages(self):
+        r = copy.deepcopy(self.recipe)
+        r['stages'].append(copy.deepcopy(r['stages'][0]))
+        self.e.save_recipe(r)
+        changed = self.change()
+        for st in changed['stages']:
+            self.assertIsNone(st['materials'][0]['input_quantity'])
+            self.assertEqual(st['materials'][1]['quantity'], 2)
+
+    def test_group_confirmation_uses_same_server_guard(self):
+        r = self.change()
+        r['stages'][0]['materials'][0]['input_quantity'] = 360
+        with self.assertRaisesRegex(Review, 'Подтверди'):
+            self.e.save_recipe_group([copy.deepcopy(r)])
+        r['confirm_size_review'] = True
+        saved = self.e.save_recipe_group([r])[0]
+        self.assertTrue(saved['approved'])
+        self.assertNotIn('norm_review', saved)
+
+    def test_legacy_chain_cannot_resume_after_size_changed_and_returned(self):
+        legacy = copy.deepcopy(self.recipe)
+        legacy.pop('size_watch')
+        self.change()
+        r = self.change('S-M')
+        r.update(approved=True, confirm_size_review=True)
+        r['stages'][0]['materials'][0]['input_quantity'] = 340
+        self.e.save_recipe(r)
+        with self.assertRaisesRegex(Review, 'приостановлена'):
+            self.e.guard_chain_sizes({'lines': [{'assortment': ref('variant', self.key), 'recipe': legacy}]})
