@@ -162,3 +162,9 @@ python3 verify_live.py --vault-access
 Проверки: test_demo.cjs и новый test_journey.cjs прошли локально и на https://ai-msp.ru/lukdecor/ . Второй тест проверяет полный маршрут, связи, шесть типов документов, меню, обе стрелки, 12 сочетаний режима и ширины, сброс перезагрузкой. Ошибок JavaScript и горизонтального переполнения страницы нет. Просмотрены снимки компактной волны в корпусе и крупном режиме, выдвижного меню и групп документов. HTTP 200 и совпадение SHA-256 всех трёх изменённых файлов подтверждены. Реальный ТСД и Telegram клиента не проверялись.
 
 Серверная резервная копия до обновления: /var/backups/lukdecor-journey-20261112/demo-before.tgz на mansband-bridge. Изменены только frontend-файлы. Для тестов передать PLAYWRIGHT_MODULE и при необходимости DEMO_URL; значения по умолчанию localhost:8879 и установленный playwright.
+
+### 2026-11-12: filters and wave simplification
+
+Removed cart selection, references and station cart scan. Station now verifies products directly. Added combined task filters (search, marketplace, status, deadline, cell, quantity, sort), inventory filters (demo texture category, cell, balance, sort) and journal filters (search, employee, device, operation, result, time range, seed/current-session source, sort). Selecting found tasks uses the filtered result, capped at 20. All controls use existing custom dropdowns; reload resets filters.
+
+Verification: test_demo.cjs passed locally; extended test_journey.cjs passed locally and on https://ai-msp.ru/lukdecor/ including combined filters, selection, categories, cells, journal time/result and responsive layouts. Viewed stock and journal screenshots. Live app.js/style.css HTTP 200 and hashes match local. Physical TSD not tested. Backup: mansband-bridge:/var/backups/lukdecor-filters-20261112/demo-before.tgz.
