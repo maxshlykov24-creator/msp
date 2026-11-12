@@ -511,8 +511,9 @@ app = FastAPI(title="Mansband reservation reminders", lifespan=lifespan)
 from app.certificate_mail import router as certificate_router
 
 app.include_router(certificate_router)
-from app.message_templates import router as template_router
+from app.message_templates import router as template_router, webhook_router as template_webhook_router
 app.include_router(template_router)
+app.include_router(template_webhook_router)
 from app.campaign import router as campaign_router
 app.include_router(campaign_router)
 

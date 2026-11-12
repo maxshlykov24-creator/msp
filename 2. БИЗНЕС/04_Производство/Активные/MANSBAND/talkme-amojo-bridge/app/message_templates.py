@@ -17,8 +17,8 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Literal, Optional, Union
 
 import httpx
-from fastapi import APIRouter, Depends, Header, HTTPException
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import DateTime, Integer, JSON, String, UniqueConstraint, select, text
 from sqlalchemy.orm import Mapped, mapped_column
@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     executor: Literal["preview", "live"] = "preview"
     # Fail closed unless migration was explicitly allowed by the operator.
     allow_cutover: bool = False
+    friday_webhook_secret: SecretStr = SecretStr("")
 
 
 class Condition(BaseModel):
@@ -59,7 +60,7 @@ class Condition(BaseModel):
 
 class Trigger(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    type: Literal["date", "stage"] = "date"
+    type: Literal["date", "stage", "webhook"] = "date"
     field: Optional[int] = Field(default=None, gt=0)
     offset: int = Field(default=0, ge=-3660, le=3660)
     unit: Literal["days", "weeks", "months"] = "days"
@@ -506,10 +507,22 @@ def make_plan(db, c, lead, r, routing):
         ([("vk", first(contact,3642123))] if any(p["transport"] == "vk" for p in plan) else [])])
 
 
-def snapshot(db, doc):
+FRIDAY_ID = "friday-2026"
+FRIDAY_UNTIL = date(2026, 12, 15)
+FRIDAY_TEXT = "Здравствуйте! Магазин мужских костюмов Mansband👋🏻 Поздравляем, вы получили скидку 30% на коллекцию костюмов и верхней одежды по промокоду “FRIDAY”🎁\n\nПромокод действителен до 15.12.2026. Подскажите, когда планируете визит к нам?😉"
+FRIDAY_ROUTING = {"order": ["telegram", "max", "whatsapp"], "previous_first": False, "social_fallback": False}
+
+
+def document_routing(db, doc):
+    if doc.id == FRIDAY_ID:
+        return dict(FRIDAY_ROUTING)
     route = db.get(Document, "routing")
+    return route.active or Routing().model_dump()
+
+
+def snapshot(db, doc):
     return {"rule": doc.active, "version": doc.published_version,
-            "routing": route.active or Routing().model_dump()}
+            "routing": document_routing(db, doc)}
 
 
 def audit(db, d, actor, action, payload):
@@ -765,12 +778,14 @@ def send(db,j,c,stamp):
         j.state,j.reason="cancelled","disabled";db.commit();return
     r=Rule(**(j.snapshot["rule"] if j.snapshot else doc.active))
     local=stamp.astimezone(MSK);due=aware(j.due_at)
+    if j.rule_id == FRIDAY_ID and local.date() > FRIDAY_UNTIL:
+        j.state,j.reason="expired","promotion_ended";db.commit();return
     started=db.scalar(select(Attempt.id).where(Attempt.job_id==j.id,Attempt.state!="skipped").limit(1)) is not None
     if stamp < due:return
     if r.late_policy=="legacy_stage" and not r.window_start<=local.hour<r.window_end:
         without_delay=r.model_copy(update={"trigger":r.trigger.model_copy(update={"delay_minutes":0})})
         j.due_at=stage_due(stamp,without_delay);db.commit();return
-    if (r.late_policy!="legacy_stage" and (local.date()!=due.astimezone(MSK).date() or local.hour>=r.window_end)) or (r.late_policy=="skip" and not started and stamp>due+timedelta(minutes=5)):
+    if r.trigger.type != "webhook" and ((r.late_policy!="legacy_stage" and (local.date()!=due.astimezone(MSK).date() or local.hour>=r.window_end)) or (r.late_policy=="skip" and not started and stamp>due+timedelta(minutes=5))):
         j.state,j.reason="expired","scheduled_window_passed";db.commit();return
     if local.hour<r.window_start:return
     lead=c.get(f"/api/v4/leads/{j.lead_id}", **{"with":"contacts"})
@@ -782,7 +797,7 @@ def send(db,j,c,stamp):
             j.state,j.reason="cancelled","date_changed";db.commit();return
     try:
         validate_catalog(r,catalog(c))
-        routing=j.snapshot["routing"] if j.snapshot else db.get(Document,"routing").active
+        routing=j.snapshot["routing"] if j.snapshot else document_routing(db, doc)
         plan,key=make_plan(db,c,lead,r,routing)
         if j.recipient_key and key!=j.recipient_key: raise ValueError("Получатель изменился")
         if not j.snapshot:
@@ -945,6 +960,86 @@ def mutation_lock():
         finally:conn.execute(text("SELECT pg_advisory_unlock(:key)"),{"key":LOCK})
 
 
+webhook_router = APIRouter()
+
+
+def friday_lead_ids(payload):
+    """Native Digital Pipeline URL-encoded fields or equivalent JSON. Never contacts."""
+    ids = []
+    for key, value in payload.items():
+        if re.fullmatch(r"leads\[(?:add|status|update)\]\[\d+\]\[id\]", key):
+            ids.extend(value if isinstance(value, list) else [value])
+    leads = payload.get("leads", {})
+    if isinstance(leads, dict):
+        for action in ("add", "status", "update"):
+            rows = leads.get(action, [])
+            if isinstance(rows, dict): rows = list(rows.values())
+            if isinstance(rows, list):
+                ids.extend(row.get("id") for row in rows if isinstance(row, dict))
+    if not ids or len(ids) > 100:
+        raise HTTPException(422, "Expected amoCRM lead IDs")
+    if any(isinstance(x, bool) or not re.fullmatch(r"[1-9]\d{0,14}", str(x)) for x in ids):
+        raise HTTPException(422, "Invalid lead ID")
+    return sorted({int(x) for x in ids})
+
+
+def enqueue_friday(db, lead_ids, stamp):
+    from app.reservation_reminders import MSK
+    if Settings().executor != "live":
+        raise HTTPException(503, "Message executor is paused")
+    if stamp.astimezone(MSK).date() > FRIDAY_UNTIL:
+        raise HTTPException(410, "Promotion ended")
+    doc = db.get(Document, FRIDAY_ID)
+    if not doc or not doc.active or not doc.active.get("enabled"):
+        raise HTTPException(503, "Template is disabled")
+    result = []
+    for lead_id in lead_ids:
+        j = db.scalar(select(Job).where(Job.rule_id == FRIDAY_ID, Job.lead_id == lead_id, Job.occurrence == "once"))
+        duplicate = j is not None
+        if j is None:
+            j = Job(rule_id=FRIDAY_ID, lead_id=lead_id, occurrence="once", due_at=stamp, source_at=stamp)
+            db.add(j); db.flush()
+        result.append({"job_id": j.id, "duplicate": duplicate, "state": j.state})
+    db.commit()
+    return {"ok": True, "jobs": result}
+
+
+@webhook_router.post("/amo/templates/friday/{secret}")
+async def friday_webhook(secret: str, request: Request):
+    from urllib.parse import parse_qs
+    expected = Settings().friday_webhook_secret.get_secret_value()
+    if not expected or not hmac.compare_digest(secret, expected):
+        raise HTTPException(403)
+    body = await request.body()
+    if len(body) > 1048576: raise HTTPException(413)
+    content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    try:
+        if content_type == "application/json":
+            payload = json.loads(body)
+        elif content_type == "application/x-www-form-urlencoded":
+            payload = parse_qs(body.decode("utf-8"), max_num_fields=10000)
+        else:
+            raise HTTPException(415)
+        if not isinstance(payload, dict): raise ValueError()
+    except (ValueError, UnicodeDecodeError):
+        raise HTTPException(400, "Invalid webhook body")
+    lead_ids = friday_lead_ids(payload)
+    # Reuse the sender's lock on the same DB connection, including the commit.
+    # This serializes concurrent amo retries without any provider calls in the handler.
+    def enqueue():
+        from sqlalchemy.orm import Session
+        with get_engine().connect() as conn:
+            conn.execute(text("SELECT pg_advisory_lock(:key)"), {"key": LOCK})
+            conn.commit()
+            try:
+                with Session(bind=conn) as db:
+                    return enqueue_friday(db, lead_ids, now())
+            finally:
+                conn.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": LOCK})
+                conn.commit()
+    return await asyncio.to_thread(enqueue)
+
+
 router=APIRouter(prefix="/internal/templates",dependencies=[Depends(authorized)])
 
 
@@ -1090,7 +1185,7 @@ def check_rule(db,c,d,lead_id=None):
         if len(rows)>=10:continue
         try:
             body=render(lead,r)
-            plan,_=make_plan(db,c,lead,r,(db.get(Document,"routing").active or Routing().model_dump()))
+            plan,_=make_plan(db,c,lead,r,document_routing(db,d))
             due=date_due(lead,r) if r.trigger.type=="date" else None
             rows.append({"lead_id":lead["id"],"due_at":due.isoformat() if due else None,"text":body,
                 "channels":[p["transport"] for p in plan if p["recipient"]],

@@ -697,3 +697,91 @@ def test_vk_dispatch_without_phone_and_callback(db,transport,monkeypatch):
     db.add(ReminderEvent(key='vk-cb',message_id='m1',status='delivered'));db.commit();m.reconcile(db)
     m.send(db,j,transport,STAMP)
     assert j.state=='delivered' and len(transport.posts)==1
+
+# FRIDAY native amoCRM webhook: retries, expiry and one confirmed channel.
+def friday_doc(db):
+    data=rule(name='FRIDAY',statuses=[],trigger={'type':'webhook','repeat':'once'},
+        content=m.FRIDAY_TEXT,window_start=0,window_end=24,late_policy='same_day').model_dump()
+    d=m.Document(id=m.FRIDAY_ID,kind='rule',draft=data,active=data,published_version=1)
+    db.add(d);db.commit();return d
+
+
+@pytest.mark.parametrize('payload',[
+    {'leads[status][0][id]':['17']},
+    {'leads[add][0][id]':'17'},
+    {'leads':{'update':[{'id':17}]}},
+    {'leads':{'status':{'0':{'id':'17'}}}},
+])
+def test_friday_native_payload(payload):
+    assert m.friday_lead_ids(payload)==[17]
+
+
+@pytest.mark.parametrize('payload',[{}, {'contacts[add][0][id]':'17'},
+    {'leads[add][0][id]':'-1'}, {'leads':{'status':[{'id':True}]}}])
+def test_friday_rejects_invalid_payload(payload):
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException):m.friday_lead_ids(payload)
+
+
+def test_friday_enqueue_deduplicates_and_expires(db,monkeypatch):
+    from fastapi import HTTPException
+    monkeypatch.setenv('TEMPLATES_EXECUTOR','live');friday_doc(db)
+    a=m.enqueue_friday(db,[17],STAMP);b=m.enqueue_friday(db,[17],STAMP+timedelta(minutes=3))
+    assert a['jobs'][0]['job_id']==b['jobs'][0]['job_id']
+    assert b['jobs'][0]['duplicate'] and not a['jobs'][0]['duplicate']
+    assert len(list(db.scalars(select(m.Job))))==1
+    with pytest.raises(HTTPException) as exc:
+        m.enqueue_friday(db,[18],datetime(2026,12,16,tzinfo=MSK))
+    assert exc.value.status_code==410
+    monkeypatch.setenv('TEMPLATES_EXECUTOR','preview')
+    with pytest.raises(HTTPException):m.enqueue_friday(db,[18],STAMP)
+
+
+def test_friday_fixed_order_ignores_previous_channel(db):
+    d=friday_doc(db)
+    routing=m.snapshot(db,d)['routing']
+    for source in ['whatsapp','max','instagram',None]:
+        assert order_for(source,routing)==['telegram','max','whatsapp']
+    assert m.snapshot(db,d)['rule']['content']==m.FRIDAY_TEXT
+
+
+def test_friday_send_expiry_before_any_network(db,transport):
+    d=friday_doc(db);j=job(db,d)
+    m.send(db,j,transport,datetime(2026,12,16,tzinfo=MSK))
+    assert j.state=='expired' and not transport.posts
+
+
+@pytest.mark.parametrize('rejections,expected',[(0,['telegram']),(1,['telegram','max']),(2,['telegram','max','whatsapp'])])
+def test_friday_fallback_stops_at_first_acceptance(db,transport,monkeypatch,rejections,expected):
+    routes=[{'transport':t,'channelId':t,'recipient':{'chatId':'test'}} for t in ['telegram','max','whatsapp']]
+    monkeypatch.setattr(m,'make_plan',lambda *args:(routes,'key'))
+    original_get=transport.get
+    transport.get=lambda path,**kw: httpx.Response(200,json=[{'channelId':r['channelId'],'state':'active','transport':'tgapi' if r['transport']=='telegram' else r['transport']} for r in routes]) if path=='/channels' else original_get(path,**kw)
+    def post(path,json):
+        transport.posts.append(json)
+        if len(transport.posts)<=rejections:
+            code='CHANNEL_TGAPI_PHONE_NOT_OCCUPIED' if json['chatType']=='telegram' else 'CHANNEL_MAX_PHONE_NOT_OCCUPIED'
+            return httpx.Response(400,json={'error':code})
+        return httpx.Response(201,json={'messageId':'friday-test'})
+    transport.post=post
+    j=job(db,friday_doc(db));m.send(db,j,transport,STAMP);m.send(db,j,transport,STAMP)
+    assert [x['chatType'] for x in transport.posts]==expected
+    assert all(x['text']==m.FRIDAY_TEXT for x in transport.posts)
+    assert j.state=='pending'
+
+
+def test_friday_unknown_does_not_try_max(db,transport):
+    transport.response=httpx.ReadTimeout('unknown');j=job(db,friday_doc(db))
+    m.send(db,j,transport,STAMP);m.send(db,j,transport,STAMP)
+    assert len(transport.posts)==1 and j.state=='uncertain'
+
+
+def test_friday_webhook_requires_own_secret(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    monkeypatch.setenv('TEMPLATES_FRIDAY_WEBHOOK_SECRET','only-friday')
+    app=FastAPI();app.include_router(m.webhook_router)
+    c=TestClient(app)
+    assert c.post('/amo/templates/friday/wrong',data={'leads[status][0][id]':'17'}).status_code==403
+    assert c.post('/amo/templates/friday/only-friday',json={}).status_code==422
+    assert c.post('/amo/templates/friday/only-friday',content='x',headers={'content-type':'text/plain'}).status_code==415
