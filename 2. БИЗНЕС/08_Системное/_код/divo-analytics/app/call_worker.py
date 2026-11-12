@@ -183,13 +183,15 @@ def upsert_note(db, note: dict, entity_type: str, entity_id: int, lead_ids: list
     return row
 
 
-def collect_calls(amo: AmoClient, *, calibration: int = 0, backfill_days: int = 0):
+def collect_calls(amo: AmoClient, *, calibration: int = 0, backfill_days: int = 0, since_at: int = 0):
     until = int(time.time())
     with SessionLocal() as db:
         start_row = db.get(SyncState, "calls_start_at")
         if calibration:
             # Калибровка не устанавливает границу нового рабочего потока.
             start = until
+        elif since_at:
+            start = since_at
         elif backfill_days:
             start = until - backfill_days * 86400
         elif not start_row:
@@ -200,7 +202,7 @@ def collect_calls(amo: AmoClient, *, calibration: int = 0, backfill_days: int = 
             start = int(start_row.value)
         cursor_row = db.get(SyncState, "calls_cursor")
         cursor = int(cursor_row.value) if cursor_row else start
-        since = (until - 7 * 86400 if calibration else start if backfill_days
+        since = (until - 7 * 86400 if calibration else start if backfill_days or since_at
                  else max(start, cursor - settings.calls_overlap_sec))
         events = list(amo.paginate("/api/v4/events", "events", {
             "filter[type][0]": "incoming_call", "filter[type][1]": "outgoing_call",
@@ -234,7 +236,7 @@ def collect_calls(amo: AmoClient, *, calibration: int = 0, backfill_days: int = 
             notes = [n for n in notes if str((n[0].get("params") or {}).get("uniq") or n[0]["id"]) in keys]
         for note, typ, entity_id, leads in notes:
             upsert_note(db, note, typ, entity_id, leads, calibration=bool(calibration))
-        if not calibration and not backfill_days:
+        if not calibration and not backfill_days and not since_at:
             state_set(db, "calls_cursor", str(until))
             state_set(db, "calls_last_collection", now().isoformat())
         db.commit()
@@ -389,7 +391,7 @@ def analyze_calls():
                     row.category = row.analysis.get("category", "insufficient")
                     row.category_reason = row.analysis.get("category_reason", "Анализ требует проверки")
                     row.rule_version = version
-                    row.state = "needs_review" if row.validation_errors else (
+                    row.state = "needs_review" if row.validation_errors or (version == V3_RULE_VERSION and candidate_state(verdict, version)=="needs_review") else (
                         "ignored_no_conversation" if row.analysis.get("conversation_occurred") is False else
                         "insufficient" if row.category == "primary_inbound" and not row.is_scored else "complete")
                     row.last_error = "analysis_validation_failed" if row.validation_errors else ""
@@ -1106,6 +1108,40 @@ def publish_revision(revision_id: int) -> dict:
         row.provider_result = history
         db.commit()
         return {"id": rev.id, "call_id": row.id, "state": rev.state, "score": row.score}
+
+
+
+def publish_review_hold(revision_id: int, reviewer: str, reason: str) -> dict:
+    """Publish an explicitly unresolved result without a score; never approve its facts."""
+    if not reviewer.strip() or not reason.strip():raise ValueError('reviewer_and_reason_required')
+    with SessionLocal() as db:
+        rev=db.scalar(select(CallAnalysisRevision).where(CallAnalysisRevision.id==revision_id).with_for_update())
+        if not rev or rev.state!='needs_review' or rev.rule_version!=V3_RULE_VERSION:
+            raise ValueError('unresolved_v3_revision_required')
+        row=db.scalar(select(CallRecord).where(CallRecord.id==rev.call_id).with_for_update())
+        if source_hash(row)!=rev.base_hash or stable_hash(row.transcript)!=rev.transcript_hash:
+            raise ValueError('revision_source_changed')
+        verdict=validate_analysis(rev.result['provider']['analysis'],row.transcript,row.direction,rev.rule_version)
+        if (rev.result.get('validation_engine_hash')!=candidate_validation_metadata(rev.rule_version)['validation_engine_hash']
+                or stable_hash(verdict)!=stable_hash(rev.result['verdict'])):
+            raise ValueError('revision_requires_local_revalidation')
+        if not verdict.get('analysis'):raise ValueError('readable_analysis_required')
+        for delivery in db.scalars(select(CallDelivery).where(CallDelivery.call_id==row.id,CallDelivery.state=='pending')):
+            freeze_delivery(db,delivery,row)
+        archive_current(db,row,'before_review_hold')
+        row.analysis=verdict['analysis'];row.validation_errors=verdict['errors']
+        row.category=row.analysis.get('category','insufficient');row.category_reason=reason
+        row.rule_version=rev.rule_version;row.analysis_version=rev.analysis_version
+        row.state='needs_review';row.score=None;row.is_scored=False
+        row.yes_count=verdict['yes_count'];row.applicable_count=verdict['applicable_count']
+        row.last_error='analysis_requires_review'
+        rev.review={**rev.review,'reviewer':reviewer,'reason':reason,'decision':'unresolved_no_score',
+                    'at':now().isoformat(),'published_without_approval_of_facts':True}
+        rev.result={**rev.result,'snapshot':snapshot(row),'published_manual_history_hash':manual_history_hash(row)}
+        rev.state='published';rev.published_at=now()
+        row.provider_result={**(row.provider_result or {}),'reanalysis_delivery_suppressed':True,'published_revision_id':rev.id}
+        db.commit()
+        return {'id':rev.id,'call_id':row.id,'state':'needs_review','score':None}
 
 
 def rollback_revision(revision_id: int, reviewer: str, reason: str) -> dict:

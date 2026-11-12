@@ -275,6 +275,21 @@ class CandidateV3Test(RevisionTest):
             with self.assertRaisesRegex(ValueError,'revision_verdict_changed_since_review'):
                 call_worker.publish_revision(rev.id)
 
+    def test_publish_unresolved_keeps_no_score_and_history(self):
+        from app import call_worker
+        row,rev=self.candidate();rev.rule_version=V3_RULE_VERSION;rev.analysis_version='sonnet.qa.11';rev.state='needs_review'
+        a=raw();v=validate_analysis(a,TR,'in',V3_RULE_VERSION)
+        row.transcript=TR;self.db.commit()
+        rev.base_hash=call_worker.source_hash(row);rev.transcript_hash=call_worker.stable_hash(TR)
+        rev.result={**rev.result,'verdict':v,'provider':{'analysis':a},**call_worker.candidate_validation_metadata(V3_RULE_VERSION)}
+        rev.review={**rev.review,'audio_review_required':True};self.db.commit()
+        call_worker.publish_review_hold(rev.id,'test','Unresolved recording');self.db.expire_all()
+        self.assertIsNone(row.score);self.assertFalse(row.is_scored);self.assertEqual(row.state,'needs_review')
+        self.assertTrue(row.provider_result['reanalysis_delivery_suppressed'])
+        self.assertEqual(rev.review['decision'],'unresolved_no_score')
+        call_worker.rollback_revision(rev.id,'test','Rollback hold');self.db.expire_all()
+        self.assertEqual(row.analysis['summary'],'Обсудили автомобиль')
+
     def test_failed_paid_response_is_saved_without_retry(self):
         from app import call_worker
         from app.nexara import RemoteFailure, SonnetCallAgent
