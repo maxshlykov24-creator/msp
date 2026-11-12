@@ -1700,8 +1700,6 @@ class ProductionTests(unittest.TestCase):
         self.assertFalse(self.ms.created)
 
 
-if __name__ == '__main__':
-    unittest.main()
 
 class SizeReviewTests(unittest.TestCase):
     def setUp(self):
@@ -1864,3 +1862,6 @@ class SizeReviewTests(unittest.TestCase):
         self.e.save_recipe(r)
         with self.assertRaisesRegex(Review, 'приостановлена'):
             self.e.guard_chain_sizes({'lines': [{'assortment': ref('variant', self.key), 'recipe': legacy}]})
+
+if __name__ == '__main__':
+    unittest.main()
