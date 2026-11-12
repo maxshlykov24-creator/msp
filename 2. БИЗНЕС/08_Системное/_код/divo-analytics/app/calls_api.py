@@ -9,7 +9,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response, StreamingResponse
-from sqlalchemy import func, select
+from sqlalchemy import func, select, and_, or_
 from sqlalchemy.orm import defer
 
 from app.api import _auth_guard
@@ -27,12 +27,15 @@ MSK = ZoneInfo("Europe/Moscow")
 
 def published_conditions():
     """Product shows finished conversations; raw queue remains in storage for recovery."""
-    return [CallRecord.duration_sec >= MIN_CALL_DURATION_SEC,
-            func.length(func.trim(CallRecord.recording_url)) > 0,
-            CallRecord.state.in_(["complete", "insufficient"]),
-            CallRecord.analysis["conversation_occurred"].as_boolean().is_not(False),
-            CallRecord.transcript != {}, CallRecord.validation_errors == [],
-            func.length(func.trim(CallRecord.analysis["summary"].as_string())) > 0]
+    finished=and_(CallRecord.state.in_(["complete", "insufficient"]),
+        CallRecord.analysis["conversation_occurred"].as_boolean().is_not(False),
+        CallRecord.validation_errors==[],
+        func.length(func.trim(CallRecord.analysis["summary"].as_string()))>0)
+    review=and_(CallRecord.rule_version==V3_RULE_VERSION,CallRecord.state=="needs_review",
+                CallRecord.score.is_(None),CallRecord.is_scored.is_(False))
+    return [CallRecord.duration_sec>=MIN_CALL_DURATION_SEC,
+            func.length(func.trim(CallRecord.recording_url))>0,
+            CallRecord.transcript!={},or_(finished,review)]
 
 
 def overview_query():
@@ -211,7 +214,7 @@ def summary(start: date | None = None, end: date | None = None, manager: str | N
             *filters(start, end, manager, category, calibration))))
         regrade = db.scalar(select(SyncState).where(SyncState.key.like("calls_regrade_%")).order_by(SyncState.updated_at.desc()).limit(1))
         try:
-            regrade_status = {k: v for k, v in json.loads(regrade.value).items() if k in ("total", "processed", "counts", "status", "updated_at")} if regrade else None
+            regrade_status = {k: v for k, v in json.loads(regrade.value).items() if k in ("total", "processed", "counts", "status", "updated_at", "publication_mode")} if regrade else None
         except (ValueError, TypeError):
             regrade_status = None
         if regrade_status and regrade_status.get("status") in ("running", "checkpointed"):

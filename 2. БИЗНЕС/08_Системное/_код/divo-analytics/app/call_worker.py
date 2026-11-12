@@ -1125,7 +1125,7 @@ def publish_review_hold(revision_id: int, reviewer: str, reason: str) -> dict:
         if (rev.result.get('validation_engine_hash')!=candidate_validation_metadata(rev.rule_version)['validation_engine_hash']
                 or stable_hash(verdict)!=stable_hash(rev.result['verdict'])):
             raise ValueError('revision_requires_local_revalidation')
-        if not verdict.get('analysis'):raise ValueError('readable_analysis_required')
+        if not verdict.get('analysis') and not verdict.get('errors'):raise ValueError('missing_analysis_and_diagnostics')
         for delivery in db.scalars(select(CallDelivery).where(CallDelivery.call_id==row.id,CallDelivery.state=='pending')):
             freeze_delivery(db,delivery,row)
         archive_current(db,row,'before_review_hold')

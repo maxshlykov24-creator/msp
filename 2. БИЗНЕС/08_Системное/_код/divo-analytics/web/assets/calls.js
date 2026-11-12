@@ -26,7 +26,7 @@ function renderSummary(s){
  el('cqRange').textContent=`${el('dateFrom').value || 'Начало периода'} — ${el('dateTo').value || 'сегодня'} · МСК`;
  el('cqMetrics').innerHTML=metric(s.total,'Разговоров','Готовые разборы · от 30 секунд',true)+metric(pct(s.average_score),'Выполнение критериев',`Оценено ${s.scored} разговоров`)+metric(s.meeting_agreed,'Согласовали встречу',`${pct(s.meeting_rate)} оценённых разговоров`)+metric(s.unscored,'Без общей оценки','Тип разговора или качество записи');
  const messages=[];
- if(s.regrade)messages.push(`Обновление истории: подготовлено к проверке ${s.regrade.processed} из ${s.regrade.total}. ${s.regrade.status==='stopped_for_check'?'Обработка приостановлена для проверки.':'Прежние разборы сохранены.'}`);
+ if(s.regrade)messages.push(s.regrade.publication_mode==='live'?`Переанализ месяца: обработано ${s.regrade.processed} из ${s.regrade.total}. Готово ${s.regrade.counts?.complete||0}, требуют проверки ${s.regrade.counts?.needs_review||0}. ${s.regrade.status==='finished'?'Пересчёт завершён.':s.regrade.status==='stopped_for_check'?'Обработка приостановлена для проверки.':'Оценки обновляются по мере обработки.'}`:`Обновление истории: подготовлено к проверке ${s.regrade.processed} из ${s.regrade.total}. ${s.regrade.status==='stopped_for_check'?'Обработка приостановлена для проверки.':'Прежние разборы сохранены.'}`);
  if(!s.processing_enabled)messages.push('Обработка звонков приостановлена.');
  if(s.unknown_manager)messages.push(`У ${s.unknown_manager} звонков сотрудник не подтверждён.`);
  if(s.diagnostics?.analysis_paused_for_payment)messages.push('Анализ приостановлен: требуется оплата провайдера. Сайт продолжает работать.');

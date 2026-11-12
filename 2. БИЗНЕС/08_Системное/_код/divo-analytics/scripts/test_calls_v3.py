@@ -290,6 +290,26 @@ class CandidateV3Test(RevisionTest):
         call_worker.rollback_revision(rev.id,'test','Rollback hold');self.db.expire_all()
         self.assertEqual(row.analysis['summary'],'Обсудили автомобиль')
 
+    def test_invalid_provider_schema_can_be_published_only_as_scoreless_hold(self):
+        from app import call_worker
+        row,rev=self.candidate();rev.rule_version=V3_RULE_VERSION;rev.analysis_version='sonnet.qa.11';rev.state='needs_review'
+        v=validate_analysis({},row.transcript,'in',V3_RULE_VERSION)
+        rev.result={**rev.result,'verdict':v,'provider':{'analysis':{}},**call_worker.candidate_validation_metadata(V3_RULE_VERSION)};self.db.commit()
+        call_worker.publish_review_hold(rev.id,'test','Provider response requires review');self.db.expire_all()
+        self.assertEqual(row.analysis,{});self.assertEqual(row.category,'insufficient')
+        self.assertEqual(row.state,'needs_review');self.assertIsNone(row.score);self.assertTrue(row.validation_errors)
+
+    def test_published_qa11_review_is_visible_without_score_or_valid_analysis(self):
+        from app import calls_api
+        from app.models import CallRecord
+        from sqlalchemy import select
+        row=self.reportable();row.rule_version=V3_RULE_VERSION;row.analysis_version='sonnet.qa.11'
+        row.state='needs_review';row.score=None;row.is_scored=False;row.analysis={};row.validation_errors=['schema:invalid']
+        self.db.commit()
+        self.assertIn(row.id,list(self.db.scalars(select(CallRecord.id).where(*calls_api.published_conditions()))))
+        row.rule_version='2026-11-12.1';self.db.commit()
+        self.assertNotIn(row.id,list(self.db.scalars(select(CallRecord.id).where(*calls_api.published_conditions()))))
+
     def test_failed_paid_response_is_saved_without_retry(self):
         from app import call_worker
         from app.nexara import RemoteFailure, SonnetCallAgent

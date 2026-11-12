@@ -46,7 +46,7 @@ def main():
                     row.state='waiting_recording';row.next_attempt_at=None
             week=json.loads(db.get(SyncState,'calls_regrade_qa11_week_119').value)
             m={'month':args.month,'start':start,'end':end,'ids':[r.id for r in rows],'total':len(ids),'analysis_ids':ids,'baseline_hashes':sources,
-               'weekly_candidates':{cid:r['id'] for cid,r in week['results'].items() if int(cid) in ids},'results':{},'processed':0,'counts':{},'status':'prepared','updated_at':now().isoformat(),'retried_payment_declines':retried}
+               'weekly_candidates':{cid:r['id'] for cid,r in week['results'].items() if int(cid) in ids},'results':{},'processed':0,'counts':{},'status':'running','publication_mode':'live','updated_at':now().isoformat(),'retried_payment_declines':retried}
             db.add(SyncState(key=key,value=json.dumps(m)));db.commit()
             print(json.dumps({'records':len(rows),'analysis_jobs':len(ids),'weekly_reuse':len(m['weekly_candidates']),'payment_declines_requeued':len(retried),'collected_notes':collected}),flush=True)
         return
