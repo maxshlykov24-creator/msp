@@ -10,6 +10,7 @@ from urllib.parse import quote, urljoin, urlsplit, urlunsplit
 import httpx
 
 from app.call_rules import (Analysis, AnalysisV2, RULE_VERSION, LEGACY_RULE_VERSION, analysis_prompt, canonicalize_analysis_text_fields)
+from app.call_rules import analysis_schema, V3_RULE_VERSION
 from app.config import settings
 
 
@@ -164,7 +165,7 @@ class SonnetCallAgent:
         catalog = self.catalog(transcript)
         if not catalog:
             raise RemoteFailure("agent_transcript_empty")
-        schema = (AnalysisV2 if rule_version == RULE_VERSION else Analysis).model_json_schema()
+        schema = analysis_schema(rule_version).model_json_schema()
         schema["required"].append("conversation_occurred")
         schema["$defs"]["Evidence"] = {"type": "object", "additionalProperties": False,
             "properties": {"quote": {"type": "string", "enum": list(catalog),
@@ -236,7 +237,7 @@ criterion=yes; хотя бы одно conditions=no означает criterion=n
 менеджер подтвердил завершение. «Если потребуется, сам позвоню» плюс
 «хорошо, договорились» засчитывается по этой ветке, а просто прощание — нет.
 """
-        if rule_version == RULE_VERSION:
+        if rule_version != LEGACY_RULE_VERSION:
             instruction = analysis_prompt(direction, occurred_at, rule_version) + """
 Специальный формат evidence: поле quote содержит ТОЛЬКО ID фрагмента из каталога
 (например s0001). Полей start/end нет: код подставит дословный текст и время.
@@ -249,8 +250,8 @@ criterion=yes; хотя бы одно conditions=no означает criterion=n
             payload["previous_response"] = correction["references"]
             payload["validation_errors"] = correction["errors"]
             instruction += "\nПредыдущий ответ не прошёл проверку. Перечитай исходные фрагменты и верни полный исправленный JSON. Не меняй факты ради прохождения проверки; unknown сохраняй при нехватке данных."
-        body = {"model": settings.calls_sonnet_model, "max_tokens": 9000,
-            "reasoning": {"effort": "medium" if rule_version == RULE_VERSION else "low", "exclude": True},
+        body = {"model": settings.calls_sonnet_model, "max_tokens": 16000 if rule_version == V3_RULE_VERSION else 9000,
+            "reasoning": {"effort": "medium" if rule_version != LEGACY_RULE_VERSION else "low", "exclude": True},
             "provider": {"require_parameters": True, "allow_fallbacks": False},
             "messages": [{"role": "system", "content": instruction},
                 {"role": "user", "content": json.dumps(payload, ensure_ascii=False)}],

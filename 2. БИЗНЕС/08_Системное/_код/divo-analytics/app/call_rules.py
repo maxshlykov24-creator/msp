@@ -422,11 +422,11 @@ def criterion_view(item: dict, version: str) -> dict:
     label, fact = "", "unknown"
     if item.get("id") == 5:
         label = "Оценка предложена"
-        fact = by_key.get("valuation_offered", "unknown") if version == RULE_VERSION else (
+        fact = by_key.get("valuation_offered", "unknown") if version != LEGACY_RULE_VERSION else (
             "yes" if by_key.get("valuation_at_visit") == "yes" else "unknown")
     elif item.get("id") == 6:
         label, fact = "Визит предложен или принят", by_key.get("invitation", "unknown")
-    elif item.get("id") == 7 and version == RULE_VERSION and conditions:
+    elif item.get("id") == 7 and version != LEGACY_RULE_VERSION and conditions:
         label = "Следующее действие согласовано"
         vals = [by_key.get(k, "unknown") for k in ("action", "owner", "agreement")]
         fact = "no" if "no" in vals else ("unknown" if "unknown" in vals else "yes")
@@ -438,7 +438,12 @@ def criterion_view(item: dict, version: str) -> dict:
 
 
 def analysis_prompt(direction: str, occurred_at: int, rule_version: str = LEGACY_RULE_VERSION) -> str:
-    if rule_version != RULE_VERSION:
+    if rule_version not in SUPPORTED_RULE_VERSIONS:
+        raise ValueError("unsupported_rule_version")
+    if rule_version == V3_RULE_VERSION:
+        from app.call_rules_v3 import prompt_v3
+        return prompt_v3(direction, occurred_at)
+    if rule_version == LEGACY_RULE_VERSION:
         return legacy_analysis_prompt(direction, occurred_at)
     dt = datetime.fromtimestamp(occurred_at, ZoneInfo("Europe/Moscow"))
     rubric = "\n".join(f"{i}. {name}: {', '.join(keys)}" for i, (name, keys) in CRITERIA_V2.items())

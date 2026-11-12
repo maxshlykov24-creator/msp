@@ -16,6 +16,7 @@ from sqlalchemy.orm import defer
 from app.amo_client import AmoClient, AmoError
 from app.call_report import render_report, report_marker
 from app.call_rules import ANALYSIS_VERSION, MIN_CALL_DURATION_SEC, RULE_VERSION, LEGACY_RULE_VERSION, validate_analysis
+from app.call_rules import analysis_version_for, analysis_schema, analysis_prompt, SUPPORTED_RULE_VERSIONS, V3_RULE_VERSION
 from app.config import settings
 from app.database import SessionLocal, engine, init_db
 from app.models import CallDelivery, CallRecord, SyncState, CallAnalysisRevision, CallDeliverySnapshot
@@ -295,7 +296,7 @@ def finish_result(row: CallRecord, result: dict):
         row.state = "analysis_ready" if SonnetCallAgent.catalog(transcript) else "needs_review"
         row.last_error = "" if row.state == "analysis_ready" else "transcript_empty"
         row.next_attempt_at = None
-        row.analysis_version = ANALYSIS_VERSION
+        row.analysis_version = analysis_version_for(row.rule_version or active_rules_for_default())
         return
     raw = result.get("llm_output")
     if isinstance(raw, str):
@@ -357,7 +358,7 @@ def analyze_calls():
                 version = row.rule_version if (row.provider_result or {}).get("agent_result") and row.validation_errors else active_rules(db)
                 row.rule_version = version
                 row.state = "analyzing"
-                row.analysis_version = ANALYSIS_VERSION if version == RULE_VERSION else "sonnet.qa.6"
+                row.analysis_version = analysis_version_for(version)
                 db.commit()
                 try:
                     history = dict(row.provider_result or {})
@@ -392,7 +393,7 @@ def analyze_calls():
                         "ignored_no_conversation" if row.analysis.get("conversation_occurred") is False else
                         "insufficient" if row.category == "primary_inbound" and not row.is_scored else "complete")
                     row.last_error = "analysis_validation_failed" if row.validation_errors else ""
-                    if version == RULE_VERSION and not row.validation_errors:
+                    if version != LEGACY_RULE_VERSION and not row.validation_errors:
                         archive_current(db, row, "automatic", result)
                 except AmbiguousSubmission as exc:
                     row.state, row.last_error = "analysis_ambiguous", str(exc)
@@ -529,7 +530,7 @@ def process_calls(amo: AmoClient):
                         try:
                             row.state = "submitting"
                             row.rule_version = active_rules(db)
-                            row.analysis_version = ANALYSIS_VERSION if row.rule_version == RULE_VERSION else "sonnet.qa.6"
+                            row.analysis_version = analysis_version_for(row.rule_version)
                             row.provider_result = {**processing_context(row.provider_result), "submitted_at": now().isoformat()}
                             db.commit()
                             row.nexara_job_id = nexara.submit(audio, mime, row.direction, row.occurred_at)
@@ -844,7 +845,15 @@ def stable_hash(value) -> str:
 
 def active_rules(db) -> str:
     state = db.get(SyncState, "calls_active_rule_version")
-    return RULE_VERSION if state and state.value == RULE_VERSION else LEGACY_RULE_VERSION
+    version = state.value if state else LEGACY_RULE_VERSION
+    if version not in SUPPORTED_RULE_VERSIONS:
+        raise ValueError("unsupported_active_rule_version")
+    return version
+
+
+def active_rules_for_default() -> str:
+    with SessionLocal() as db:
+        return active_rules(db)
 
 
 def snapshot(row) -> dict:
@@ -893,28 +902,32 @@ def archive_current(db, row, origin: str, provider: dict | None = None):
     return rev
 
 
-def stage_revision(call_id: int, run: int = 1) -> dict:
+def stage_revision(call_id: int, run: int = 1, *, rule_version: str = RULE_VERSION) -> dict:
     """One durable paid attempt; never clears a live analysis or touches deliveries."""
     with SessionLocal() as db:
         row = db.get(CallRecord, call_id)
         if not row or not row.analysis or not SonnetCallAgent.catalog(row.transcript):
             raise ValueError("published_transcript_required")
         thash = stable_hash(row.transcript)
-        key = f"candidate:{call_id}:{RULE_VERSION}:{thash}:{run}"
+        av = analysis_version_for(rule_version)
+        configuration = stable_hash({"model": settings.calls_sonnet_model, "rules": rule_version,
+            "analysis": av, "prompt": analysis_prompt(row.direction, row.occurred_at, rule_version),
+            "schema": analysis_schema(rule_version).model_json_schema()})
+        key = f"candidate:{call_id}:{rule_version}:{thash}:{configuration}:{run}"
         prior = db.scalar(select(CallAnalysisRevision).where(CallAnalysisRevision.job_key == key))
         if prior:
             return {"id": prior.id, "call_id": call_id, "state": prior.state, "existing": True}
-        rev = CallAnalysisRevision(call_id=call_id, job_key=key, rule_version=RULE_VERSION,
-            analysis_version=ANALYSIS_VERSION, transcript_hash=thash, base_hash=source_hash(row),
-            state="running", result={"baseline": snapshot(row)},
+        rev = CallAnalysisRevision(call_id=call_id, job_key=key, rule_version=rule_version,
+            analysis_version=av, transcript_hash=thash, base_hash=source_hash(row),
+            state="running", result={"baseline": snapshot(row), "configuration_hash": configuration},
             review={"manual_hold": bool((row.provider_result or {}).get("manual_review") or (row.provider_result or {}).get("reviews"))})
         db.add(rev)
         db.commit()
         rid, transcript, direction, occurred = rev.id, row.transcript, row.direction, row.occurred_at
     agent = SonnetCallAgent()
     try:
-        result = agent.analyze(transcript, direction, occurred, rule_version=RULE_VERSION)
-        verdict = validate_analysis(result["analysis"], transcript, direction, RULE_VERSION)
+        result = agent.analyze(transcript, direction, occurred, rule_version=rule_version)
+        verdict = validate_analysis(result["analysis"], transcript, direction, rule_version)
         # Persist the paid result before any optional correction request.
         with SessionLocal() as db:
             rev = db.get(CallAnalysisRevision, rid)
@@ -951,15 +964,16 @@ def repair_revision(revision_id: int) -> dict:
         errors = rev.result["verdict"]["errors"] or ["semantic_review: Перечитай весь разговор и проверь каждое условие, особенно конкретные требования клиента, принадлежность реплик и подтверждение сроков. Общий вопрос менеджера не доказывает выявленную потребность. Исправь фактические пропуски и неверные цитаты; верни полный разбор."]
         rev.result = {**rev.result, "correction_started_at": now().isoformat(), "first_provider": previous,
                       "first_verdict": rev.result["verdict"], "first_analysis_version": rev.analysis_version}
-        rev.analysis_version = ANALYSIS_VERSION
+        rev.analysis_version = analysis_version_for(rev.rule_version)
+        rule_version = rev.rule_version
         rev.state = "correcting"
         transcript, direction, occurred = row.transcript, row.direction, row.occurred_at
         db.commit()
     agent = SonnetCallAgent()
     try:
-        result = agent.analyze(transcript, direction, occurred, rule_version=RULE_VERSION,
+        result = agent.analyze(transcript, direction, occurred, rule_version=rule_version,
             correction={"references": previous["references"], "errors": errors})
-        verdict = validate_analysis(result["analysis"], transcript, direction, RULE_VERSION)
+        verdict = validate_analysis(result["analysis"], transcript, direction, rule_version)
         with SessionLocal() as db:
             rev = db.get(CallAnalysisRevision, revision_id)
             rev.result = {**rev.result, "provider": result, "verdict": verdict}
@@ -1137,7 +1151,8 @@ def main():
     parser.add_argument("--review-revision", type=int)
     parser.add_argument("--publish-revision", type=int)
     parser.add_argument("--rollback-revision", type=int)
-    parser.add_argument("--activate-rules", choices=[LEGACY_RULE_VERSION, RULE_VERSION])
+    parser.add_argument("--activate-rules", choices=SUPPORTED_RULE_VERSIONS)
+    parser.add_argument("--rules", choices=SUPPORTED_RULE_VERSIONS, default=RULE_VERSION)
     args = parser.parse_args()
     init_db()
     if args.stage_history:
@@ -1145,7 +1160,7 @@ def main():
         return
     if args.stage_v2:
         for call_id in [int(x) for x in args.stage_v2.split(",")]:
-            result = stage_revision(call_id, args.run)
+            result = stage_revision(call_id, args.run, rule_version=args.rules)
             print(json.dumps(result), flush=True)
             if result["state"] in ("error", "ambiguous", "running"):
                 break
