@@ -1884,32 +1884,39 @@ function renderSyncHealth(rows) {
 }
 
 function asmBodyHtml(rows) {
-  // в «Новых» поставки ещё нет: каждое задание само по себе
+  const stamp = (raw, mp) => {
+    const time = asmTimestamp(raw, mp);
+    return Number.isFinite(time) ? time : -Infinity;
+  };
+  const newest = (a, b) => b.time - a.time || b.id - a.id;
+  const orderEntry = (r) => ({time: stamp(r.accepted, r.marketplace), id: r.id, row: r});
+  const orders = rows.map(orderEntry).sort(newest);
   if (state.asmGroup === "new" || state.asmGroup === "archived") {
-    return rows.map((r) => asmRowHtml(r)).join("");
+    return orders.map((entry) => asmRowHtml(entry.row)).join("");
   }
   const bySupply = new Map();
-  const loose = [];
-  rows.forEach((r) => {
+  const entries = [];
+  orders.forEach((entry) => {
+    const r = entry.row;
     if (r.supply) {
       if (!bySupply.has(r.supply)) bySupply.set(r.supply, []);
       bySupply.get(r.supply).push(r);
     } else {
-      loose.push(r);
+      entries.push(entry);
     }
   });
-  let html = "";
-  const openOnly = state.asmGroup === "new" || state.asmGroup === "assembling";
+  const openOnly = state.asmGroup === "assembling";
   (state.asmSupplies || []).forEach((sup) => {
     const kids = bySupply.get(sup.ext_id) || [];
     bySupply.delete(sup.ext_id);
-    // сданная поставка живёт в «Отгружены» и «Доставлены», не в сборке
     if (openOnly && sup.state === "delivered") return;
-    html += asmSupplyHtml(sup, kids);
+    // Сортируем по дате, показанной в строке поставки, вместе с заказами.
+    entries.push({time: stamp(sup.created), id: sup.id, supply: sup, kids});
   });
-  // поставка есть у задания, но самой поставки в базе нет: заводили не мы
-  bySupply.forEach((kids) => { html += kids.map((r) => asmRowHtml(r)).join(""); });
-  return html + loose.map((r) => asmRowHtml(r)).join("");
+  bySupply.forEach((kids) => kids.forEach((r) => entries.push(orderEntry(r))));
+  return entries.sort(newest).map((entry) => entry.supply
+    ? asmSupplyHtml(entry.supply, entry.kids)
+    : asmRowHtml(entry.row)).join("");
 }
 
 function hidePrintMenu() {

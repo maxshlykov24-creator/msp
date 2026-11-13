@@ -92,7 +92,7 @@ def _rows(raw):
                 "qty": qty,
             }
         )
-    return out
+    return sorted(out, key=lambda item: item["name"].casefold().replace("ё", "е"))
 
 
 def _header(c, page_w, page_h, title, qty, pages, page):
