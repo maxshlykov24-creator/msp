@@ -588,5 +588,453 @@ def main() -> None:
     httpd.serve_forever()
 
 
+# Site-channel processing is an independent CLI mode, never an HTTP handler.
+SITE_START = '2026-10-28 00:00:00'
+SITE_ID = '07ff5606-dc11-11ef-0a80-03cd002298d2'
+SITE_ATTR = '48be380c-dc17-11ef-0a80-03cd0022c50b'
+SITE_UA = 'MSProduct-2MY-SiteChannels/1.0'
+
+
+class SiteDeferred(Exception):
+    pass
+
+
+class SiteFatal(Exception):
+    pass
+
+
+def site_stamp(value):
+    return datetime.fromisoformat(value).replace(tzinfo=TZ).timestamp()
+
+
+def site_now():
+    return datetime.now(TZ).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+
+
+def site_hash(value):
+    import hashlib
+    def canonical(v):
+        if isinstance(v, dict):
+            return {k: canonical(x) for k, x in v.items() if k != 'meta'}
+        if isinstance(v, list):
+            return sorted([canonical(x) for x in v], key=lambda x: json.dumps(x, sort_keys=True))
+        return v
+    # Retain reference identity, but discard volatile metadata (size/limit/offset).
+    def refs(v):
+        if isinstance(v, dict):
+            out = {k: refs(x) for k, x in v.items() if k != 'meta'}
+            if isinstance(v.get('meta'), dict):
+                out['_ref'] = v['meta'].get('href', '').split('?')[0]
+            return out
+        if isinstance(v, list):
+            return [refs(x) for x in v]
+        return v
+    return hashlib.sha256(json.dumps(canonical(refs(value)), ensure_ascii=False,
+                                    sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+
+
+def site_core(order):
+    return site_hash({k: v for k, v in order.items() if k not in ('meta', 'updated', 'salesChannel')})
+
+
+def site_channel(order):
+    return lib.href_id((order.get('salesChannel') or {}).get('meta'))
+
+
+def site_events_signature(events):
+    return site_hash([{k: e.get(k) for k in ('moment', 'eventType', 'source', 'audit', 'diff')}
+                      for e in events])
+
+
+def site_channel_change(event):
+    diff = event.get('diff')
+    if event.get('eventType') == 'create':
+        return False
+    if not isinstance(diff, dict):
+        # An unknown change cannot prove that a channel was untouched.
+        raise SiteDeferred('audit_change_without_diff')
+    return any(k in ('salesChannel', 'Канал продажи', 'Канал продаж', SITE_ATTR, 'attributes') for k in diff)
+
+
+def site_source(info):
+    # Parse the audit's application identifier, not arbitrary document text.
+    text = str((info or {}).get('additionalInfo') or '')
+    match = re.fullmatch(r'\([^,]+, WordPress/[^;\s]+;\s*(https?://[^\s)]+)\)', text)
+    if not match:
+        return False
+    parsed = urlparse(match.group(1))
+    return (parsed.hostname == '2mymoods.ru' and not parsed.username and not parsed.password
+            and parsed.netloc == '2mymoods.ru' and parsed.path in ('', '/')
+            and not parsed.query and not parsed.fragment)
+
+
+def site_decision(order, events, creation_info):
+    if not order.get('created') or site_stamp(order['created']) < site_stamp(SITE_START):
+        return 'skip_before_period'
+    if order.get('deleted') or order.get('archived'):
+        return 'skip_archived'
+    if site_channel(order):
+        return 'skip_filled'
+    creates = [e for e in events if e.get('eventType') == 'create']
+    if len(creates) != 1:
+        raise SiteDeferred('creation_history_incomplete')
+    if creates[0].get('source') != 'remap-1.2' or not site_source(creation_info):
+        return 'skip_other_source'
+    if any(site_channel_change(e) for e in events):
+        return 'skip_prior_channel_change'
+    for attr in order.get('attributes') or []:
+        if attr.get('id') == SITE_ATTR or attr.get('name') in ('Канал продажи', 'Канал продаж'):
+            value = attr.get('value')
+            if value and (not isinstance(value, dict) or value.get('name') != 'Сайт'):
+                return 'conflict_extra_channel'
+    return 'eligible'
+
+
+class SiteAPI:
+    def __init__(self):
+        import urllib.request
+        self.token = lib.load_env().get('MOYSKLAD_TOKEN', '').strip()
+        if not self.token:
+            raise SiteFatal('missing_ms_token')
+        self.last = 0.0
+        self.opener = urllib.request.build_opener()
+
+    def request(self, path, params=None, body=None):
+        import gzip
+        import urllib.error
+        import urllib.request
+        from urllib.parse import urlencode
+        if not (path.startswith('/entity/customerorder') or path.startswith('/audit/')
+                or path == '/entity/saleschannel/' + SITE_ID):
+            raise SiteFatal('disallowed_endpoint')
+        if body is not None and (not re.fullmatch(r'/entity/customerorder/[0-9a-f-]{36}', path)
+                                 or set(body) != {'salesChannel'}):
+            raise SiteFatal('disallowed_write')
+        time.sleep(max(0, 1.0 - (time.monotonic() - self.last)))
+        url = lib.MS_BASE + path
+        if params:
+            url += '?' + urlencode(params)
+        headers = {'Authorization': 'Bearer ' + self.token, 'Accept': 'application/json;charset=utf-8',
+                   'Accept-Encoding': 'gzip', 'User-Agent': SITE_UA}
+        data = None
+        if body is not None:
+            data = json.dumps(body).encode()
+            headers.update({'Content-Type': 'application/json', 'X-Lognex-WebHook-Disable': 'true'})
+        req = urllib.request.Request(url, data=data, headers=headers, method='PUT' if data else 'GET')
+        try:
+            with self.opener.open(req, timeout=30) as r:
+                raw = r.read()
+                if r.headers.get('Content-Encoding') == 'gzip':
+                    raw = gzip.decompress(raw)
+                return json.loads(raw)
+        except urllib.error.HTTPError as e:
+            if e.code in (401, 403):
+                raise SiteFatal('ms_access_' + str(e.code)) from None
+            if e.code == 429:
+                try:
+                    wait = max(60, float(e.headers.get('X-Lognex-Retry-After', '0')) / 1000,
+                               float(e.headers.get('Retry-After', '0')))
+                except ValueError:
+                    wait = 60
+                # Persisted by the worker; no other request may bypass this cooldown.
+                err = SiteDeferred('ms_429')
+                err.retry_after = min(wait, 86400)
+                raise err from None
+            raise SiteDeferred('ms_http_' + str(e.code)) from None
+        except (SiteFatal, SiteDeferred):
+            raise
+        except Exception as e:
+            raise SiteDeferred('ms_transport_' + type(e).__name__) from None
+        finally:
+            self.last = time.monotonic()
+
+    def rows(self, path, params=None):
+        params = dict(params or {})
+        offset, total, result, seen = 0, None, [], set()
+        for _ in range(10000):
+            page = self.request(path, {**params, 'limit': 100, 'offset': offset})
+            size = (page.get('meta') or {}).get('size')
+            chunk = page.get('rows')
+            if not isinstance(size, int) or not isinstance(chunk, list):
+                raise SiteDeferred('invalid_page')
+            if total is not None and size != total:
+                raise SiteDeferred('page_count_changed')
+            total = size
+            for row in chunk:
+                key = row.get('id') or site_hash({k: row.get(k) for k in ('audit', 'moment', 'eventType', 'diff')})
+                if key in seen:
+                    raise SiteDeferred('duplicate_page_row')
+                seen.add(key)
+                result.append(row)
+            offset += len(chunk)
+            if offset == total:
+                return result
+            if not chunk or offset > total:
+                raise SiteDeferred('incomplete_pages')
+        raise SiteDeferred('page_limit')
+
+
+class SiteWorker:
+    def __init__(self, root, api=None):
+        import os
+        import sqlite3
+        import fcntl
+        self.root = Path(root)
+        self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
+        os.chmod(self.root, 0o700)
+        self.lock = (self.root / 'worker.lock').open('a')
+        try:
+            fcntl.flock(self.lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            self.lock.close()
+            raise SiteFatal('worker_already_running') from None
+        self.db = sqlite3.connect(self.root / 'state.sqlite3')
+        os.chmod(self.root / 'state.sqlite3', 0o600)
+        self.db.row_factory = sqlite3.Row
+        self.db.executescript('''
+            PRAGMA journal_mode=WAL;
+            PRAGMA synchronous=FULL;
+            CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY, created TEXT NOT NULL,
+                state TEXT NOT NULL DEFAULT 'pending', reason TEXT, due REAL NOT NULL DEFAULT 0,
+                attempts INTEGER NOT NULL DEFAULT 0, intent_at REAL, before_hash TEXT,
+                before_updated TEXT, audit_before TEXT, verified_at REAL);
+            CREATE TABLE IF NOT EXISTS journal(seq INTEGER PRIMARY KEY, at TEXT NOT NULL,
+                order_id TEXT, state TEXT, reason TEXT);
+        ''')
+        self.api = api or SiteAPI()
+
+    def setting(self, key, default=''):
+        row = self.db.execute('SELECT value FROM settings WHERE key=?', (key,)).fetchone()
+        return row[0] if row else default
+
+    def set(self, key, value):
+        with self.db:
+            self.db.execute('INSERT OR REPLACE INTO settings VALUES (?,?)', (key, str(value)))
+
+    def mark(self, oid, state, reason, due=0):
+        with self.db:
+            self.db.execute('UPDATE jobs SET state=?, reason=?, due=? WHERE id=?', (state, reason, due, oid))
+            self.db.execute('INSERT INTO journal(at,order_id,state,reason) VALUES (?,?,?,?)',
+                            (site_now(), oid, state, reason))
+        print(json.dumps({'order_id': oid, 'state': state, 'reason': reason}), flush=True)
+
+    def enqueue(self, rows):
+        with self.db:
+            for row in rows:
+                if not re.fullmatch(r'[0-9a-f-]{36}', row.get('id', '')) or not row.get('created'):
+                    raise SiteDeferred('invalid_discovery_row')
+                self.db.execute('INSERT OR IGNORE INTO jobs(id,created,state,reason) VALUES (?,?,?,?)',
+                    (row['id'], row['created'], 'skipped' if site_channel(row) else 'pending',
+                     'skip_filled' if site_channel(row) else None))
+
+    def discover(self):
+        from datetime import timedelta
+        upper = datetime.now(TZ) - timedelta(seconds=120)
+        daily = time.time() - float(self.setting('full_scan_at', '0')) > 86400
+        since = SITE_START if daily else self.setting('cursor', SITE_START)
+        start = max(site_stamp(SITE_START), site_stamp(since) - 600)
+        lower = datetime.fromtimestamp(start, TZ).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+        end = upper.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+        rows = self.api.rows('/entity/customerorder', {'filter': 'created>='+lower+';created<='+end,
+                                                     'order': 'created,asc'})
+        self.enqueue(rows)
+        self.set('cursor', end)
+        if daily:
+            self.set('full_scan_at', time.time())
+        self.set('discovery_ok_at', site_now())
+
+    def evidence(self, oid):
+        path = '/entity/customerorder/' + oid
+        order = self.api.request(path)
+        if order.get('id') != oid:
+            raise SiteDeferred('wrong_order')
+        events = self.api.rows(path + '/audit')
+        creates = [e for e in events if e.get('eventType') == 'create']
+        info = {}
+        if len(creates) == 1:
+            aid = lib.href_id((creates[0].get('audit') or {}).get('meta'))
+            if not re.fullmatch(r'[0-9a-f-]{36}', aid):
+                raise SiteDeferred('missing_creation_audit')
+            record = self.api.request('/audit/' + aid)
+            if record.get('id') != aid or record.get('eventType') != 'create' or record.get('entityType') != 'customerorder':
+                raise SiteDeferred('invalid_creation_audit')
+            info = record.get('info') or {}
+        return order, events, info
+
+    def verify(self, job):
+        oid = job['id']
+        order = self.api.request('/entity/customerorder/' + oid)
+        if site_channel(order) != SITE_ID:
+            if time.time() - job['intent_at'] < 300:
+                self.mark(oid, 'verifying', 'await_write_result', time.time() + 60)
+            else:
+                self.mark(oid, 'conflict', 'write_unconfirmed_or_channel_changed')
+            return
+        if site_core(order) != job['before_hash']:
+            self.mark(oid, 'conflict', 'other_fields_changed_needs_review')
+            return
+        events = self.api.rows('/entity/customerorder/' + oid + '/audit')
+        previous = set(json.loads(job['audit_before']))
+        ours = False
+        for event in events:
+            aid = lib.href_id((event.get('audit') or {}).get('meta'))
+            if not aid:
+                raise SiteDeferred('missing_audit_id')
+            if aid in previous or not site_channel_change(event):
+                continue
+            record = self.api.request('/audit/' + aid)
+            info = str((record.get('info') or {}).get('additionalInfo') or '')
+            diff = event.get('diff') or {}
+            new = (diff.get('salesChannel') or {}).get('newValue') or {}
+            if (event.get('source') == 'remap-1.2' and SITE_UA in info
+                    and set(diff) == {'salesChannel'}
+                    and not (diff.get('salesChannel') or {}).get('oldValue')
+                    and lib.href_id(new.get('meta')) == SITE_ID):
+                ours = True
+            else:
+                self.mark(oid, 'conflict', 'concurrent_channel_change')
+                return
+        if not ours:
+            if time.time() - job['intent_at'] > 600:
+                self.mark(oid, 'conflict', 'own_audit_not_confirmed')
+            else:
+                self.mark(oid, 'verifying', 'await_own_audit', time.time() + 60)
+            return
+        if time.time() - job['intent_at'] < 120:
+            self.mark(oid, 'verifying', 'immediate_verified', job['intent_at'] + 120)
+            return
+        with self.db:
+            self.db.execute('UPDATE jobs SET verified_at=? WHERE id=?', (time.time(), oid))
+        self.mark(oid, 'done', 'delayed_verified')
+
+    def process(self, job, apply=False):
+        oid = job['id']
+        if job['state'] in ('intent', 'verifying'):
+            self.verify(job)
+            return
+        current = self.api.request('/entity/customerorder/' + oid)
+        if site_channel(current):
+            self.mark(oid, 'skipped', 'skip_filled')
+            return
+        order, events, info = self.evidence(oid)
+        decision = site_decision(order, events, info)
+        if decision != 'eligible':
+            self.mark(oid, 'conflict' if decision.startswith('conflict') else 'skipped', decision)
+            return
+        if time.time() - site_stamp(order.get('updated') or order['created']) < 120:
+            raise SiteDeferred('order_still_changing')
+        if not apply:
+            self.mark(oid, 'pending', 'dry_run_eligible', time.time() + 60)
+            return
+        fresh, history, fresh_info = self.evidence(oid)
+        if (fresh.get('updated') != order.get('updated') or site_hash(fresh) != site_hash(order)
+                or site_events_signature(history) != site_events_signature(events)):
+            raise SiteDeferred('evidence_changed')
+        if site_decision(fresh, history, fresh_info) != 'eligible':
+            raise SiteDeferred('decision_changed')
+        # Read card once more after the audit requests to narrow the race window.
+        final = self.api.request('/entity/customerorder/' + oid)
+        if site_hash(final) != site_hash(fresh):
+            raise SiteDeferred('card_changed_before_put')
+        aids = [lib.href_id((e.get('audit') or {}).get('meta')) for e in history]
+        if not all(aids):
+            raise SiteDeferred('missing_audit_id')
+        with self.db:
+            self.db.execute('UPDATE jobs SET state=?,intent_at=?,before_hash=?,before_updated=?,audit_before=? WHERE id=?',
+                ('intent', time.time(), site_core(final), final.get('updated'), json.dumps(aids), oid))
+        body = {'salesChannel': {'meta': {'href': lib.MS_BASE + '/entity/saleschannel/' + SITE_ID,
+                                         'type': 'saleschannel', 'mediaType': 'application/json'}}}
+        self.api.request('/entity/customerorder/' + oid, body=body)
+        self.verify(self.db.execute('SELECT * FROM jobs WHERE id=?', (oid,)).fetchone())
+
+    def cycle(self, apply=False, ids=None):
+        if self.setting('halt'):
+            raise SiteFatal(self.setting('halt'))
+        if time.time() < float(self.setting('cooldown_until', '0')):
+            return
+        target = self.api.request('/entity/saleschannel/' + SITE_ID)
+        if target.get('id') != SITE_ID or target.get('name') != 'Сайт' or target.get('archived'):
+            raise SiteFatal('site_channel_invalid')
+        if ids:
+            self.enqueue([self.api.request('/entity/customerorder/' + oid) for oid in ids])
+        else:
+            self.discover()
+        query = "SELECT * FROM jobs WHERE state IN ('pending','intent','verifying') AND due<=?"
+        args = [time.time()]
+        if ids:
+            query += ' AND id IN (' + ','.join('?' for _ in ids) + ')'
+            args.extend(ids)
+        query += " ORDER BY CASE WHEN state IN ('intent','verifying') THEN 0 ELSE 1 END, created DESC LIMIT 15"
+        for job in self.db.execute(query, args).fetchall():
+            try:
+                self.process(job, apply)
+            except SiteDeferred as exc:
+                current = self.db.execute('SELECT * FROM jobs WHERE id=?', (job['id'],)).fetchone()
+                state = 'verifying' if current['state'] in ('intent', 'verifying') else 'pending'
+                attempts = current['attempts'] + 1
+                delay = min(3600, 60 * 2 ** min(attempts - 1, 6))
+                self.mark(job['id'], state, str(exc), time.time() + delay)
+                with self.db:
+                    self.db.execute('UPDATE jobs SET attempts=? WHERE id=?', (attempts, job['id']))
+                if str(exc) == 'ms_429':
+                    self.set('cooldown_until', time.time() + getattr(exc, 'retry_after', 60))
+                    raise
+        self.set('last_cycle_at', site_now())
+        self.status()
+
+    def status(self):
+        counts = dict(self.db.execute('SELECT state,count(*) FROM jobs GROUP BY state').fetchall())
+        print(json.dumps({'counts': counts, 'last_cycle_at': self.setting('last_cycle_at'),
+                          'discovery_ok_at': self.setting('discovery_ok_at'),
+                          'halt': self.setting('halt'), 'last_error': self.setting('last_error')}, ensure_ascii=False), flush=True)
+
+
+def site_main():
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--site-channels', action='store_true')
+    parser.add_argument('--apply', action='store_true')
+    parser.add_argument('--loop', action='store_true')
+    parser.add_argument('--status', action='store_true')
+    parser.add_argument('--root', default='/var/lib/2my-site-channels')
+    parser.add_argument('--ids', nargs='*')
+    args = parser.parse_args()
+    if args.ids and any(not re.fullmatch(r'[0-9a-f-]{36}', oid) for oid in args.ids):
+        parser.error('invalid order UUID')
+    if args.status:
+        import sqlite3
+        db = sqlite3.connect('file:' + str(Path(args.root) / 'state.sqlite3') + '?mode=ro', uri=True)
+        print(json.dumps({'settings': dict(db.execute('SELECT key,value FROM settings')),
+                          'counts': dict(db.execute('SELECT state,count(*) FROM jobs GROUP BY state')),
+                          'reasons': dict(db.execute('SELECT reason,count(*) FROM jobs GROUP BY reason'))}, ensure_ascii=False))
+        db.close()
+        return
+    worker = SiteWorker(args.root)
+    while True:
+        try:
+            worker.cycle(args.apply, args.ids)
+            worker.set('last_error', '')
+        except SiteFatal as exc:
+            worker.set('halt', str(exc))
+            worker.status()
+            raise SystemExit(1)
+        except Exception as exc:
+            reason = str(exc) if isinstance(exc, SiteDeferred) else type(exc).__name__
+            worker.set('last_error', reason)
+            if reason == 'ms_429':
+                worker.set('cooldown_until', time.time() + getattr(exc, 'retry_after', 60))
+            worker.status()
+            if not args.loop:
+                raise SystemExit(1)
+        if not args.loop:
+            break
+        time.sleep(60)
+
+
 if __name__ == "__main__":
-    main()
+    import sys
+    if "--site-channels" in sys.argv:
+        site_main()
+    else:
+        main()
