@@ -844,9 +844,9 @@ class SiteWorker:
             self.set('full_scan_at', time.time())
         self.set('discovery_ok_at', site_now())
 
-    def evidence(self, oid):
+    def evidence(self, oid, order=None):
         path = '/entity/customerorder/' + oid
-        order = self.api.request(path)
+        order = order if order is not None else self.api.request(path)
         if order.get('id') != oid:
             raise SiteDeferred('wrong_order')
         events = self.api.rows(path + '/audit')
@@ -917,7 +917,7 @@ class SiteWorker:
         if site_channel(current):
             self.mark(oid, 'skipped', 'skip_filled')
             return
-        order, events, info = self.evidence(oid)
+        order, events, info = self.evidence(oid, current)
         decision = site_decision(order, events, info)
         if decision != 'eligible':
             self.mark(oid, 'conflict' if decision.startswith('conflict') else 'skipped', decision)
@@ -927,16 +927,16 @@ class SiteWorker:
         if not apply:
             self.mark(oid, 'pending', 'dry_run_eligible', time.time() + 60)
             return
-        fresh, history, fresh_info = self.evidence(oid)
-        if (fresh.get('updated') != order.get('updated') or site_hash(fresh) != site_hash(order)
-                or site_events_signature(history) != site_events_signature(events)):
+        history = self.api.rows('/entity/customerorder/' + oid + '/audit')
+        if site_events_signature(history) != site_events_signature(events):
             raise SiteDeferred('evidence_changed')
-        if site_decision(fresh, history, fresh_info) != 'eligible':
-            raise SiteDeferred('decision_changed')
-        # Read card once more after the audit requests to narrow the race window.
+        # The creation audit is immutable and its reference was just rechecked.
+        # Read the card after the second complete audit, immediately before PUT.
         final = self.api.request('/entity/customerorder/' + oid)
-        if site_hash(final) != site_hash(fresh):
+        if site_hash(final) != site_hash(order):
             raise SiteDeferred('card_changed_before_put')
+        if site_decision(final, history, info) != 'eligible':
+            raise SiteDeferred('decision_changed')
         aids = [lib.href_id((e.get('audit') or {}).get('meta')) for e in history]
         if not all(aids):
             raise SiteDeferred('missing_audit_id')
