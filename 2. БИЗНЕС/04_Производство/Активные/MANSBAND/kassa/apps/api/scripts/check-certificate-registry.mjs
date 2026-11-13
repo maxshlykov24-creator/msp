@@ -125,6 +125,39 @@ globalThis.fetch=async(url,options={})=>{
  }
  throw Error('Unexpected MS test request '+method+' '+path);
 };
+// CRM expiry is authoritative; only an empty field is auto-filled.
+{
+ const savedFetch=globalThis.fetch;const patches=[];let confirmExpiry=true;
+ const fields=(values)=>Object.entries(values).map(([id,value])=>({field_id:Number(id),values:[{value}]}));
+ let certLead;
+ globalThis.fetch=async(url,options={})=>{
+  const path=new URL(String(url)).pathname;assert.equal(path,`/api/v4/leads/${certLead.id}`);
+  if(options.method==='PATCH'){
+   const body=JSON.parse(options.body);patches.push(body);
+   for(const field of body.custom_fields_values??[]){
+    if(field.field_id===3169911&&!confirmExpiry)continue;
+    certLead.custom_fields_values=certLead.custom_fields_values.filter(f=>f.field_id!==field.field_id).concat(field);
+   }
+  }
+  return json(certLead);
+ };
+ const {issueFromAmo}=await import('../dist/services/certificateIssuer.js');
+ const stamp=(date)=>Date.parse(date+'T00:00:00+03:00')/1000;
+ const make=(id,until)=>({id,pipeline_id:9601214,status_id:76675038,custom_fields_values:fields({3828225:true,3829442:stamp('2028-02-29'),3830333:100,...(until===undefined?{}:{3169911:until})})});
+ try{
+  certLead=make(fixture+101,stamp('2029-03-16'));const first=await issueFromAmo(certLead.id);
+  assert.equal(first.validUntil,'2029-03-16');assert(!patches.some(p=>p.custom_fields_values.some(f=>f.field_id===3169911)));
+  certLead.custom_fields_values=certLead.custom_fields_values.filter(f=>f.field_id!==3169911).concat(fields({3169911:stamp('2029-03-20')}));
+  const revised=await issueFromAmo(certLead.id);assert.equal(revised.validUntil,'2029-03-20');assert.equal(revised.number,first.number);assert.equal(revised.balance,first.balance);
+  assert.equal((await c.list()).find(x=>x.number===first.number).validUntil,'2029-03-20');
+  certLead=make(fixture+102);const fallback=await issueFromAmo(certLead.id);assert.equal(fallback.validUntil,'2029-02-28');
+  assert.equal(certLead.custom_fields_values.find(f=>f.field_id===3169911).values[0].value,stamp('2029-02-28'));
+  const count=patches.length;await issueFromAmo(certLead.id);assert.equal(patches.length,count);
+  certLead=make(fixture+103,'invalid');await assert.rejects(()=>issueFromAmo(certLead.id),/Некорректная дата окончания/);
+  certLead=make(fixture+104,stamp('2028-02-28'));await assert.rejects(()=>issueFromAmo(certLead.id),/раньше даты начала/);
+  certLead=make(fixture+105);confirmExpiry=false;await assert.rejects(()=>issueFromAmo(certLead.id),/Срок действия в CRM не подтверждён/);
+ }finally{globalThis.fetch=savedFetch;}
+}
 const saleService=await import('../dist/services/sale.js');const dealService=await import('../dist/services/deals.js');
 let saleDeal={...sample,id:crypto.randomUUID(),number:fixture+30,amoLeadId:fixture+42,clientPhone:'+79990000000',channel:'Сайт',purpose:'Работа',stage:'Новая заявка',paid:3000,payments:[{id:'deposit',methodId:'cash',amount:3000}],items:[{productId,name:'Проверочная позиция',price:10000,qty:1,barcode:'test'}]};
 await dealService.persist(saleDeal);

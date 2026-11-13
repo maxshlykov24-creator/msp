@@ -19,7 +19,12 @@ export async function issueFromAmo(id:number) {
  const reserved=await reserveNumber(`amo:32417154:${id}`,original,local?.number);
  if(original!==reserved)await amo.updateLead(id,{customFields:[{field_id:3135463,values:[{value:reserved}]}]});
  const raw=Number(field(3829442)[0]);if(!Number.isFinite(raw)||raw<=0)throw new Error("Нет даты начала сертификата");
- const start=new Date(raw*1000+3*3600000).toISOString().slice(0,10);const until=anniversary(start);
+ const start=new Date(raw*1000+3*3600000).toISOString().slice(0,10);
+ const rawUntil=field(3169911)[0];const missingUntil=rawUntil==null||String(rawUntil).trim()==="";
+ const expiryStamp=Number(rawUntil);
+ if(!missingUntil && (!Number.isFinite(expiryStamp)||expiryStamp<=0||!Number.isFinite(new Date(expiryStamp*1000).getTime())))throw new Error("Некорректная дата окончания сертификата");
+ const until=missingUntil?anniversary(start):new Date(expiryStamp*1000+3*3600000).toISOString().slice(0,10);
+ if(until<start)throw new Error("Дата окончания сертификата раньше даты начала");
  const certLine=local?.items.find(x=>x.productId==="cert"||/^Сертификат\s*№/i.test(x.name));
  const values=field(AMO_CERTIFICATE_NOMINAL_FIELD_ID);
  const rawNominal=values.length===1?values[0]:undefined;
@@ -29,13 +34,26 @@ export async function issueFromAmo(id:number) {
  if(local && local.paid<local.total)throw new Error("Нет полной оплаты в кассе");
  const prior=reserved;
  const certificate=await ensureCertificate(`amo:32417154:${id}`,{number:prior,nominal,balance:nominal,status:"active",type:"digital",guestName:String(field(3185675)[0]??""),buyerDealNumber:local?.number,issuedAt:moscowTodayYmd(),validFrom:start,validUntil:until},prior);
- if(certificate.validFrom!==start || certificate.validUntil!==until || certificate.nominal!==nominal)throw new Error("Данные CRM отличаются от выпущенного сертификата; нужна сверка");
- const stamp=Math.floor(Date.parse(`${until}T00:00:00+03:00`)/1000);
- if(prior!==certificate.number||Number(field(3169911)[0])!==stamp) await amo.updateLead(id,{customFields:[{field_id:3135463,values:[{value:certificate.number}]},{field_id:3169911,values:[{value:stamp}]}]});
+ if(certificate.validFrom!==start || certificate.nominal!==nominal)throw new Error("Данные CRM отличаются от выпущенного сертификата; нужна сверка");
+ const stamp=missingUntil?Math.floor(Date.parse(`${until}T00:00:00+03:00`)/1000):expiryStamp;
+ const updates=[];
+ if(prior!==certificate.number)updates.push({field_id:3135463,values:[{value:certificate.number}]});
+ if(missingUntil){
+  const latest=await amo.getLead(id);const current=latest?.custom_fields_values?.find(f=>f.field_id===3169911)?.values?.[0]?.value;
+  if(current!=null&&String(current).trim()!=="")throw new Error("Срок в CRM изменился при выпуске; повторите проверку");
+  updates.push({field_id:3169911,values:[{value:stamp}]});
+ }
+ if(updates.length)await amo.updateLead(id,{customFields:updates});
  const fresh=await amo.getLead(id);const number=fresh?.custom_fields_values?.find(f=>f.field_id===3135463)?.values?.[0]?.value;
  const expiry=Number(fresh?.custom_fields_values?.find(f=>f.field_id===3169911)?.values?.[0]?.value);
  if(expiry!==stamp)throw new Error("Срок действия в CRM не подтверждён");
  if(number!==certificate.number)throw new Error("Запись номера в CRM не подтверждена; повтор сохранит тот же номер");
+ // CRM owns expiry; preserve the issued number, nominal, balance and status.
+ if(certificate.validUntil!==until){
+  const changed=await db.execute(sql`UPDATE certificates SET valid_until=${until} WHERE number=${certificate.number} AND valid_until=${certificate.validUntil} AND valid_from=${start} AND nominal=${Math.round(nominal*100)} RETURNING number`);
+  if(!changed.length)throw new Error("Сертификат изменился при сверке срока; повторите проверку");
+  certificate.validUntil=until;
+ }
  return certificate;
 }
 export async function pendingSources(since:number){return Array.from(await db.execute(sql`SELECT n.source_key,n.created_at FROM certificate_numbers n LEFT JOIN certificates c ON c.number=n.number WHERE n.source_key LIKE 'amo:32417154:%' AND n.created_at>=${new Date(since*1000).toISOString()}::timestamptz AND (c.type='digital' OR c.number IS NULL) ORDER BY n.created_at DESC`));}

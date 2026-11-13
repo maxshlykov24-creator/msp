@@ -232,3 +232,26 @@ def test_gift_can_be_published_with_buyer_variable(db,monkeypatch):
  with pytest.raises(ValueError,match="переменная сертификата"):m.validate_catalog(bad,cat)
  ordinary=m.Rule(**{**d.draft,"action":"text"})
  with pytest.raises(ValueError,match="Неизвестная переменная"):m.validate_catalog(ordinary,cat)
+
+
+@pytest.mark.parametrize("raw,expected", [(int(datetime(2027,11,16,tzinfo=MSK).timestamp()),"16.11.2027"),("","01.11.2027"),(None,"01.11.2027")])
+def test_expiry_prefers_crm_field_and_falls_back_only_when_empty(raw,expected,db):
+ c=CRM([]);c.lead["custom_fields_values"].append({"field_id":3169911,"values":[{"value":raw}]})
+ data=g.data_for(c,c.lead)
+ assert data["until"]==expected
+ assert expected in PdfReader(BytesIO(render_pdf(data))).pages[0].extract_text()
+ assert not c.posts
+
+@pytest.mark.parametrize("raw", ["bad",0,int(datetime(2025,11,16,tzinfo=MSK).timestamp())])
+def test_invalid_or_expired_expiry_does_not_fall_back(raw,db):
+ c=CRM([]);c.lead["custom_fields_values"].append({"field_id":3169911,"values":[{"value":raw}]})
+ with pytest.raises(ValueError):g.data_for(c,c.lead)
+
+def test_expiry_change_after_text_stops_pdf(monkeypatch,db):
+ c=CRM([(201,{"messageId":"text"})]);j=prepare(monkeypatch,db,c);original=c.post
+ def post(path,json):
+  response=original(path,json)
+  c.lead["custom_fields_values"].append({"field_id":3169911,"values":[{"value":int(datetime(2027,11,16,tzinfo=MSK).timestamp())}]})
+  return response
+ c.post=post;g.process(db,c,j,STAMP,issuer)
+ assert len(c.posts)==1 and j.state=="partial"

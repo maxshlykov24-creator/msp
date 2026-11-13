@@ -78,7 +78,10 @@ def data_for(c,lead):
  if not name:raise ValueError("Не заполнено имя покупателя")
  try:start=datetime.fromtimestamp(int(field_value(lead,3829442)),MSK).date()
  except (ValueError,OverflowError,OSError):raise ValueError("Не заполнена дата начала")
- until=anniversary(start)
+ raw_until=field_value(lead,3169911).strip()
+ try:until=datetime.fromtimestamp(int(raw_until),MSK).date() if raw_until else anniversary(start)
+ except (ValueError,OverflowError,OSError):raise ValueError("Некорректная дата окончания сертификата")
+ if until<start:raise ValueError("Дата окончания сертификата раньше даты начала")
  if until<m.now().astimezone(MSK).date():raise ValueError("Сертификат просрочен")
  import math
  raw_amount=field_value(lead,3830333)
@@ -147,6 +150,7 @@ def process(db,c,job,stamp,issuer=issue):
  try:
   if lead.get("is_deleted") or lead.get("pipeline_id")!=9601214 or lead.get("status_id") not in (76675038,142) or field_value(lead,3828225).lower() not in ("true","1"):raise ValueError("Нет подтверждённого оплаченного электронного сертификата")
   cert=issuer(job.lead_id)
+  lead=c.get(f"/api/v4/leads/{job.lead_id}",**{"with":"contacts"})
   data=data_for(c,lead)
   if job.snapshot and data["phone"]!=job.snapshot["data"]["phone"]:raise ValueError("Получатель изменился после начала отправки")
   if cert["status"]!="active" or cert["balance"]<=0:raise ValueError("Сертификат недействителен или использован")
@@ -182,6 +186,7 @@ def process(db,c,job,stamp,issuer=issue):
     fresh=data_for(c,c.get(f"/api/v4/leads/{job.lead_id}",**{"with":"contacts"}))
     if fresh["phone"]!=snap["data"]["phone"]:raise ValueError("Получатель изменился перед отправкой")
     if fresh["nominal"]!=snap["data"]["nominal"]:raise ValueError("Номинал изменился перед отправкой; нужна сверка")
+    if any(fresh[k]!=snap["data"][k] for k in ("start","until")):raise ValueError("Срок действия изменился перед отправкой; нужна сверка")
     if part=="text" and fresh!=snap["data"]:
      # Number/amount come from authoritative registry, compare the mutable source fields.
      if any(fresh[k]!=snap["data"][k] for k in ("buyer","guest","greeting","start","until")):raise ValueError("Данные изменились перед отправкой; нужна повторная проверка")
