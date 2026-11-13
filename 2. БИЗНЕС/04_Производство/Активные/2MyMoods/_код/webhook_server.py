@@ -683,6 +683,10 @@ def site_decision(order, events, creation_info):
         raise SiteDeferred('creation_source_missing')
     if source == 'remap-1.2' and ',' not in str((creation_info or {}).get('additionalInfo') or ''):
         raise SiteDeferred('creation_client_not_available')
+    client_info = str((creation_info or {}).get('additionalInfo') or '')
+    if source == 'remap-1.2' and 'WordPress/' in client_info and not re.fullmatch(
+            r'\([^,]+, WordPress/[^;\s]+;\s*(https?://[^\s)]+)\)', client_info):
+        raise SiteDeferred('creation_client_unrecognized')
     if source != 'remap-1.2' or not site_source(creation_info):
         return 'skip_other_source'
     if any(site_channel_change(e) for e in events):
@@ -710,7 +714,7 @@ class SiteAPI:
         import urllib.request
         from urllib.parse import urlencode
         if not (path.startswith('/entity/customerorder') or path.startswith('/audit/')
-                or path == '/entity/saleschannel/' + SITE_ID):
+                or path == '/entity/webhook' or path == '/entity/saleschannel/' + SITE_ID):
             raise SiteFatal('disallowed_endpoint')
         if body is not None and (not re.fullmatch(r'/entity/customerorder/[0-9a-f-]{36}', path)
                                  or set(body) != {'salesChannel'}):
@@ -724,10 +728,10 @@ class SiteAPI:
         data = None
         if body is not None:
             data = json.dumps(body).encode()
-            headers.update({'Content-Type': 'application/json', 'X-Lognex-WebHook-Disable': 'true'})
+            headers.update({'Content-Type': 'application/json'})
         req = urllib.request.Request(url, data=data, headers=headers, method='PUT' if data else 'GET')
         try:
-            with self.opener.open(req, timeout=30) as r:
+            with (self.put(url, data, headers) if data else self.opener.open(req, timeout=30)) as r:
                 raw = r.read()
                 if r.headers.get('Content-Encoding') == 'gzip':
                     raw = gzip.decompress(raw)
@@ -752,6 +756,46 @@ class SiteAPI:
             raise SiteDeferred('ms_transport_' + type(e).__name__) from None
         finally:
             self.last = time.monotonic()
+
+    def prepare_webhooks(self):
+        # Refresh before every write. Use origins only: never log webhook URL secrets.
+        from urllib.parse import urlsplit
+        prefixes = set()
+        for hook in self.rows('/entity/webhook'):
+            if hook.get('enabled') is False or hook.get('entityType') != 'customerorder':
+                continue
+            if hook.get('action') != 'UPDATE':
+                continue
+            url = urlsplit(hook.get('url') or '')
+            if url.scheme not in ('http', 'https') or not url.hostname or url.username or url.password:
+                raise SiteFatal('invalid_webhook_origin')
+            prefixes.add(url.scheme + '://' + url.netloc)
+        self.webhook_prefixes = sorted(prefixes)
+
+    def put(self, url, data, headers):
+        # urllib collapses duplicate headers; API requires one header per prefix.
+        import http.client
+        import urllib.error
+        from urllib.parse import urlsplit
+        if not hasattr(self, 'webhook_prefixes'):
+            raise SiteFatal('webhook_preflight_required')
+        target = urlsplit(url)
+        conn = http.client.HTTPSConnection(target.hostname, timeout=30)
+        try:
+            conn.putrequest('PUT', target.path, skip_accept_encoding=True)
+            for key, value in headers.items():
+                conn.putheader(key, value)
+            conn.putheader('Content-Length', str(len(data)))
+            for prefix in self.webhook_prefixes:
+                conn.putheader('X-Lognex-WebHook-DisableByPrefix', prefix)
+            conn.endheaders(data)
+            response = conn.getresponse()
+            if response.status >= 300:
+                raise urllib.error.HTTPError(url, response.status, 'MS API error', response.headers, response)
+            return response
+        except Exception:
+            conn.close()
+            raise
 
     def rows(self, path, params=None):
         params = dict(params or {})
@@ -878,7 +922,8 @@ class SiteWorker:
             return
         if site_core(order) != job['before_hash']:
             self.mark(oid, 'conflict', 'other_fields_changed_needs_review')
-            return
+            self.set('halt', 'other_fields_changed_needs_review:' + oid)
+            raise SiteFatal('other_fields_changed_needs_review')
         events = self.api.rows('/entity/customerorder/' + oid + '/audit')
         previous = set(json.loads(job['audit_before']))
         ours = False
@@ -886,7 +931,13 @@ class SiteWorker:
             aid = lib.href_id((event.get('audit') or {}).get('meta'))
             if not aid:
                 raise SiteDeferred('missing_audit_id')
-            if aid in previous or not site_channel_change(event):
+            if aid in previous:
+                continue
+            if set(event.get('diff') or {}) - {'salesChannel'}:
+                self.mark(oid, 'conflict', 'other_audit_changes_needs_review')
+                self.set('halt', 'other_audit_changes_needs_review:' + oid)
+                raise SiteFatal('other_audit_changes_needs_review')
+            if not site_channel_change(event):
                 continue
             record = self.api.request('/audit/' + aid)
             info = str((record.get('info') or {}).get('additionalInfo') or '')
@@ -906,8 +957,8 @@ class SiteWorker:
             else:
                 self.mark(oid, 'verifying', 'await_own_audit', time.time() + 60)
             return
-        if time.time() - job['intent_at'] < 120:
-            self.mark(oid, 'verifying', 'immediate_verified', job['intent_at'] + 120)
+        if time.time() - job['intent_at'] < 300:
+            self.mark(oid, 'verifying', 'immediate_verified', job['intent_at'] + 300)
             return
         with self.db:
             self.db.execute('UPDATE jobs SET verified_at=? WHERE id=?', (time.time(), oid))
@@ -932,6 +983,7 @@ class SiteWorker:
         if not apply:
             self.mark(oid, 'pending', 'dry_run_eligible', time.time() + 60)
             return
+        self.api.prepare_webhooks()
         history = self.api.rows('/entity/customerorder/' + oid + '/audit')
         if site_events_signature(history) != site_events_signature(events):
             raise SiteDeferred('evidence_changed')

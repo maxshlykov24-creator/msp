@@ -33,6 +33,8 @@ class FakeAPI:
         self.writes = 0
         self.lose_response = False
         self.change_card = False
+    def prepare_webhooks(self):
+        pass
     def request(self, path, params=None, body=None):
         if body is not None:
             self.writes += 1
@@ -64,7 +66,7 @@ class Decisions(unittest.TestCase):
                      '(x, WordPress/1; https://2mymoods.ru@evil.test)']:
             self.assertFalse(w.site_source({'additionalInfo': text}))
     def test_late_creation_client_is_deferred(self):
-        for info in ({}, {'additionalInfo': '(1.2.3.4)'}):
+        for info in ({}, {'additionalInfo': '(1.2.3.4)'}, {'additionalInfo': '(1.2.3.4, WordPress/7.1.4)'}):
             with self.assertRaises(w.SiteDeferred):
                 w.site_decision(order(), [creation()], info)
     def test_eligible(self):
@@ -177,11 +179,51 @@ class Worker(unittest.TestCase):
         self.worker.set('halt', 'ms_access_403')
         self.api.request = lambda *a, **kw: self.fail('request after halt')
         with self.assertRaises(w.SiteFatal): self.worker.cycle(True)
+    def test_other_fields_halt_all_writes(self):
+        self.worker.process(self.job(), True)
+        self.api.order['sum'] += 1
+        with self.assertRaises(w.SiteFatal): self.worker.verify(self.job())
+        self.assertTrue(self.worker.setting('halt'))
+        self.assertEqual(self.job()['state'], 'conflict')
+    def test_positions_audit_halts_even_when_card_hash_same(self):
+        self.worker.process(self.job(), True)
+        self.api.events.insert(0, {'audit': ref('audit', '22222222-2222-2222-2222-222222222222'),
+                                 'diff': {'positions': []}, 'eventType': 'update'})
+        with self.assertRaises(w.SiteFatal): self.worker.verify(self.job())
+        self.assertTrue(self.worker.setting('halt'))
     def test_delayed_success(self):
         self.worker.process(self.job(), True)
         with self.worker.db:
-            self.worker.db.execute('UPDATE jobs SET intent_at=?', (time.time()-130,))
+            self.worker.db.execute('UPDATE jobs SET intent_at=?', (time.time()-310,))
         self.worker.verify(self.job())
         self.assertEqual(self.job()['state'], 'done')
+
+
+class WebhookProtection(unittest.TestCase):
+    def test_multiple_prefix_headers_on_wire(self):
+        from unittest.mock import MagicMock
+        api = object.__new__(w.SiteAPI)
+        api.webhook_prefixes = ['https://2mymoods.ru', 'https://d-2my.ru']
+        conn = MagicMock()
+        conn.getresponse.return_value.status = 200
+        with patch('http.client.HTTPSConnection', return_value=conn):
+            api.put(w.lib.MS_BASE + '/entity/customerorder/' + OID, b'{}', {})
+        calls = conn.putheader.call_args_list
+        values = [c.args[1] for c in calls if c.args[0] == 'X-Lognex-WebHook-DisableByPrefix']
+        self.assertEqual(values, api.webhook_prefixes)
+        self.assertFalse(any(c.args[0] == 'X-Lognex-WebHook-Disable' for c in calls))
+        conn.endheaders.assert_called_once_with(b'{}')
+    def test_webhook_preflight_and_secret_stripping(self):
+        api = object.__new__(w.SiteAPI)
+        api.rows = lambda path: [
+            {'entityType': 'customerorder', 'action': 'UPDATE', 'url': 'https://2mymoods.ru/private?token=secret'},
+            {'entityType': 'customerorder', 'action': 'UPDATE', 'url': 'https://d-2my.ru/hook'},
+            {'entityType': 'customerorder', 'action': 'UPDATE', 'url': 'https://off.ru', 'enabled': False}]
+        api.prepare_webhooks()
+        self.assertEqual(api.webhook_prefixes, ['https://2mymoods.ru', 'https://d-2my.ru'])
+    def test_write_without_preflight_rejected(self):
+        api = object.__new__(w.SiteAPI)
+        with self.assertRaises(w.SiteFatal):
+            api.put(w.lib.MS_BASE + '/entity/customerorder/' + OID, b'{}', {})
 
 if __name__ == '__main__': unittest.main()
