@@ -4200,3 +4200,35 @@ def test_nov12_new_exact_binding_used_before_handoff():
             with patch.object(crm,"recover_autoru_binding",side_effect=recover),patch.object(crm,"ensure_lead",side_effect=ensure):
                 await crm.ensure_lead_async({"chat_id":cid,"channel":"Авто.ру"},d)
     asyncio.run(run())
+
+
+def test_nov13_cme_availability_identity_and_staleness():
+    from unittest.mock import patch
+    from datetime import datetime, timezone, timedelta
+    from bot import avito_match as am
+    vin = 'WMW71DH0502S37012'
+    stock = '## Mini Hatch 2022\n- VIN: '+vin+'\n- Марка: Mini\n- Пробег: 42 355 км\n- Цена в объявлении: 3 800 000 руб.\n- Комплектация: John Cooper Works JCW\n'
+    src = {'title':'MINI John Cooper Works 2.0 AT, 2022, 42 355 км','price':'3 800 000 ₽','cme_id':'CME_83667789'}
+    now = datetime.now(timezone.utc)
+    row = {'vin':vin,'stock_state':'in','sale_status':'onsale'}
+    snap = {'checked_at':now.isoformat(),'vehicles':{'83667789':row}}
+    with patch.object(am,'_cme_snapshot',return_value=snap):
+        assert am.match_listing(src,stock=stock)['VIN']==vin
+        assert am.availability_evidence(src,stock=stock)
+        assert not am.match_listing(dict(src,cme_id='CME_999'),stock=stock)
+        assert not am.match_listing(dict(src,vin='WMWXR910002P45520'),stock=stock)
+        assert not am.match_listing(src,stock=stock+stock)
+        assert not am.availability_evidence(src,stock=stock.replace('3 800 000',''))
+        focus=am.focus_block(src['title'],listing=src,stock=stock)
+        assert 'Наличие проверено' in focus and 'Актуальное наличие не подтверждено' not in focus
+    for fields in ({'stock_state':'out'},{'sale_status':'sold'},{'stock_state':''},{'sale_status':''}):
+        bad=dict(snap,vehicles={'83667789':dict(row,**fields)})
+        with patch.object(am,'_cme_snapshot',return_value=bad):
+            assert not am.availability_evidence(src,stock=stock)
+    for stamp in ((now-timedelta(hours=2)).isoformat(),(now+timedelta(hours=2)).isoformat(),'bad',now.replace(tzinfo=None).isoformat()):
+        with patch.object(am,'_cme_snapshot',return_value=dict(snap,checked_at=stamp)):
+            assert not am.availability_evidence(src,stock=stock)
+    with patch.object(am,'_cme_snapshot',return_value={}):
+        assert not am.match_listing(src,stock=stock)
+        focus=am.focus_block(src['title'],listing=src,stock=stock)
+        assert '[[УТОЧНЕНИЕ]]' in focus and 'по одному объявлению' not in focus

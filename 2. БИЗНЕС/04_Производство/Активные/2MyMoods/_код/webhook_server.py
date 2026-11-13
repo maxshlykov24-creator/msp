@@ -678,7 +678,12 @@ def site_decision(order, events, creation_info):
     creates = [e for e in events if e.get('eventType') == 'create']
     if len(creates) != 1:
         raise SiteDeferred('creation_history_incomplete')
-    if creates[0].get('source') != 'remap-1.2' or not site_source(creation_info):
+    source = creates[0].get('source')
+    if not source:
+        raise SiteDeferred('creation_source_missing')
+    if source == 'remap-1.2' and ',' not in str((creation_info or {}).get('additionalInfo') or ''):
+        raise SiteDeferred('creation_client_not_available')
+    if source != 'remap-1.2' or not site_source(creation_info):
         return 'skip_other_source'
     if any(site_channel_change(e) for e in events):
         return 'skip_prior_channel_change'

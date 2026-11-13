@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 import re
+import json
+import os
+from pathlib import Path
 import time
 from datetime import datetime, timezone, timedelta
 
@@ -173,9 +176,32 @@ def match_card(title: str, price_string: str = "", stock: str = "") -> dict | No
     return None
 
 
+def _cme_snapshot() -> dict:
+    """Read the producer's atomic snapshot; bot refresh time is not stock freshness."""
+    path = Path(os.environ.get("CME_STATE_PATH", "/var/lib/docker/volumes/divo-cme-stock_cme_state/_data/state.json"))
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        snap = data.get("inventory") or {}
+        return snap if isinstance(snap, dict) and isinstance(snap.get("vehicles"), dict) else {}
+    except (OSError, ValueError, AttributeError):
+        return {}
+
+
+def _cme_vehicle(src: dict, snapshot: dict) -> dict | None:
+    ident = re.fullmatch(r"CME_(\d+)", str(src.get("cme_id") or ""))
+    row = (snapshot.get("vehicles") or {}).get(ident.group(1)) if ident else None
+    return row if (isinstance(row, dict) and isinstance(row.get("vin"), str)
+                   and re.fullmatch(r"[A-HJ-NPR-Z0-9]{17}", row["vin"])) else None
+
+
 def match_listing(src: dict, stock: str = "") -> dict | None:
     """A provider VIN is authoritative; conflicting VIN must never fall back to a name."""
     vin = str(src.get("vin") or "").strip().upper()
+    if src.get("cme_id"):
+        row = _cme_vehicle(src, _cme_snapshot())
+        if not row or not row.get("vin") or (vin and vin != row["vin"]):
+            return None
+        vin = row["vin"]
     if vin:
         if not re.fullmatch(r"[A-HJ-NPR-Z0-9]{17}", vin):
             return None
@@ -190,6 +216,17 @@ def availability_evidence(src: dict, stock: str = "") -> bool:
     card = match_listing(src, stock=stock) if src else None
     if not card or not card.get("price"):
         return False
+    if src.get("cme_id"):
+        snapshot = _cme_snapshot()
+        row = _cme_vehicle(src, snapshot)
+        try:
+            checked = datetime.fromisoformat(snapshot["checked_at"])
+            age = time.time() - checked.timestamp() if checked.tzinfo else -1
+        except (KeyError, ValueError, TypeError):
+            return False
+        return bool(row and row.get("vin") == card.get("VIN")
+                    and 0 <= age <= 3600 and row.get("stock_state") == "in"
+                    and row.get("sale_status") == "onsale")
     try:
         age = time.time() - float(src.get("checked_at") or 0)
     except (ValueError, TypeError):
@@ -352,9 +389,9 @@ def focus_block(
         lines.append("Ссылка: %s" % url)
     if cme_id:
         lines.append("Код выгрузки CM Expert: %s" % cme_id)
-    if listing is not None and listing.get("checked_at"):
+    if listing is not None:
         if availability_evidence(listing, stock=stock):
-            lines.append("Наличие проверено: этот экземпляр есть в свежем стоке, Авто.ру подтверждает IN_STOCK и ACTIVE. На вопрос о наличии ответь прямо, без уточнения у сотрудника.")
+            lines.append("Наличие проверено: этот экземпляр однозначно связан с карточкой; актуальный источник подтверждает наличие и продажу. На вопрос о наличии ответь прямо, без уточнения у сотрудника.")
         else:
             lines.append("Актуальное наличие не подтверждено: не обещай наличие или отсутствие по старой карточке; нужен уточняющий запрос. Не утверждай, что машина продана.")
     if card:
@@ -408,7 +445,7 @@ def focus_block(
             "Известны только данные объявления. Цена только из строки «Цена в объявлении» "
             "выше. «В базе проходит», чужой VIN и цену другой машины не пиши. "
             "На ДТП и историю цифры не выдумывай. "
-            "Не подтверждай наличие по одному объявлению. "
+            "Наличие неизвестно. Если спрашивают о наличии, ответь естественно: «Здравствуйте! Уточню, доступна ли машина, и отвечу здесь». Добавь [[УТОЧНЕНИЕ]], чтобы действительно поставить вопрос сотруднику. Не объясняй клиенту внутренние ограничения проверки. "
             "Запрос отчёта без ссылки: сначала попроси номер для связи по отчёту. "
             "Номер уже есть или клиент отказывается от связи — [[ЧЕЛОВЕК]]. "
             "Кредит не оформляем: спросили — наличный расчёт и номер, банки не называй."

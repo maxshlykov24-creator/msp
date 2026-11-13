@@ -63,6 +63,10 @@ class Decisions(unittest.TestCase):
                      '(x, Other/1; https://2mymoods.ru)',
                      '(x, WordPress/1; https://2mymoods.ru@evil.test)']:
             self.assertFalse(w.site_source({'additionalInfo': text}))
+    def test_late_creation_client_is_deferred(self):
+        for info in ({}, {'additionalInfo': '(1.2.3.4)'}):
+            with self.assertRaises(w.SiteDeferred):
+                w.site_decision(order(), [creation()], info)
     def test_eligible(self):
         self.assertEqual(w.site_decision(order(), [creation()], INFO), 'eligible')
     def test_manual_clear_and_api_changes(self):

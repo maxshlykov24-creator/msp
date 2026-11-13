@@ -70,3 +70,7 @@ API фактически возвращал страницы по 50 машин,
 По умолчанию `CME_PUBLISH_MODE=require`: без поля статуса публикации в JSON
 в таблицу не пишем. После `python -m app.probe` либо ставим
 `CME_PUBLISH_FIELD=...`, либо (если поля нет в API) `CME_PUBLISH_MODE=in_stock_only`.
+
+### 2026-11-13: exact inventory evidence for the chat agent
+
+After a successful guarded sync, state.json includes `inventory.checked_at` (API fetch start) and `inventory.vehicles` keyed by CME car ID, containing only VIN, stockState and saleStatus. Explicit statuses are preserved; missing status never implies available to the chat agent. Dealer filter is respected. This minimal atomic snapshot is consumed read-only by divo-ai-manager via CME_STATE_PATH. No new credentials, sheets or customer records. Producer code backup: `99_АРХИВ/availability-20261113/`; image rebuilt and worker restarted, live MINI 83667789 mapping read back successfully.

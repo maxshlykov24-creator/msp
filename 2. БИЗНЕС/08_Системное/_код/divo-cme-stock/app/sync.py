@@ -34,6 +34,7 @@ def run_once() -> str:
     client = None
     try:
         client = CmeClient()
+        inventory_checked_at = state.now_iso()
         raw = client.iter_cars()
         if not raw:
             raise CmeError("API вернул 0 машин (пустой ответ)")
@@ -70,6 +71,18 @@ def run_once() -> str:
         except (OSError, CmeError) as exc:
             log.warning("склад не записан, «Данные» в порядке: %s", exc)
             stored = []
+        # Exact vehicle identity and explicit availability for the chat agent.
+        # Publish only after the guarded sheet write succeeds.
+        st["inventory"] = {
+            "checked_at": inventory_checked_at,
+            "vehicles": {str(c["id"]): {
+                "vin": str(c.get("vin") or "").strip().upper(),
+                "stock_state": str(c.get("stockState") or ""),
+                "sale_status": str(c.get("saleStatus") or ""),
+            } for c in raw if c.get("id") and (
+                not settings.cme_dealer_id or str(c.get("dealerId") or "") == str(settings.cme_dealer_id)
+            )},
+        }
         st["last_ok_at"] = state.now_iso()
         st["last_ok_count"] = len(rows)
         st["fail_streak"] = 0
