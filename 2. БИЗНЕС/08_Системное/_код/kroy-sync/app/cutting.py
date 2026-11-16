@@ -18,7 +18,7 @@ def parameters(raw):
     horizon = int(raw.get('horizon', 30))
     require(start <= end < today and (end-start).days < 90, 'Период: до 90 полных дней, без сегодняшнего дня', 422)
     require(1 <= horizon <= 365 and target >= today, 'Проверь горизонт и дату покрытия', 422)
-    return dict(start=str(start), end=str(end), horizon=horizon, target_date=str(target), location=raw['location'], include_uncertain=sorted(set(raw.get('include_uncertain', []))))
+    return dict(start=str(start), end=str(end), horizon=horizon, target_date=str(target), location=raw['location'], include_uncertain=sorted(set(raw.get('include_uncertain', []))), include_fbo=raw.get('include_fbo') is True)
 
 
 def calculate(s, raw):
@@ -96,9 +96,14 @@ def calculate(s, raw):
         stock_assumed_zero = not (b and b.known)
         free = Decimal(0) if stock_assumed_zero else b.free
         target = int((Decimal(max(0, net))*p['horizon']/((date.fromisoformat(p['end'])-date.fromisoformat(p['start'])).days+1)).to_integral_value(rounding=ROUND_CEILING)) if net is not None else None
-        rows.append(dict(item_id=iid, stock_assumed_zero=stock_assumed_zero, platforms=platforms, net=net, free=str(free) if free is not None else None, future=str(future), coverage=coverage[iid], target=target, recommendation=max(0, int(Decimal(target)-free-future)) if target is not None and free is not None else None, balance_version=b.version if b else None))
+        from .fbo_stock import read_stock
+        fbo_platforms, fbo_total = read_stock(s, iid)
+        fbo_known = fbo_total is not None and not any(v['stale'] for v in fbo_platforms.values())
+        recommendation = max(0, int(Decimal(target)-free-future-(fbo_total or 0))) if target is not None and (not p['include_fbo'] or fbo_known) else None
+        if not p['include_fbo'] and target is not None: recommendation=max(0,int(Decimal(target)-free-future))
+        rows.append(dict(item_id=iid, fbo=fbo_platforms, fbo_total=fbo_total, fbo_included=p['include_fbo'], stock_assumed_zero=stock_assumed_zero, platforms=platforms, net=net, free=str(free) if free is not None else None, future=str(future), coverage=coverage[iid], target=target, recommendation=recommendation, balance_version=b.version if b else None))
     body = dict(parameters=p, rows=rows, versions=sorted(versions))
-    fingerprint_body = {**body, 'rows': [{**r, 'platforms': {k:{x:v for x,v in values.items() if x not in ('at','reason','source','catalog_matches')} for k,values in r['platforms'].items()}} for r in rows]}
+    fingerprint_body = {**body, 'rows': [{**r, 'fbo': {k:{x:v for x,v in values.items() if x not in ('at','data_at','source')} for k,values in r['fbo'].items()}, 'platforms': {k:{x:v for x,v in values.items() if x not in ('at','reason','source','catalog_matches')} for k,values in r['platforms'].items()}} for r in rows]}
     body['fingerprint'] = hashlib.sha256(json.dumps(fingerprint_body, sort_keys=True).encode()).hexdigest()
     body['calculated_at'] = now().isoformat()
     return body
