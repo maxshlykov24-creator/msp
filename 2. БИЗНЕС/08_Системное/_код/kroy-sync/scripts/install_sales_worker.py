@@ -46,9 +46,9 @@ ExecStart=/opt/kroy-app-stage/.venv/bin/python scripts/sync_cutting_sales.py --s
 TimeoutStartSec=240
 ''')
 Path('/etc/systemd/system/kroy-app-stage-stocks.timer').write_text('''[Unit]
-Description=YUJI.CLO hourly FBO snapshot
+Description=YUJI.CLO FBO snapshot freshness check
 [Timer]
-OnCalendar=*-*-* *:10:00 UTC
+OnCalendar=*-*-* *:10,40:00 UTC
 Persistent=true
 RandomizedDelaySec=60
 [Install]
