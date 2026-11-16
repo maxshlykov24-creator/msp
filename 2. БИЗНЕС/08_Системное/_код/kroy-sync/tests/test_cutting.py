@@ -116,7 +116,7 @@ def test_confirmed_zero_stock_still_produces_recommendation(setup):
     with Session(engine) as s:
         row = calculate(s, {'location': 'own', 'item_ids': ['m']})['rows'][0]
     assert Decimal(row['free']) == 0
-    assert row['net'] == 12 and row['target'] == 24 and row['recommendation'] == 24
+    assert row['net'] == 12 and row['target'] == 12 and row['recommendation'] == 12
 
 
 def test_catalog_links_do_not_invalidate_same_calculation(setup):
@@ -134,7 +134,7 @@ def test_catalog_links_do_not_invalidate_same_calculation(setup):
 
 
 @pytest.mark.parametrize('missing',[False,True])
-def test_unknown_or_missing_stock_does_not_invent_a_recommendation(setup,missing):
+def test_unknown_or_missing_stock_assumed_zero_only_for_demand(setup,missing):
     from app.db import Balance,Item,transaction
     from sqlalchemy import select
     from app.sales import store_window
@@ -149,6 +149,40 @@ def test_unknown_or_missing_stock_does_not_invent_a_recommendation(setup,missing
         store_window(engine,dict(platform=platform,start=p['start'],end=p['end'],at=datetime.now(MSK).isoformat(),complete=True,verified=True,covered_items=[iid],events=[dict(id=platform,item_id=iid,date=p['end'],kind='sale',quantity=6)]))
     with Session(engine) as s:
         row=calculate(s,dict(location='own',item_ids=[iid]))['rows'][0]
-        assert row['stock_assumed_zero'] and row['recommendation'] is None and row['free'] is None and row['target']==24
+        assert row['stock_assumed_zero'] and row['recommendation']==12 and Decimal(row['free'])==0 and row['target']==12
         b=s.scalar(select(Balance).where(Balance.item_id==iid,Balance.location=='own'))
         assert b is None if missing else b.known is False
+
+
+def test_purchase_reserves_only_real_cloth_and_cancel_releases_only_owned(setup):
+    engine,u,cmd=setup
+    p=payload(engine);p['materials'][0]['quantity']='120';p['cutting']['groups'][0]['quantity']='120'
+    p['cutting']['allow_purchase']=True
+    issued=cmd('task.issue',p)
+    assert balance(engine,'cloth')['free']==0
+    assert balance(engine,'cloth')['reserved']==Decimal('100.5')
+    with Session(engine) as s:
+        task=s.get(Entity,issued['id']).data
+        assert Decimal(task['purchase_materials'][0]['quantity'])==Decimal('19.5')
+        row=calculate(s,dict(location='own',item_ids=['s']))['rows'][0]
+        assert row['future']=='0'
+    with pytest.raises(DomainError,match='не поступила'):
+        cmd('task.confirm',dict(id=issued['id'],version=issued['version'],confirm_actual=True))
+    cmd('task.cancel',dict(id=issued['id'],version=issued['version']))
+    assert balance(engine,'cloth')['reserved']==0
+    assert balance(engine,'cloth')['free']==Decimal('100.5')
+
+
+def test_purchase_receipt_allocation_and_reversal(setup):
+    engine,u,cmd=setup
+    p=payload(engine);p['materials'][0]['quantity']='120';p['cutting']['groups'][0]['quantity']='120';p['cutting']['allow_purchase']=True
+    issued=cmd('task.issue',p)
+    cmd('material.receive',dict(item_id='cloth',location='own',quantity='20'))
+    reserved=cmd('task.reserve_materials',dict(id=issued['id'],version=issued['version']))
+    fact=cmd('task.confirm',dict(id=issued['id'],version=reserved['version'],confirm_actual=True))
+    assert balance(engine,'cloth')['reserved']==0
+    assert balance(engine,'cloth')['free']==Decimal('.5')
+    rev=cmd('task.reverse_fact',dict(id=issued['id'],version=fact['version'],fact_id=fact['document_id']))
+    assert balance(engine,'cloth')['reserved']==120
+    cmd('task.cancel',dict(id=issued['id'],version=rev['version']))
+    assert balance(engine,'cloth')['free']==Decimal('120.5')

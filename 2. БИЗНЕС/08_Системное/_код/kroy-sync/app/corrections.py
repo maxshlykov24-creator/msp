@@ -50,6 +50,13 @@ def correct(s, doc, command, p):
                 if q:
                     remaining.append({'item_id': line['item_id'], 'quantity': str(q)})
             d['remaining_' + key] = remaining
+        if 'allocated_materials' in d:
+            from .material_supply import allocations, update_shortages
+            allocated = allocations(d)
+            for m in movements:
+                if m.bucket == 'reserved': allocated[m.item_id] = allocated.get(m.item_id, Decimal(0)) - m.quantity
+            d['allocated_materials'] = [{'item_id':i,'quantity':str(q)} for i,q in allocated.items() if q]
+            update_shortages(d)
         d['reversed_facts'] = reversed_facts
         d['status'] = 'partial' if active else 'approved'
         save(e, d)

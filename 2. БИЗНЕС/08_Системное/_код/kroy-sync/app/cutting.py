@@ -13,9 +13,9 @@ MSK = ZoneInfo('Europe/Moscow')
 def parameters(raw):
     today = datetime.now(MSK).date()
     end = date.fromisoformat(raw.get('end') or str(today-timedelta(days=1)))
-    start = date.fromisoformat(raw.get('start') or str(end-timedelta(days=13)))
-    target = date.fromisoformat(raw.get('target_date') or str(today+timedelta(days=28)))
-    horizon = int(raw.get('horizon', 28))
+    start = date.fromisoformat(raw.get('start') or str(end-timedelta(days=29)))
+    target = date.fromisoformat(raw.get('target_date') or str(today+timedelta(days=30)))
+    horizon = int(raw.get('horizon', 30))
     require(start <= end < today and (end-start).days < 90, 'Период: до 90 полных дней, без сегодняшнего дня', 422)
     require(1 <= horizon <= 365 and target >= today, 'Проверь горизонт и дату покрытия', 422)
     return dict(start=str(start), end=str(end), horizon=horizon, target_date=str(target), location=raw['location'], include_uncertain=sorted(set(raw.get('include_uncertain', []))))
@@ -35,14 +35,31 @@ def calculate(s, raw):
         candidates = d.get('remaining_products', []) if e.kind == 'task' and d.get('status') in ('approved', 'partial') else []
         if e.kind == 'freeze' and Decimal(d.get('remaining', '0')) > 0:
             candidates = [{'item_id': d['item_id'], 'quantity': d['remaining']}]
+        supplied = None
+        if e.kind == 'task' and d.get('awaiting_materials'):
+            from .material_supply import allocations
+            budget = allocations(d)
+            produced = {l['item_id']: Decimal(l['quantity']) for l in d.get('products', [])}
+            remaining = {l['item_id']: Decimal(l['quantity']) for l in candidates}
+            done = {i:q-remaining.get(i,0) for i,q in produced.items()}
+            supplied = {}
+            # Conservative: any partially executed layout waits for explicit allocation.
+            for g in d.get('cutting', {}).get('groups', []):
+                if any(done.get(i,0)>0 for i in g.get('products',{})): continue
+                material, need = g['material'], Decimal(str(g['quantity']))
+                if budget.get(material,0) >= need:
+                    budget[material] -= need
+                    for i,q in g['products'].items(): supplied[i] = supplied.get(i,0)+Decimal(str(q))
         touched = False
         for line in candidates:
             if line['item_id'] not in coverage: continue
             touched = True
+            quantity = Decimal(line['quantity'])
+            secured = min(quantity, supplied.get(line['item_id'],0)) if supplied is not None else quantity
             eligible = bool(due and today <= due <= p['target_date'])
-            uncertain = not due or due < today
+            uncertain = not due or due < today or secured < quantity
             selected = e.id in p['include_uncertain'] and uncertain
-            coverage[line['item_id']].append(dict(id=e.id, kind=e.kind, title=d.get('title', 'Замороженный выпуск'), quantity=line['quantity'], date=due, included=eligible or selected, uncertain=uncertain, manual=selected))
+            coverage[line['item_id']].append(dict(id=e.id, kind=e.kind, title=d.get('title', 'Замороженный выпуск'), quantity=line['quantity'], secured=str(secured), included_quantity=str(quantity if selected else secured if eligible else 0), date=due, included=eligible or selected, uncertain=uncertain, manual=selected))
         if touched: versions.append([e.id, e.version])
     windows = list(s.scalars(select(Entity).where(Entity.kind == 'sales_window')))
     mappings = {(e.data.get('platform'), e.data.get('item_id')): e.data for e in s.scalars(select(Entity).where(Entity.kind == 'mapping'))}
@@ -75,9 +92,9 @@ def calculate(s, raw):
                 else: reason = source_status.get(platform, {}).get('reason') or 'Нет полной сверенной выгрузки за выбранный период'
             platforms[platform] = dict(known=bool(w), sales=sales if w else None, returns=returns if w else None, at=w.data['at'] if w else None, net=sales-returns if w else None, reason=reason, source=w.data.get('source') if w else None, listed=iid not in w.data.get('not_listed_items',[]) if w else None, catalog_matches=w.data.get('catalog_matches',{}).get(iid,[]) if w else [])
         net = sum(v['sales']-v['returns'] for v in platforms.values()) if all(v['known'] for v in platforms.values()) else None
-        future = sum((Decimal(c['quantity']) for c in coverage[iid] if c['included']), Decimal(0))
+        future = sum((Decimal(c.get('included_quantity', c['quantity'])) for c in coverage[iid] if c['included']), Decimal(0))
         stock_assumed_zero = not (b and b.known)
-        free = None if stock_assumed_zero else b.free
+        free = Decimal(0) if stock_assumed_zero else b.free
         target = int((Decimal(max(0, net))*p['horizon']/((date.fromisoformat(p['end'])-date.fromisoformat(p['start'])).days+1)).to_integral_value(rounding=ROUND_CEILING)) if net is not None else None
         rows.append(dict(item_id=iid, stock_assumed_zero=stock_assumed_zero, platforms=platforms, net=net, free=str(free) if free is not None else None, future=str(future), coverage=coverage[iid], target=target, recommendation=max(0, int(Decimal(target)-free-future)) if target is not None and free is not None else None, balance_version=b.version if b else None))
     body = dict(parameters=p, rows=rows, versions=sorted(versions))

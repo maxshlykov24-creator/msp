@@ -15,7 +15,7 @@ PERMISSIONS = {
 }
 COMMAND_RIGHT = {
     'market.order.apply': 'orders', 'market.order.map': 'catalog',
-    'task.save': 'cut_plan', 'task.issue': 'cut_plan', 'item.create': 'catalog', 'item.update': 'catalog', 'user.create': 'settings', 'user.update': 'settings', 'norm.set': 'settings', 'telegram.link': 'settings', 'stock.adjust': 'adjust', 'freeze.create': 'freeze',
+    'task.reserve_materials': 'cut_plan', 'material.receive': 'adjust', 'task.save': 'cut_plan', 'task.issue': 'cut_plan', 'item.create': 'catalog', 'item.update': 'catalog', 'user.create': 'settings', 'user.update': 'settings', 'norm.set': 'settings', 'telegram.link': 'settings', 'stock.adjust': 'adjust', 'freeze.create': 'freeze',
     'freeze.release': 'freeze', 'freeze.extend': 'freeze', 'freeze.configure': 'settings', 'task.create': 'cut_plan',
     'task.reverse_fact': 'adjust', 'order.reserve': 'orders', 'fbo.reserve': 'orders', 'fbo.resolve': 'adjust', 'task.approve': 'cut_plan', 'task.revise': 'cut_plan', 'task.confirm': 'cut', 'task.cancel': 'cut_plan',
     'count.create': 'count', 'count.scan': 'count', 'count.set': 'count', 'count.resolve': 'count', 'count.post': 'adjust', 'count.save': 'count', 'count.refresh': 'count',
@@ -157,6 +157,15 @@ def execute(engine, user, op_id, command, payload, reason):
 
 
 def dispatch(s, doc, command, p):
+    if command == 'material.receive':
+        item = get_item(s, p['item_id'])
+        require(item.kind == 'material', 'Выбери материал')
+        q = quantity(p['quantity'], item)
+        b = get_balance(s, item.id, p['location'])
+        require(b.known, 'Сначала подтверди начальный остаток материала')
+        move(s, doc, item.id, p['location'], {'free': q})
+        return {'item_id': item.id, 'quantity': str(q)}
+
     if command == 'market.order.map':
         from .product_identity import bind_order_item
         return bind_order_item(s, doc, p)
@@ -236,9 +245,9 @@ def dispatch(s, doc, command, p):
         if command == 'task.issue':
             validate_issue(s, p, meta)
             require(materials, 'Укажи расход ткани')
-            for line in materials:
-                q = Decimal(line['quantity'])
-                move(s, doc, line['item_id'], p['location'], {'free': -q, 'reserved': q})
+            from .material_supply import reserve
+            d.update(location=p['location'], remaining_materials=materials, allocated_materials=[])
+            reserve(s, doc, d, meta.get('allow_purchase') is True)
         d.update(title=p.get('title') or 'Задание на крой', location=p['location'], products=products, materials=materials,
                  remaining_products=products, remaining_materials=materials, cutting=meta,
                  assignee=meta.get('assignee', ''), due_on=meta.get('due_on', ''), available_on=meta.get('available_on', ''),
@@ -256,7 +265,12 @@ def dispatch(s, doc, command, p):
     if command.startswith('task.'):
         e = entity(s, p['id'], 'task', p['version'])
         d = copy.deepcopy(e.data)
-        if command == 'task.approve':
+        if command == 'task.reserve_materials':
+            require(d['status'] in ('approved', 'partial'), 'Задание уже закрыто')
+            from .material_supply import reserve
+            if 'allocated_materials' not in d: d['allocated_materials'] = copy.deepcopy(d['remaining_materials'])
+            reserve(s, doc, d, True)
+        elif command == 'task.approve':
             require(d['status'] == 'draft', 'Утверждать можно только черновик')
             require(not d.get('cutting'), 'Выдай новое задание через проверку расчёта')
             require(d['materials'], 'До утверждения укажи материал и расход в его единице')
@@ -265,6 +279,7 @@ def dispatch(s, doc, command, p):
                 move(s, doc, line['item_id'], d['location'], {'free': -q, 'reserved': q})
             d['status'] = 'approved'
         elif command == 'task.revise':
+            require(not d.get('awaiting_materials'), 'Сначала обеспечь тканью или отмени остаток задания с докупкой')
             require(d['status'] in ('draft', 'approved', 'partial'), 'Задание уже закрыто')
             for key, kind in (('products', 'garment'), ('materials', 'material')):
                 updated = lines(s, p[key], kind)
@@ -286,13 +301,13 @@ def dispatch(s, doc, command, p):
                 d['remaining_' + key] = [{'item_id': i, 'quantity': str(q)} for i, q in remaining.items()]
             require(d['remaining_products'], 'Для закрытия используй подтверждение или отмену остатка')
             d['title'] = p.get('title', d['title'])
+            if 'allocated_materials' in d and d['status'] != 'draft': d['allocated_materials'] = copy.deepcopy(d['remaining_materials'])
             if d.get('cutting'): d['cutting']['layout_outdated'] = True
         elif command == 'task.cancel':
             require(d['status'] in ('draft', 'approved', 'partial'), 'Задание уже закрыто')
             if d['status'] != 'draft':
-                for line in d['remaining_materials']:
-                    q = Decimal(line['quantity'])
-                    move(s, doc, line['item_id'], d['location'], {'reserved': -q, 'free': q})
+                from .material_supply import release
+                release(s, doc, d)
             d['status'] = 'cancelled'
         else:
             require(d['status'] in ('approved', 'partial'), 'Задание не утверждено или уже закрыто')
@@ -300,6 +315,12 @@ def dispatch(s, doc, command, p):
             materials = lines(s, p.get('materials', d['remaining_materials']), 'material', allow_empty=True)
             require(materials or [f for f in d['facts'] if f not in d.get('reversed_facts', [])], 'Для первого факта нужен подтверждённый расход ткани')
             require(p.get('confirm_actual') is True, 'Подтверди, что количества являются фактическими', 422)
+            from .material_supply import allocations, update_shortages
+            allocated = allocations(d)
+            for line in materials:
+                require(Decimal(line['quantity']) <= allocated.get(line['item_id'], 0), 'Ткань ещё не поступила или не закреплена за заданием')
+                allocated[line['item_id']] -= Decimal(line['quantity'])
+            d['allocated_materials'] = [{'item_id':i,'quantity':str(q)} for i,q in allocated.items() if q]
             until = deadline(p.get('until'))
             for actual, key, bucket in ((materials, 'remaining_materials', 'reserved'), (products, 'remaining_products', 'frozen')):
                 rest = {l['item_id']: Decimal(l['quantity']) for l in d[key]}
@@ -313,13 +334,14 @@ def dispatch(s, doc, command, p):
                             'item_id': line['item_id'], 'location': d['location'], 'remaining': str(q),
                             'until': until, 'mode': 'manual', 'task_id': e.id, 'reminded': False, 'available_on': d.get('available_on', '')})
                 d[key] = [{'item_id': k, 'quantity': str(v)} for k, v in rest.items() if v]
+            update_shortages(d)
             d['facts'].append(doc)
             if not d['remaining_products']:
                 # Unused allocated cloth is released, never silently consumed.
-                for line in d['remaining_materials']:
-                    q = Decimal(line['quantity'])
-                    move(s, doc, line['item_id'], d['location'], {'reserved': -q, 'free': q})
+                from .material_supply import release
+                release(s, doc, d)
                 d['remaining_materials'] = []
+                update_shortages(d)
                 d['status'] = 'complete'
             else:
                 d['status'] = 'partial'
