@@ -186,3 +186,31 @@ def test_purchase_receipt_allocation_and_reversal(setup):
     assert balance(engine,'cloth')['reserved']==120
     cmd('task.cancel',dict(id=issued['id'],version=rev['version']))
     assert balance(engine,'cloth')['free']==Decimal('120.5')
+
+
+def test_fbo_reduces_demand_without_touching_own_stock(setup):
+    from app.sales import store_window
+    from app.fbo_stock import store_snapshot
+    engine,_,_=setup
+    with Session(engine) as s:params=calculate(s,dict(location='own',item_ids=['s']))['parameters']
+    for platform in ('wb','ozon'):
+        store_window(engine,dict(platform=platform,start=params['start'],end=params['end'],at=datetime.now(MSK).isoformat(),complete=True,verified=True,covered_items=['s'],events=[dict(id=platform,item_id='s',date=params['end'],kind='sale',quantity=30)]))
+    with Session(engine) as s:
+        assert calculate(s,dict(location='own',item_ids=['s'],include_fbo=True))['rows'][0]['recommendation'] is None
+    for platform in ('wb','ozon'):
+        store_snapshot(engine,platform,{'s':5},source='verified fixture',data_at=datetime.now(MSK).isoformat())
+    with Session(engine) as s:
+        result=calculate(s,dict(location='own',item_ids=['s'],include_fbo=True))
+        assert result['rows'][0]['recommendation']==40
+        fingerprint=result['fingerprint']
+    store_snapshot(engine,'wb',{'s':5},source='verified fixture',data_at=datetime.now(MSK).isoformat())
+    with Session(engine) as s:
+        assert calculate(s,dict(location='own',item_ids=['s'],include_fbo=True))['fingerprint']==fingerprint
+    assert balance(engine)['free']==10
+
+
+def test_purchase_layout_over_thirty_rolls_and_no_fabric(setup):
+    from app.planning import grouped_layout_preview
+    result=grouped_layout_preview('Лонг скимс',{'Чёрный':{'S':3000}},[{'S':1}],{'Чёрный':0},allow_purchase=True)
+    assert result['result']['Чёрный']['rolls']==40
+    assert result['result']['Чёрный']['purchase_rolls']==40

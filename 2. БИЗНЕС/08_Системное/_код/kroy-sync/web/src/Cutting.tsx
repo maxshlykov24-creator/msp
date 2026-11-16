@@ -240,8 +240,8 @@ function LayoutBuilder({ api, selected, qty, materials, norms, location, add }: 
             const patterns = ratios.split('\n').filter(x => x.trim()).map(line => { const values = line.split(':').map(Number); if (values.length !== sizes.length || values.some(v => !Number.isInteger(v) || v < 0))
                 throw Error('Укажи целые доли через двоеточие для каждого размера'); return Object.fromEntries(sizes.map((s, i) => [s, values[i]])); });
             const needs = Object.fromEntries(colors.map(c => [c, Object.fromEntries(sizes.map(s => [s, variants.filter(i => i.color === c && i.size === s).reduce((sum, i) => sum + Number(qty[i.id]), 0)]))]));
-            const available = Object.fromEntries(colors.map(c => { const m = materials.find(i => i.id === bindings[c]), b = m?.balances.find((b: Row) => b.location === location); if (!m || m.unit !== 'roll' || !b?.known)
-                throw Error('Для подбора нужны известные остатки целых рулонов по каждому цвету'); return [c, Math.max(0, Math.floor(Number(b.free)))]; }));
+            const available = Object.fromEntries(colors.map(c => { const m = materials.find(i => i.id === bindings[c]), b = m?.balances.find((b: Row) => b.location === location); if (!m || m.unit !== 'roll' || !b?.known && !purchase)
+                throw Error('Для подбора нужны известные остатки целых рулонов по каждому цвету'); return [c, Math.max(0, Math.floor(Number(b?.free||0)))]; }));
             if (new Set(Object.values(bindings)).size !== colors.length)
                 throw Error('Для разных цветов выбери разные материалы');
             const r = await api('planning/grouped-layout', { model: norm, needs_by_color: needs, ratios: patterns, available_by_color: available, allow_purchase: purchase });
