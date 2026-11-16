@@ -64,7 +64,7 @@ def test_pagination_cache_and_complete_boundary(tmp_path):
 
 def test_semantic_retrieval_time_does_not_invalidate_draft(setup):
     engine,u,cmd=setup
-    end=str(datetime.now(MSK).date()-timedelta(days=1));start=str(datetime.now(MSK).date()-timedelta(days=14))
+    end=str(datetime.now(MSK).date()-timedelta(days=1));start=str(datetime.now(MSK).date()-timedelta(days=30))
     data=dict(platform='wb',start=start,end=end,at=now().isoformat(),complete=True,verified=True,covered_items=['s'],events=[dict(id='sale',item_id='s',date=end,kind='sale',quantity=10)])
     store_window(engine,data)
     with Session(engine) as s:first=calculate(s,dict(location='own',item_ids=['s']))

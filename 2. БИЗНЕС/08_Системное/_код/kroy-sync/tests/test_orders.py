@@ -352,8 +352,8 @@ def test_saved_sales_make_a_recommendation_while_the_report_is_still_limited(set
     with Session(engine) as s:
         rows={r['item_id']:r for r in calculate(s,dict(location='own',item_ids=['s','m']))['rows']}
     assert rows['s']['platforms']['wb']['known'] and rows['s']['platforms']['wb']['sales']==1
-    assert rows['s']['stock_assumed_zero'] and rows['s']['recommendation'] is None and rows['s']['target']==2
-    assert rows['m']['platforms']['wb']['sales']==0 and rows['m']['stock_assumed_zero'] and rows['m']['recommendation'] is None
+    assert rows['s']['stock_assumed_zero'] and rows['s']['recommendation']==1 and rows['s']['target']==1
+    assert rows['m']['platforms']['wb']['sales']==0 and rows['m']['stock_assumed_zero'] and rows['m']['recommendation']==0
 
 
 def test_raw_sales_can_be_rebuilt_after_alias_change_without_an_api_call(setup):
@@ -547,7 +547,7 @@ def test_paginated_wb_sales_resume_after_cooldown_and_feed_recommendation(setup,
  from app.db import Balance
  with transaction(engine) as s:s.scalar(select(Balance).where(Balance.item_id=='s',Balance.location=='own')).known=False
  with Session(engine) as s:
-  row=calculate(s,dict(location='own',item_ids=['s']))['rows'][0];assert row['net']==2 and row['stock_assumed_zero'] and row['recommendation'] is None and row['target']==4
+  row=calculate(s,dict(location='own',item_ids=['s']))['rows'][0];assert row['net']==2 and row['stock_assumed_zero'] and row['recommendation']==2 and row['target']==2
 
 
 def test_wb_retry_without_headers_uses_conservative_method_limit(setup):
