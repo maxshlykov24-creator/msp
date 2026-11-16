@@ -12,6 +12,7 @@ def store_snapshot(engine, platform, quantities, *, source, data_at, interval_se
     require(interval_seconds >= 60, 'Некорректный интервал источника', 422)
     parsed = datetime.fromisoformat(data_at)
     require(parsed.tzinfo is not None, 'Укажи часовой пояс данных', 422)
+    require((parsed-now()).total_seconds() <= 300, 'Время данных ФБО находится в будущем', 422)
     values = {}
     for iid,q in quantities.items():
         require(type(q) is int and q >= 0, 'Некорректный доступный остаток ФБО', 422)
@@ -36,6 +37,7 @@ def read_stock(s, item_id):
         d=e.data if e else {}
         known=item_id in d.get('quantities',{})
         stale=not d.get('at') or (now()-datetime.fromisoformat(d['at'])).total_seconds()>2*d.get('interval_seconds',3600)
+        stale = stale or not d.get('data_at') or (now()-datetime.fromisoformat(d['data_at'])).total_seconds()>2*d.get('interval_seconds',3600)
         result[platform]=dict(known=known,quantity=d.get('quantities',{}).get(item_id),stale=stale,source=d.get('source'),at=d.get('at'),data_at=d.get('data_at'),version=e.version if e else None)
     total=sum(v['quantity'] for v in result.values()) if all(v['known'] for v in result.values()) else None
     return result,total

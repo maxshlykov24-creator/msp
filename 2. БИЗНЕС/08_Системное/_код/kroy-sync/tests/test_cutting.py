@@ -250,3 +250,31 @@ def test_ozon_fbo_cooldown_survives_failure(setup,tmp_path):
     assert first['state']=='waiting'
     assert sync_ozon(engine,env,denied)==first
     assert len(calls)==1
+
+
+def test_ignored_fbo_changes_do_not_invalidate_draft_and_old_source_is_stale(setup):
+    from app.fbo_stock import store_snapshot,read_stock
+    engine,_,_=setup
+    with Session(engine) as s:before=calculate(s,dict(location='own',item_ids=['s']))
+    store_snapshot(engine,'ozon',{'s':5},source='fixture',data_at=(datetime.now(MSK)-timedelta(hours=5)).isoformat())
+    with Session(engine) as s:
+        assert read_stock(s,'s')[0]['ozon']['stale']
+        assert calculate(s,dict(location='own',item_ids=['s']))['fingerprint']==before['fingerprint']
+
+
+def test_tracked_partial_layout_counts_only_secured_remaining(setup):
+    engine,_,cmd=setup
+    p=payload(engine)
+    p['products'][0]['quantity']='20';p['materials'][0]['quantity']='120'
+    p['cutting']['quantities']={'s':'20'};p['cutting']['allow_purchase']=True
+    group=p['cutting']['groups'][0];group['id']='first'
+    p['cutting']['groups'].append({**group,'id':'second','quantity':'118'})
+    task=cmd('task.issue',p)
+    fact=cmd('task.confirm',dict(id=task['id'],version=task['version'],group_id='first',confirm_actual=True,products=[dict(item_id='s',quantity=4)],materials=[dict(item_id='cloth',quantity=1)]))
+    with Session(engine) as s:
+        row=calculate(s,dict(location='own',item_ids=['s']))['rows'][0]
+        assert row['future']=='10' # Frozen 4 + secured remainder 6; second layout awaits cloth.
+    with pytest.raises(DomainError,match='выбранной раскладки'):
+        cmd('task.confirm',dict(id=task['id'],version=fact['version'],group_id='first',confirm_actual=True,products=[dict(item_id='s',quantity=8)],materials=[]))
+    reversed=cmd('task.reverse_fact',dict(id=task['id'],version=fact['version'],fact_id=fact['document_id']))
+    with Session(engine) as s:assert calculate(s,dict(location='own',item_ids=['s']))['rows'][0]['future']=='10'

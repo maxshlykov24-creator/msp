@@ -43,13 +43,19 @@ def calculate(s, raw):
             remaining = {l['item_id']: Decimal(l['quantity']) for l in candidates}
             done = {i:q-remaining.get(i,0) for i,q in produced.items()}
             supplied = {}
-            # Conservative: any partially executed layout waits for explicit allocation.
+            tracked = {k:v for k,v in d.get('group_facts',{}).items() if k not in d.get('reversed_facts',[])}
+            untracked = set(d.get('facts',[]))-set(d.get('reversed_facts',[]))-set(tracked)
             for g in ([] if d.get('cutting', {}).get('layout_outdated') else d.get('cutting', {}).get('groups', [])):
-                if any(done.get(i,0)>0 for i in g.get('products',{})): continue
-                material, need = g['material'], Decimal(str(g['quantity']))
+                # Legacy facts cannot be assigned to a layout by guesswork.
+                if untracked and any(done.get(i,0)>0 for i in g.get('products',{})): continue
+                facts = [f for f in tracked.values() if f['group_id']==g.get('id')]
+                spent = sum((Decimal(l['quantity']) for f in facts for l in f['materials']),Decimal(0))
+                material, need = g['material'], max(Decimal(0),Decimal(str(g['quantity']))-spent)
+                left = {i:max(Decimal(0),Decimal(str(q))-sum((Decimal(l['quantity']) for f in facts for l in f['products'] if l['item_id']==i),Decimal(0))) for i,q in g['products'].items()}
+                if not any(left.values()):continue
                 if budget.get(material,0) >= need:
-                    budget[material] -= need
-                    for i,q in g['products'].items(): supplied[i] = supplied.get(i,0)+Decimal(str(q))
+                    budget[material] = budget.get(material,0)-need
+                    for i,q in left.items(): supplied[i] = supplied.get(i,0)+q
         touched = False
         for line in candidates:
             if line['item_id'] not in coverage: continue
@@ -104,6 +110,10 @@ def calculate(s, raw):
         rows.append(dict(item_id=iid, fbo=fbo_platforms, fbo_total=fbo_total, fbo_included=p['include_fbo'], stock_assumed_zero=stock_assumed_zero, platforms=platforms, net=net, free=str(free) if free is not None else None, future=str(future), coverage=coverage[iid], target=target, recommendation=recommendation, balance_version=b.version if b else None))
     body = dict(parameters=p, rows=rows, versions=sorted(versions))
     fingerprint_body = {**body, 'rows': [{**r, 'fbo': {k:{x:v for x,v in values.items() if x not in ('at','data_at','source')} for k,values in r['fbo'].items()}, 'platforms': {k:{x:v for x,v in values.items() if x not in ('at','reason','source','catalog_matches')} for k,values in r['platforms'].items()}} for r in rows]}
+    if not p['include_fbo']:
+        for row in fingerprint_body['rows']:
+            row.pop('fbo', None)
+            row.pop('fbo_total', None)
     body['fingerprint'] = hashlib.sha256(json.dumps(fingerprint_body, sort_keys=True).encode()).hexdigest()
     body['calculated_at'] = now().isoformat()
     return body

@@ -325,6 +325,18 @@ def dispatch(s, doc, command, p):
                 require(Decimal(line['quantity']) <= allocated.get(line['item_id'], 0), 'Ткань ещё не поступила или не закреплена за заданием')
                 allocated[line['item_id']] -= Decimal(line['quantity'])
             d['allocated_materials'] = [{'item_id':i,'quantity':str(q)} for i,q in allocated.items() if q]
+            if p.get('group_id'):
+                require(not d.get('cutting', {}).get('layout_outdated'), 'Раскладки изменены, внеси общий факт')
+                group = next((g for g in d.get('cutting', {}).get('groups', []) if g.get('id') == p['group_id']), None)
+                require(group is not None, 'Раскладка не найдена')
+                previous = [v for k,v in d.get('group_facts', {}).items() if k not in d.get('reversed_facts', []) and v['group_id'] == p['group_id']]
+                for line in products:
+                    done = sum((Decimal(l['quantity']) for f in previous for l in f['products'] if l['item_id'] == line['item_id']), Decimal(0))
+                    require(Decimal(line['quantity'])+done <= Decimal(str(group['products'].get(line['item_id'],0))), 'Факт превышает остаток выбранной раскладки')
+                spent = sum((Decimal(l['quantity']) for f in previous for l in f['materials']), Decimal(0))
+                require(all(l['item_id'] == group['material'] for l in materials), 'Материал не относится к выбранной раскладке')
+                require(spent+sum((Decimal(l['quantity']) for l in materials),Decimal(0)) <= Decimal(str(group['quantity'])), 'Расход превышает остаток выбранной раскладки')
+                d.setdefault('group_facts', {})[doc] = dict(group_id=p['group_id'],products=products,materials=materials)
             until = deadline(p.get('until'))
             for actual, key, bucket in ((materials, 'remaining_materials', 'reserved'), (products, 'remaining_products', 'frozen')):
                 rest = {l['item_id']: Decimal(l['quantity']) for l in d[key]}
