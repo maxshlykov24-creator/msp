@@ -279,8 +279,9 @@ def dispatch(s, doc, command, p):
                 move(s, doc, line['item_id'], d['location'], {'free': -q, 'reserved': q})
             d['status'] = 'approved'
         elif command == 'task.revise':
-            require(not d.get('awaiting_materials'), 'Сначала обеспечь тканью или отмени остаток задания с докупкой')
             require(d['status'] in ('draft', 'approved', 'partial'), 'Задание уже закрыто')
+            from .material_supply import allocations, reserve
+            allocated = allocations(d)
             for key, kind in (('products', 'garment'), ('materials', 'material')):
                 updated = lines(s, p[key], kind)
                 old = {l['item_id']: Decimal(l['quantity']) for l in d[key]}
@@ -294,14 +295,17 @@ def dispatch(s, doc, command, p):
                     if left:
                         remaining[i] = left
                     if key == 'materials' and d['status'] != 'draft':
-                        delta = left - rest.get(i, Decimal(0))
-                        if delta:
-                            move(s, doc, i, d['location'], {'free': -delta, 'reserved': delta})
+                        release = max(Decimal(0), allocated.get(i, Decimal(0)) - left)
+                        if release:
+                            move(s, doc, i, d['location'], {'free': release, 'reserved': -release})
+                            allocated[i] -= release
                 d[key] = updated
                 d['remaining_' + key] = [{'item_id': i, 'quantity': str(q)} for i, q in remaining.items()]
             require(d['remaining_products'], 'Для закрытия используй подтверждение или отмену остатка')
             d['title'] = p.get('title', d['title'])
-            if 'allocated_materials' in d and d['status'] != 'draft': d['allocated_materials'] = copy.deepcopy(d['remaining_materials'])
+            if d['status'] != 'draft':
+                d['allocated_materials'] = [{'item_id':i,'quantity':str(q)} for i,q in allocated.items() if q]
+                reserve(s, doc, d, d.get('cutting', {}).get('allow_purchase') is True)
             if d.get('cutting'): d['cutting']['layout_outdated'] = True
         elif command == 'task.cancel':
             require(d['status'] in ('draft', 'approved', 'partial'), 'Задание уже закрыто')
