@@ -1,5 +1,7 @@
 (function () {
   var LIVE = __CT_LIVE__;
+  var IDENTITY = __CT_IDENTITY__;
+  var COUNTER = __CT_COUNTER__;
   var API = "__CT_API__";
   var ORIGINAL = "__CT_ORIGINAL__";
   if (navigator.webdriver) return;
@@ -36,6 +38,34 @@
   var leaseUntil = 0;
   var failures = 0;
   var retryTimer = null;
+  var identityPending = false;
+  var identityGeneration = 0;
+  var identitySent = {};
+  var identityRetry = null;
+  var identityAttempts = 0;
+  function captureIdentity() {
+    if (!IDENTITY || !visitId || identityPending || identityAttempts >= 4) return;
+    var requestedVisit = visitId, generation = identityGeneration;
+    identityAttempts++;
+    function retry() {
+      if (identityRetry || identityAttempts >= 4) return;
+      identityRetry = setTimeout(function () { identityRetry = null; captureIdentity(); }, 3000);
+    }
+    if (typeof window.ym !== "function" || !COUNTER) { retry(); return; }
+    identityPending = true;
+    // A blocked counter must not accumulate one queued callback per heartbeat.
+    try {
+      window.ym(COUNTER, "getClientID", function (uid) {
+        identityPending = false;
+        if (generation !== identityGeneration || requestedVisit !== visitId) return;
+        if (typeof uid !== "string" || !/^[0-9]{1,255}$/.test(uid) || /^0+$/.test(uid)) { retry(); return; }
+        if (identitySent[requestedVisit] === uid) return;
+        post("/ct/session", {visit_id: requestedVisit, identity_only: true, ym_uid: uid}).then(function () {
+          identitySent[requestedVisit] = uid;
+        }).catch(retry);
+      });
+    } catch (e) { identityPending = false; retry(); }
+  }
 
   function last10(value) {
     var digits = String(value || "").replace(/\D/g, "");
@@ -137,6 +167,7 @@
   function apply(data) {
     if (!data || data.mode === "off") return;
     if (data.visit_id) {
+      if (visitId !== data.visit_id) { identityGeneration++; identityAttempts = 0; }
       visitId = data.visit_id;
       setCookie("ct_visit", String(data.visit_id));
       setCookie("roistat_visit", String(data.visit_id));
@@ -149,6 +180,7 @@
       replacePhones(data.number, data.display);
       watch();
     }
+    captureIdentity();
   }
 
   function post(path, body) {

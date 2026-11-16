@@ -157,6 +157,10 @@ def allocate_pool(db: Session, visit: Visit, now: Optional[dt.datetime] = None) 
     now = now or dt.datetime.now(timezone.utc)
     hold = timedelta(minutes=int(settings.ct_hold_minutes))
 
+    if settings.ct_allocation_v2_enabled:
+        # Serialize different tabs of the same visit, including an empty pool lookup.
+        db.execute(select(Visit.id).where(Visit.id == visit.id).with_for_update()).one()
+
     own = (
         db.execute(
             select(PoolNumber)
@@ -164,7 +168,11 @@ def allocate_pool(db: Session, visit: Visit, now: Optional[dt.datetime] = None) 
                 PoolNumber.kind == "pool",
                 PoolNumber.active.is_(True),
                 PoolNumber.held_by_visit_id == visit.id,
+                *([PoolNumber.held_until > now] if settings.ct_allocation_v2_enabled else []),
             )
+            .order_by(select(func.max(Assignment.started_at)).where(
+                Assignment.number_id == PoolNumber.id, Assignment.visit_id == visit.id,
+            ).correlate(PoolNumber).scalar_subquery().desc(), PoolNumber.id.desc())
             .with_for_update()
         )
         .scalars()
@@ -225,7 +233,9 @@ def pool_snapshot(db: Session, now: Optional[dt.datetime] = None) -> dict[str, i
     cutoff = int(reset.value) if reset else 0
     demand = db.scalar(select(func.count()).select_from(Visit).where(
         Visit.id > cutoff,
-        Visit.is_paid.is_(True), Visit.last_seen_at > now - timedelta(minutes=get_settings().ct_hold_minutes))) or 0
+        (Visit.is_paid.is_(True)) | (Visit.id.in_(select(PoolNumber.held_by_visit_id).where(
+            PoolNumber.kind == "pool", PoolNumber.active.is_(True), PoolNumber.held_until > now))),
+        Visit.last_seen_at > now - timedelta(minutes=get_settings().ct_hold_minutes))) or 0
     return {"total": total, "busy": busy, "free": total - busy, "demand": demand}
 
 

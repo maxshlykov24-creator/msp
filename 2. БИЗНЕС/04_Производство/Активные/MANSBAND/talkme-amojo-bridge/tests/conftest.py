@@ -5,11 +5,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-os.environ["DATABASE_URL"] = (
-    "postgresql+psycopg2://postgres:@/bridge_test?host=/private/tmp/mansband-ct-pg"
-)
-
-_PGDATA = Path("/tmp/mansband-ct-pg")
+_PGDATA = Path(os.environ.get("MANSBAND_TEST_PGDATA", "/tmp/mansband-ct-pg"))
+os.environ["DATABASE_URL"] = f"postgresql+psycopg2://postgres:@/bridge_test?host={_PGDATA.resolve()}"
 
 
 def _ensure_postgres() -> None:

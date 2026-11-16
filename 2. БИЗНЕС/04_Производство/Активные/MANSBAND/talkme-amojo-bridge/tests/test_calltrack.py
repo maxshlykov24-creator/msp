@@ -1470,7 +1470,7 @@ def test_mobile_click_waits_for_number_and_fails_open_to_base():
     script = r'''
 const vm = require('node:vm'), fs = require('node:fs'), assert = require('node:assert/strict');
 const source = fs.readFileSync('app/calltrack/static/ct.js', 'utf8')
-  .replace('__CT_LIVE__', 'true').replace('__CT_API__', 'https://example.test').replace('__CT_ORIGINAL__', '9310090251');
+  .replace('__CT_IDENTITY__', 'false').replace('__CT_COUNTER__', '95530802').replace('__CT_LIVE__', 'true').replace('__CT_API__', 'https://example.test').replace('__CT_ORIGINAL__', '9310090251');
 const settle = () => new Promise(setImmediate);
 function setup(fetcher) {
   const events={}, calls=[];
@@ -1577,3 +1577,242 @@ def test_summary_separates_calls_coverage_and_errors_and_merges_aliases():
         visits[-1].landing_url = "https://[broken"
         db.commit()
         assert "Источник не определён: 1" in summary_text(db, now)
+
+
+def test_active_lease_wins_over_expired_own_number(monkeypatch):
+    import datetime as dt
+    from app.config import get_settings
+    from app.calltrack.models import Visit, PoolNumber, Assignment
+    from app.calltrack.pool import allocate_pool
+    monkeypatch.setattr(get_settings(), 'ct_allocation_v2_enabled', True)
+    now = dt.datetime.now(dt.timezone.utc)
+    with _db() as db:
+        v = Visit(is_paid=True); db.add(v); db.flush()
+        for i, expiry in [(1, now-dt.timedelta(minutes=1)), (2, now+dt.timedelta(minutes=2))]:
+            n = PoolNumber(number=f'931000000{i}', kind='pool', held_by_visit_id=v.id, held_until=expiry)
+            db.add(n); db.flush()
+            db.add(Assignment(number_id=n.id, visit_id=v.id, started_at=now-dt.timedelta(minutes=10), last_seen_at=now, expires_at=expiry))
+        db.commit()
+        n = allocate_pool(db, v, now)
+        assert n.number == '9310000002'
+        assert db.query(Assignment).count() == 2
+
+
+def test_concurrent_same_visit_gets_only_one_number(monkeypatch):
+    import concurrent.futures, threading
+    from app.config import get_settings
+    from app.calltrack.models import Visit, PoolNumber, Assignment
+    from app.calltrack.pool import allocate_pool, sync_numbers
+    monkeypatch.setattr(get_settings(), 'ct_allocation_v2_enabled', True)
+    with _db() as db:
+        sync_numbers(db); v = Visit(is_paid=True); db.add(v); db.commit(); vid=v.id
+    barrier=threading.Barrier(4)
+    def allocate(_):
+        with _db() as db:
+            v=db.get(Visit,vid); barrier.wait(timeout=5)
+            number=allocate_pool(db,v).number; db.commit(); return number
+    with concurrent.futures.ThreadPoolExecutor(4) as ex:
+        assert len(set(ex.map(allocate,range(4))))==1
+    with _db() as db:
+        assert db.query(Assignment).count()==1
+
+
+def test_identity_update_never_renews_or_creates_lease(client, monkeypatch):
+    from app.config import get_settings
+    from app.calltrack.models import Visit, PoolNumber, Assignment
+    monkeypatch.setattr(get_settings(),'ct_identity_enabled',True)
+    first=client.post('/ct/session',headers=ORIGIN,json={'url':PAID_URL}).json()
+    vid=first['visit_id']
+    with _db() as db:
+        a=db.query(Assignment).filter_by(visit_id=vid).one(); expiry=a.expires_at
+        v=db.get(Visit,vid); last_seen=v.last_seen_at
+    uid='179258024512345678901234'
+    assert client.post('/ct/session',headers=ORIGIN,json={'visit_id':vid,'identity_only':True,'ym_uid':uid}).status_code==200
+    with _db() as db:
+        assert db.query(Assignment).filter_by(visit_id=vid).one().expires_at==expiry
+        assert db.get(Visit,vid).last_seen_at==last_seen
+        assert db.get(Visit,vid).ym_uid==uid
+    assert client.post('/ct/session',headers=ORIGIN,json={'visit_id':vid+999,'identity_only':True,'ym_uid':uid}).status_code==404
+    client.post('/ct/session',headers=ORIGIN,json={'visit_id':vid,'identity_only':True,'ym_uid':'123'})
+    with _db() as db:
+        assert db.get(Visit,vid).disputed
+        assert db.get(Visit,vid).ym_uid==uid
+        assert db.query(Visit).count()==1
+
+
+def test_waiting_identity_then_single_delivery(metrika_settings,monkeypatch):
+    import json,datetime as dt,httpx
+    from app.calltrack.metrika import enqueue_call,_deliver,_now,PREFIX
+    from app.models import KvState
+    monkeypatch.setattr(metrika_settings,'ct_metrika_wait_enabled',True)
+    posts=[]
+    def respond(r):
+        posts.append(r);return httpx.Response(200,json={'uploading':{'id':998}})
+    with _db() as db,httpx.Client(transport=httpx.MockTransport(respond)) as client:
+        call,v=_metrika_call(db);v.ym_uid=None;v.yclid=None
+        snap=dict(call.result['attribution_snapshot']);snap['ym_uid']=None;snap['tracking']={}
+        call.result={'attribution_snapshot':snap};db.flush()
+        enqueue_call(db,call);db.commit()
+        row=db.query(KvState).filter(KvState.key.like(PREFIX+'%')).one();state=json.loads(row.value)
+        assert state['status']=='waiting_identifier'
+        _deliver(db,row,state,client,_now());assert not posts
+        v.ym_uid='1792580245123456789';db.commit();state['next_try']=0
+        _deliver(db,row,state,client,_now());assert state['status']=='pending';assert not posts
+        _deliver(db,row,state,client,_now());assert state['status']=='uploaded';assert len(posts)==1
+
+
+def test_unknown_state_cannot_send_and_wait_expires(metrika_settings,monkeypatch):
+    import json,datetime as dt,httpx
+    from app.calltrack.metrika import enqueue_call,_deliver,_now,PREFIX
+    from app.models import KvState
+    with _db() as db,httpx.Client(transport=httpx.MockTransport(lambda r:pytest.fail('unexpected HTTP'))) as client:
+        call,v=_metrika_call(db);enqueue_call(db,call);db.commit()
+        row=db.query(KvState).filter(KvState.key.like(PREFIX+'%')).one();state=json.loads(row.value)
+        state['status']='future_state';_deliver(db,row,state,client,_now())
+        assert state['status']=='future_state'
+        state.update(status='waiting_identifier',wait_until=0)
+        _deliver(db,row,state,client,_now());assert state['status']=='skipped'
+
+
+def test_ready_upload_not_starved_by_waiters(metrika_settings,monkeypatch):
+    import httpx,json,time
+    from app.calltrack import metrika,telegram
+    from app.models import KvState
+    monkeypatch.setattr(telegram,'send',lambda message:True)
+    posts=[];real=httpx.Client
+    def handler(r):
+        posts.append(r);return httpx.Response(200,json={'uploading':{'id':123}})
+    monkeypatch.setattr(metrika.httpx,'Client',lambda **kw:real(transport=httpx.MockTransport(handler),**kw))
+    with _db() as db:
+        call,v=_metrika_call(db);metrika.enqueue_call(db,call)
+        for i in range(100):
+            db.add(KvState(key=f'ct_metrika:95530802:coll_r:{1000+i}',value=json.dumps({
+                'status':'waiting_identifier','call':call.id,'counter':95530802,'target':'coll_r',
+                'time':int(time.time())-60,'next_try':time.time()+300,'wait_until':time.time()+3600})))
+        db.commit()
+    counts=metrika.run_once()
+    assert counts['uploaded']==1 and len(posts)==1 and counts['waiting_identifier']==100
+
+
+def test_nested_ids_and_durable_retry_survive_worker_restart(monkeypatch):
+    import json
+    from app import main
+    from app.models import KvState
+    assert main._lead_ids_from_form({'leads[add][0][id]':'123','leads[add][0][custom_fields][0][id]':'456',
+                                    'leads[add][1][id]':'123','leads[add][2][id]':'-1'})==[123]
+    main._enqueue_amo_lead_jobs([123]);main._enqueue_amo_lead_jobs([123])
+    monkeypatch.setattr(main,'_amo_lead_added_task',lambda ids,attempt:ids)
+    main._run_amo_lead_jobs()
+    with _db() as db:
+        row=db.get(KvState,'ct_lead_job:123');state=json.loads(row.value)
+        assert state['status']=='retry' and state['attempts']==1
+        state['next_try']=0;row.value=json.dumps(state);db.commit()
+    monkeypatch.setattr(main,'_amo_lead_added_task',lambda ids,attempt:[])
+    main._run_amo_lead_jobs()
+    with _db() as db:assert json.loads(db.get(KvState,'ct_lead_job:123').value)['status']=='done'
+
+
+def test_empty_crm_lead_response_is_not_json_error(monkeypatch):
+    import httpx
+    from app import amo_v4
+    real=httpx.Client
+    monkeypatch.setattr(httpx,'Client',lambda **kw:real(transport=httpx.MockTransport(lambda r:httpx.Response(204))))
+    assert amo_v4.get_lead(lead_id=123,access_token='test')=={}
+
+
+def test_late_clientid_runtime_stays_with_requested_visit():
+    import subprocess
+    script=r'''
+const vm=require('node:vm'),fs=require('node:fs'),assert=require('node:assert/strict');
+const source=fs.readFileSync('app/calltrack/static/ct.js','utf8').replace('__CT_LIVE__','true')
+.replace('__CT_IDENTITY__','true').replace('__CT_COUNTER__','95530802')
+.replace('__CT_API__','https://example.test').replace('__CT_ORIGINAL__','9310090251');
+const events={},posts=[],callbacks=[];let vid=1;
+const window={addEventListener(k,v){events[k]=v},removeEventListener(){},ym(id,op,cb){callbacks.push(cb)}};
+const document={cookie:'',body:null,referrer:'',visibilityState:'visible',addEventListener(k,v){events[k]=v}};
+const location={hostname:'mansband.ru',search:'',href:'https://mansband.ru/'};
+vm.runInNewContext(source,{window,document,location,navigator:{webdriver:false},URLSearchParams,URL,AbortController,Date,Promise,
+setTimeout(){return 1},clearTimeout(){},setInterval(){},fetch(url,opts){let b=JSON.parse(opts.body);posts.push(b);
+return Promise.resolve({ok:true,json:()=>Promise.resolve(b.identity_only?{mode:'identity'}:{visit_id:vid,mode:'organic'})})}});
+const settle=()=>new Promise(setImmediate);
+(async()=>{
+ events.scroll();await settle();assert.equal(callbacks.length,1);
+ callbacks.shift()('179258024512345678901234');await settle();
+ assert.equal(posts.at(-1).ym_uid,'179258024512345678901234');assert.equal(posts.at(-1).visit_id,1);
+ events.visibilitychange();await settle();assert.equal(callbacks.length,1);
+ vid=2;events.visibilitychange();await settle();
+ let before=posts.length;callbacks.shift()('123');await settle();assert.equal(posts.length,before);
+ events.visibilitychange();await settle();callbacks.shift()('456');await settle();assert.equal(posts.at(-1).visit_id,2);
+})().catch(e=>{console.error(e);process.exitCode=1});
+'''
+    result=subprocess.run(['node','-e',script],capture_output=True,text=True,timeout=10)
+    assert result.returncode==0,result.stderr
+
+
+def test_crm_retry_after_is_persisted(monkeypatch):
+    import httpx,json,time
+    from app import main,amo_v4
+    from app.models import KvState
+    monkeypatch.setattr(main,'get_valid_access_token',lambda db:'test')
+    def limited(**kw):
+        response=httpx.Response(429,headers={'Retry-After':'7200'},request=httpx.Request('GET','https://crm.invalid'))
+        response.raise_for_status()
+    monkeypatch.setattr(amo_v4,'get_lead',limited)
+    main._enqueue_amo_lead_jobs([123]);main._run_amo_lead_jobs()
+    with _db() as db:
+        state=json.loads(db.get(KvState,'ct_lead_job:123').value)
+        assert state['status']=='retry' and state['next_try']>=time.time()+7190
+
+
+def test_identity_conflict_prevents_waiting_goal(metrika_settings,monkeypatch):
+    import json,httpx
+    from app.calltrack.metrika import enqueue_call,_deliver,_now,PREFIX
+    from app.models import KvState
+    with _db() as db,httpx.Client(transport=httpx.MockTransport(lambda r:pytest.fail('no upload on conflict'))) as client:
+        call,v=_metrika_call(db);enqueue_call(db,call);db.commit()
+        row=db.query(KvState).filter(KvState.key.like(PREFIX+'%')).one();state=json.loads(row.value)
+        state['status']='waiting_identifier';v.disputed=True;db.commit()
+        _deliver(db,row,state,client,_now());assert state['status']=='skipped'
+
+
+def test_quality_monitor_does_not_recover_on_transport_failure():
+    import importlib.util
+    spec=importlib.util.spec_from_file_location('ct_watch_test','scripts/uptime_watch.py')
+    m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+    messages=[];send=lambda message:messages.append(message) or True
+    state=m.step_quality({}, {'status':'warning','reasons':{'missing_identifier_recent':1}},send,100)
+    assert state['notified']
+    state=m.step_quality(state,None,send,200);assert len(messages)==1
+    state=m.step_quality(state,{'status':'warning','reasons':{'missing_identifier_recent':2}},send,201)
+    assert len(messages)==2
+    state=m.step_quality(state,{'status':'ok','reasons':{}},send,202)
+    assert not state.get('notified') and 'не считаются восстановленными' in messages[-1]
+
+
+def test_health_exposes_quality_without_changing_transport(client,monkeypatch):
+    import datetime as dt,json
+    from app.config import get_settings
+    from app.models import KvState
+    monkeypatch.setattr(get_settings(),'ct_reconcile_enabled',True)
+    with _db() as db:
+        db.add(KvState(key='ct_reconcile_state',value=json.dumps({'heartbeat':dt.datetime.now(dt.timezone.utc).isoformat()})))
+        db.add(KvState(key='ct_metrika_state',value=json.dumps({'missing_recent':1})));db.commit()
+    r=client.get('/ct/health')
+    assert r.status_code==200 and r.json()['status']=='ok'
+    assert r.json()['quality']['status']=='warning'
+
+
+def test_chat_tracking_failure_keeps_durable_job_retryable(monkeypatch):
+    import json,time
+    from types import SimpleNamespace
+    from app import main,amo_v4
+    from app.calltrack import matching
+    from app.models import KvState
+    monkeypatch.setattr(main,'get_valid_access_token',lambda db:'test')
+    monkeypatch.setattr(amo_v4,'get_lead',lambda **kw:{'id':123,'created_at':int(time.time())})
+    monkeypatch.setattr(amo_v4,'lead_phones',lambda **kw:[])
+    monkeypatch.setattr(amo_v4,'lead_contact_names',lambda **kw:[])
+    monkeypatch.setattr(matching,'decide',lambda *args,**kw:{'kind':'chat','conversation':SimpleNamespace(tracking={'utm_source':'yandex'})})
+    monkeypatch.setattr(main,'apply_tracking_to_lead',lambda *args,**kw:{'ok':False})
+    main._enqueue_amo_lead_jobs([123]);main._run_amo_lead_jobs()
+    with _db() as db:assert json.loads(db.get(KvState,'ct_lead_job:123').value)['status']=='retry'

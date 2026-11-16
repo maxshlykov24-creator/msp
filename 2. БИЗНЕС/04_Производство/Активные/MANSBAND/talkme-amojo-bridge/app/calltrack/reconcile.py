@@ -60,6 +60,10 @@ def _save_state(db: Session, state: dict[str, Any]) -> None:
         row.updated_at = dt.datetime.now(timezone.utc)
 
 
+from app.calltrack.matching import serialized_call
+
+
+@serialized_call
 def save_repeat_call(db: Session, call: CallEvent, lead_id: int, token: str) -> None:
     """Compact attribution snapshot committed before CRM; retries reuse it."""
     from app import amo_v4

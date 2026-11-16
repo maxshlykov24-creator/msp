@@ -9,12 +9,43 @@ from pathlib import Path
 URL = "https://ai-msp.ru/ct/health"
 
 
-def healthy():
+def read_health():
     try:
         with urllib.request.urlopen(URL, timeout=15) as r:
-            return r.status == 200 and json.load(r).get("status") == "ok"
+            data = json.load(r)
+            return r.status == 200 and data.get("status") == "ok", data.get("quality")
     except Exception:
-        return False
+        return False, None
+
+
+def healthy():
+    return read_health()[0]
+
+
+def step_quality(state, quality, notify, now):
+    state = dict(state)
+    if quality is None:
+        return state  # Transport failure cannot prove quality recovered.
+    warning = quality.get("status") != "ok"
+    reasons = {k: v for k, v in quality.get("reasons", {}).items() if v}
+    signature = json.dumps(reasons, sort_keys=True)
+    if warning:
+        if not state.get("notified") or now - state.get("sent_at", 0) >= 1800 or (
+                signature != state.get("signature") and now - state.get("sent_at", 0) >= 60):
+            labels = {"crm_pending_or_error": "Звонки ожидают обработки CRM или имеют ошибку",
+                      "unattributed_recent": "Звонки без источника за сутки",
+                      "crm_jobs": "Задания CRM требуют внимания", "fallback_recent": "Визиты с резервным номером за 5 минут",
+                      "metrika_errors": "Ошибки или неясные отправки Метрики", "metrika_stalled": "Задержанные загрузки Метрики",
+                      "missing_identifier_recent": "Звонки без идентификатора Метрики за сутки",
+                      "notification_failures": "Не доставлены внутренние предупреждения"}
+            detail = "\n".join(f"{labels.get(k, k)}: {v}" for k, v in reasons.items())
+            if notify("MANSBAND: проблемы качества коллтрекинга.\n" + detail + "\nДоступность проверяется отдельно."):
+                state.update(notified=True, sent_at=now, signature=signature)
+    elif state.get("notified"):
+        if notify("MANSBAND: текущих сигналов качества коллтрекинга нет. Исторические пропуски не считаются восстановленными."):
+            state = {}
+    state["status"] = quality.get("status")
+    return state
 
 
 def send(config, message):
@@ -68,7 +99,10 @@ def main():
         return
     path = Path(args.state)
     state = json.loads(path.read_text()) if path.exists() else {}
-    state = step(state, healthy(), notify, time.time())
+    ok, quality = read_health()
+    previous_quality = state.get("quality", {})
+    state = step(state, ok, notify, time.time())
+    state["quality"] = step_quality(previous_quality, quality, notify, time.time())
     path.parent.mkdir(parents=True, exist_ok=True)
     temp = path.with_suffix(".tmp")
     temp.write_text(json.dumps(state))

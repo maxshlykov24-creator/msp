@@ -33,7 +33,7 @@ def send(text: str) -> bool:
     return True
 
 
-def incident(db, key: str, active: bool, message: str, now=None) -> bool:
+def incident(db, key: str, active: bool, message: str, now=None, fingerprint=None) -> bool:
     """Один сигнал, повтор через 30 минут, затем восстановление. Неудача не гасит сигнал."""
     import datetime as dt
     import json
@@ -46,14 +46,19 @@ def incident(db, key: str, active: bool, message: str, now=None) -> bool:
     sent = False
     if active:
         last = float(state.get("last_sent", 0))
-        if not last or now.timestamp() - last >= 1800:
+        changed = fingerprint is not None and fingerprint != state.get("fingerprint")
+        if not last or now.timestamp() - last >= 1800 or (changed and now.timestamp() - last >= 60):
             sent = send(message)
             if sent:
                 state["last_sent"] = now.timestamp()
                 state["notified"] = True
+                state["fingerprint"] = fingerprint
+                state["delivery_failed"] = False
+            else:
+                state["delivery_failed"] = True
         state["active"] = True
     elif state.get("notified"):
-        sent = send("Восстановлено: " + key)
+        sent = send("Нет текущих сигналов: " + key + ". Исторические пропуски не считаются восстановленными.")
         if sent:
             state = {}
     else:

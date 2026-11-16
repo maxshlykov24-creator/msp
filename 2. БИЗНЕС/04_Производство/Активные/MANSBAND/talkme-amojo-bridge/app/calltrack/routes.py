@@ -33,6 +33,7 @@ class SessionIn(BaseModel):
     ym_uid: Optional[str] = None
     test: bool = False
     call_intent: bool = False
+    identity_only: bool = False
 
 
 class PingIn(BaseModel):
@@ -139,7 +140,8 @@ def _load_visit(db: Session, visit_id: Optional[int], now: datetime):
     reset = db.get(KvState, "ct_visit_reset_max_id")
     if reset and visit_id <= int(reset.value):
         return None
-    visit = db.get(Visit, visit_id)
+    from sqlalchemy import select
+    visit = db.scalar(select(Visit).where(Visit.id == visit_id).with_for_update())
     if visit is None:
         return None
     created = visit.created_at
@@ -148,6 +150,15 @@ def _load_visit(db: Session, visit_id: Optional[int], now: datetime):
     if created < now - timedelta(hours=24):
         return None
     return visit
+
+
+def _merge_identity(visit, value):
+    if not value or not value.isascii() or not value.isdigit() or int(value) <= 0 or len(value) > 255:
+        return
+    if visit.ym_uid and visit.ym_uid != value:
+        visit.disputed = True
+    elif not visit.ym_uid:
+        visit.ym_uid = value
 
 
 def _fill_visit(visit, fresh: dict[str, Optional[str]], url: str, referrer: str, ym_uid: Optional[str], ua: str, now: datetime) -> None:
@@ -161,8 +172,7 @@ def _fill_visit(visit, fresh: dict[str, Optional[str]], url: str, referrer: str,
         visit.landing_url = _clip(url, 4000)
     if referrer and not visit.referrer:
         visit.referrer = _clip(referrer, 4000)
-    if ym_uid and not visit.ym_uid:
-        visit.ym_uid = _clip(ym_uid, 255)
+    _merge_identity(visit, ym_uid)
     if ua and not visit.user_agent:
         visit.user_agent = ua[:500]
     visit.last_seen_at = now
@@ -214,6 +224,8 @@ def ct_js() -> Response:
     settings = get_settings()
     body = (
         _JS.replace("__CT_LIVE__", "true" if settings.ct_live else "false")
+        .replace("__CT_IDENTITY__", "true" if settings.ct_identity_enabled else "false")
+        .replace("__CT_COUNTER__", str(settings.ct_metrika_counter_id))
         .replace("__CT_API__", (settings.bridge_public_base or "").rstrip("/"))
         .replace("__CT_ORIGINAL__", digits10(settings.ct_original_number) or "9310090251")
     )
@@ -259,8 +271,20 @@ def ct_session(
     if _BOT.search(ua):
         return JSONResponse(_payload("organic", None, _organic_number()), headers=headers)
     try:
-        sync_numbers(db, settings)
+        from sqlalchemy import text
+        db.execute(text("SET LOCAL lock_timeout = '1500ms'"))
+        db.execute(text("SET LOCAL statement_timeout = '2500ms'"))
         now = datetime.now(timezone.utc)
+        if payload.identity_only:
+            if not settings.ct_identity_enabled:
+                raise HTTPException(status_code=409, detail="identity disabled", headers=headers)
+            visit = _load_visit(db, payload.visit_id, now)
+            if visit is None:
+                raise HTTPException(status_code=404, detail="visit", headers=headers)
+            _merge_identity(visit, payload.ym_uid)
+            db.commit()
+            return JSONResponse({"mode": "identity", "visit_id": visit.id}, headers=headers)
+        sync_numbers(db, settings)
         fresh = tracking_from_url(payload.url)
         visit = _load_visit(db, payload.visit_id, now)
         # Новый размеченный переход не смешиваем с метками прошлой кампании.
@@ -380,7 +404,30 @@ def ct_health(db: Session = Depends(get_db)) -> Response:
             metric_state = json.loads(metric_row.value) if metric_row and metric_row.value else {}
             metric_stamp = datetime.fromisoformat(metric_state["heartbeat"]) if metric_state.get("heartbeat") else None
             healthy = bool(healthy and metric_stamp and datetime.now(timezone.utc) - metric_stamp < timedelta(minutes=10))
-        return JSONResponse({"status": "ok" if healthy else "degraded", "live": get_settings().ct_live},
+        from sqlalchemy import select
+        alerts = db.scalars(select(KvState).where(KvState.key.like("ct_alert:%"))).all()
+        notification_failures = sum(bool(json.loads(r.value).get("delivery_failed")) for r in alerts)
+        counts = db.execute(text("""SELECT
+            count(*) FILTER (WHERE status IN ('new','retry','error','no_lead') AND started_at > now()-interval '1 day'),
+            count(*) FILTER (WHERE status='unattributed' AND started_at > now()-interval '1 day'),
+            count(*) FILTER (WHERE status IN ('no_lead','unattributed','error') AND started_at <= now()-interval '1 day')
+            FROM ct_call""")).one()
+        jobs = db.scalar(text("""SELECT count(*) FROM kv_state WHERE key LIKE 'ct_lead_job:%'
+            AND ((value::jsonb->>'status' IN ('failed','retry')
+            AND (value::jsonb->>'created_at')::float > extract(epoch from now()-interval '1 day'))
+            OR (value::jsonb->>'status'='pending' AND (value::jsonb->>'created_at')::float < extract(epoch from now()-interval '5 minutes')))""")) or 0
+        fallback = db.scalar(text("""SELECT count(*) FROM kv_state WHERE key LIKE 'ct_fallback:%'
+            AND (value::jsonb->>'last_at')::timestamptz > now()-interval '5 minutes'""")) or 0
+        metric = json.loads(db.get(KvState, "ct_metrika_state").value) if db.get(KvState, "ct_metrika_state") else {}
+        reasons = {"crm_pending_or_error": counts[0], "unattributed_recent": counts[1],
+                   "crm_jobs": jobs, "fallback_recent": fallback,
+                   "metrika_errors": metric.get("quality_problems", 0),
+                   "metrika_stalled": metric.get("stalled", 0),
+                   "missing_identifier_recent": metric.get("missing_recent", 0),
+                   "notification_failures": notification_failures}
+        quality = {"status": "warning" if any(reasons.values()) else "ok", "reasons": reasons,
+                   "history_unresolved": counts[2], "metrika_counts": metric.get("counts", {})}
+        return JSONResponse({"status": "ok" if healthy else "degraded", "live": get_settings().ct_live, "quality": quality},
                             status_code=200 if healthy else 503, headers={"Cache-Control": "no-store"})
     except Exception:
         return JSONResponse({"status": "unavailable"}, status_code=503)

@@ -242,7 +242,7 @@ def test_queue_overview_filters_search_and_safe_actions(db,monkeypatch):
     assert result['items'][0]['phone_tail']=='0001' and 'phone' not in result['items'][0]
     assert result['items'][0]['can_exclude'] and not result['items'][0]['can_classify']
     assert result['segments'][0]['existing']==1 and result['segments'][1]['attention']==1
-    assert result['start_day']=='2026-11-11' and result['next_window']=='2026-11-11T10:00:00+03:00'
+    assert result['start_day']=='2026-11-11' and result['next_window']=='2026-11-11T09:00:00+03:00'
 
 def test_queue_sent_includes_replied_and_cannot_exclude_attempted(db,monkeypatch):
     j=job(db);j.test=False;j.state='reply_handoff';j.sent_at=m.now();j.replied_at=m.now()

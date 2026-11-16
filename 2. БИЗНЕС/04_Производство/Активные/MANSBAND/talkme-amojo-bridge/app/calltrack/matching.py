@@ -273,6 +273,27 @@ def decide(
     return {"kind": "none"}
 
 
+def serialized_call(fn):
+    """Session lock survives commits; shared by webhook and repeat reconciliation."""
+    from functools import wraps
+    @wraps(fn)
+    def wrapped(db, call, *args, **kwargs):
+        from app.database import get_engine
+        from sqlalchemy import text
+        with get_engine().connect() as lock:
+            if not lock.scalar(text("SELECT pg_try_advisory_lock(95530803, :id)"), {"id": call.id}):
+                return {"ok": False, "reason": "call_busy"}
+            try:
+                db.refresh(call)
+                if call.status in {"matched", "repeat"}:
+                    return {"ok": True, "status": call.status}
+                return fn(db, call, *args, **kwargs)
+            finally:
+                lock.execute(text("SELECT pg_advisory_unlock(95530803, :id)"), {"id": call.id})
+    return wrapped
+
+
+@serialized_call
 def apply_call(
     db: Session,
     call: CallEvent,

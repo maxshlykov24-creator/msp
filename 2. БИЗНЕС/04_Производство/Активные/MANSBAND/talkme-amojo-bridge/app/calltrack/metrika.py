@@ -16,7 +16,7 @@ import re
 from urllib.parse import urlparse
 
 import httpx
-from sqlalchemy import JSON, select, text
+from sqlalchemy import JSON, select, text, func
 from sqlalchemy.dialects.postgresql import insert
 
 from app.calltrack.models import CallEvent, Visit
@@ -28,6 +28,7 @@ log = logging.getLogger(__name__)
 PREFIX = "ct_metrika:"
 API = "https://api-metrika.yandex.net/management/v1/counter/"
 TERMINAL = {"processed", "skipped", "failed"}
+DELIVERABLE = {"pending", "retry", "sending", "uncertain", "uploaded", "waiting_identifier"}
 
 
 def _now():
@@ -73,7 +74,8 @@ def enqueue_call(db, call, *, pilot=False):
     if not value.isascii() or not value.isdigit() or int(value) <= 0:
         reason = reason or "missing_metrika_identifier"
     state = {
-        "status": "skipped" if reason else "pending", "reason": reason,
+        "status": ("waiting_identifier" if reason == "missing_metrika_identifier" and s.ct_metrika_wait_enabled else "skipped") if reason else "pending", "reason": reason,
+        "version": 2, "wait_until": int(call.started_at.timestamp()) + 86400,
         "call": call.id, "counter": s.ct_metrika_counter_id,
         "target": s.ct_metrika_goal, "id_type": id_type, "identifier": value,
         "time": int(call.started_at.timestamp()), "attempts": 0,
@@ -104,8 +106,39 @@ def _accept(db, row, state, upload):
 def _deliver(db, row, state, client, now):
     base = API + str(state["counter"]) + "/offline_conversions/"
     status = state["status"]
-    if status in TERMINAL or float(state.get("next_try", 0)) > now.timestamp():
+    if status not in DELIVERABLE or float(state.get("next_try", 0)) > now.timestamp():
         return
+    if status == "waiting_identifier":
+        call = db.get(CallEvent, state["call"])
+        snap = (call.result or {}).get("attribution_snapshot", {}) if call else {}
+        visit = db.get(Visit, snap.get("visit_id")) if snap.get("visit_id") else None
+        campaign = str(snap.get("tracking", {}).get("utm_campaign") or "").lower()
+        valid = bool(call and visit and snap.get("kind") == "pool" and
+                     call.raw.get("EventType") == "dial-in" and call.raw.get("CallFlow") == "in" and
+                     urlparse(snap.get("landing_url") or visit.landing_url or "").hostname in {"mansband.ru", "www.mansband.ru"} and
+                     not campaign.startswith(("ct_ops_check_", "chat_check_", "live_launch_20261021", "launch_check")))
+        if not valid or snap.get("disputed") or visit.disputed:
+            state.update(status="skipped", reason="identity_conflict_or_missing_visit")
+        elif now.timestamp() >= state.get("wait_until", state["time"] + 86400):
+            state.update(status="skipped", reason="missing_metrika_identifier")
+        else:
+            uid, yclid = str(visit.ym_uid or ""), str(snap.get("tracking", {}).get("yclid") or "")
+            kind, value = ("ClientId", uid) if uid.isascii() and uid.isdigit() and int(uid) > 0 else ("Yclid", yclid)
+            if value.isascii() and value.isdigit() and int(value) > 0:
+                state.update(status="pending", reason=None, identifier=value, id_type=kind, next_try=0)
+            else:
+                state["next_try"] = now.timestamp() + 60
+        _save(db, row, state)
+        return
+    # Never alter an attempted payload, including an ambiguous upload.
+    if status == "pending" and not state.get("attempts"):
+        call = db.get(CallEvent, state["call"])
+        snap = (call.result or {}).get("attribution_snapshot", {}) if call else {}
+        visit = db.get(Visit, snap.get("visit_id")) if snap.get("visit_id") else None
+        if visit and visit.disputed:
+            state.update(status="skipped", reason="disputed_visit")
+            _save(db, row, state)
+            return
     if now.timestamp() - state["time"] > 20 * 86400:
         state.update(status="failed", error="conversion_too_old")
         _save(db, row, state)
@@ -195,10 +228,15 @@ def run_once():
                 db.commit()
                 with httpx.Client(headers={"Authorization": "OAuth " + s.ct_metrika_token},
                                   timeout=20.0, follow_redirects=False) as client:
-                    rows = db.scalars(select(KvState).where(
-                        KvState.key.like(prefix + "%"),
-                        KvState.value.cast(JSON)["status"].as_string().not_in(TERMINAL),
-                    ).order_by(KvState.updated_at).limit(50)).all()
+                    now = _now()
+                    rows = []
+                    # Each class has its own bounded quota; waiting rows cannot starve delivery.
+                    for group in ({"sending", "uncertain"}, {"uploaded"}, {"pending", "retry"}, {"waiting_identifier"}):
+                        rows.extend(db.scalars(select(KvState).where(
+                            KvState.key.like(prefix + "%"),
+                            KvState.value.cast(JSON)["status"].as_string().in_(group),
+                            func.coalesce(KvState.value.cast(JSON)["next_try"].as_float(), 0) <= now.timestamp(),
+                        ).order_by(KvState.updated_at, KvState.key).limit(50)).all())
                     now = _now()
                     errors = 0
                     for row in rows:
@@ -215,13 +253,20 @@ def run_once():
 
                     counts = dict(db.execute(text("SELECT value::jsonb->>'status', count(*) FROM kv_state WHERE key LIKE :prefix GROUP BY 1"),
                                              {"prefix": prefix + "%"}).all())
-                    problems = errors + sum(counts.get(k, 0) for k in ("failed", "uncertain", "retry", "sending"))
-                    stalled = any(json.loads(r.value).get("status") == "uploaded" and
-                                  now - dt.datetime.fromisoformat(json.loads(r.value)["uploaded_at"]) > dt.timedelta(hours=3) for r in rows)
-                    missing = db.scalar(text("SELECT count(*) FROM kv_state WHERE key LIKE :prefix AND value::jsonb->>'reason'='missing_metrika_identifier'"),
-                                        {"prefix": prefix + "%"}) or 0
+                    unknown = sum(v for k, v in counts.items() if k not in TERMINAL | DELIVERABLE)
+                    problems = errors + unknown + sum(counts.get(k, 0) for k in ("failed", "uncertain", "retry", "sending"))
+                    # Inspect the whole queue, not only this batch of due work.
+                    stalled = db.scalar(text("""SELECT count(*) FROM kv_state WHERE key LIKE :prefix
+                        AND value::jsonb->>'status'='uploaded'
+                        AND (value::jsonb->>'uploaded_at')::timestamptz < :cutoff"""),
+                        {"prefix": prefix + "%", "cutoff": now - dt.timedelta(hours=3)}) or 0
+                    missing = db.scalar(text("""SELECT count(*) FROM kv_state WHERE key LIKE :prefix
+                        AND value::jsonb->>'reason'='missing_metrika_identifier'
+                        AND (value::jsonb->>'time')::bigint > :cutoff"""),
+                        {"prefix": prefix + "%", "cutoff": int(now.timestamp()) - 86400}) or 0
                     incident(db, "передача целей Метрики", bool(problems or stalled or missing),
-                             f"Метрика: {problems} ошибок или неясных отправок, без идентификатора: {missing}, задержка обработки: {bool(stalled)}. Проверь очередь целей; повтор вслепую отключён.")
+                             f"Метрика: {problems} ошибок или неясных отправок, без идентификатора за сутки: {missing}, задержанных загрузок: {stalled}. Старые пропуски остаются в истории.",
+                             fingerprint=f"{problems}:{stalled}:{missing}")
                     state = db.get(KvState, "ct_metrika_state")
                     if state is None:
                         state = KvState(key="ct_metrika_state")
@@ -232,7 +277,8 @@ def run_once():
 
                         if send(f"Метрика завершила обработку первой конверсии {s.ct_metrika_goal}, счётчик {s.ct_metrika_counter_id}. Статистика в отчётах может обновиться позже."):
                             previous["first_processed_notified"] = True
-                    previous.update(heartbeat=now.isoformat(), counts=counts, errors=errors)
+                    previous.update(heartbeat=now.isoformat(), counts=counts, errors=errors,
+                                    quality_problems=problems, stalled=stalled, missing_recent=missing, unknown_states=unknown)
                     state.value = json.dumps(previous)
                     db.commit()
                     return counts

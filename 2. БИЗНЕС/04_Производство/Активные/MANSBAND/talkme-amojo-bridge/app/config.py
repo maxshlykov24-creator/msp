@@ -83,6 +83,9 @@ class Settings(BaseSettings):
     telphin_webhook_secret: str = ""
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
+    ct_allocation_v2_enabled: bool = False
+    ct_identity_enabled: bool = False
+    ct_metrika_wait_enabled: bool = False
     ct_metrika_enabled: bool = False
     ct_metrika_counter_id: int = 0
     ct_metrika_goal: str = ""

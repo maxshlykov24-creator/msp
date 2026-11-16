@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import secrets
 import threading
 import time
@@ -14,7 +15,7 @@ from urllib.parse import parse_qsl
 from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse
 import httpx
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -57,6 +58,7 @@ async def lifespan(_: FastAPI):
     poll_task: Optional[asyncio.Task[None]] = None
     reconcile_task: Optional[asyncio.Task[None]] = None
     metrika_task: Optional[asyncio.Task[None]] = None
+    lead_task = asyncio.create_task(_amo_lead_jobs_loop())
     if s.ct_metrika_enabled:
         from app.calltrack.metrika import delivery_loop
 
@@ -72,6 +74,7 @@ async def lifespan(_: FastAPI):
     try:
         yield
     finally:
+        lead_task.cancel()
         if poll_task is not None:
             poll_task.cancel()
         if reconcile_task is not None:
@@ -911,12 +914,17 @@ def _match_conversation(
     return _match_conversation_by_phones(db, phones) or _match_conversation_by_names(db, names)
 
 
-def _amo_lead_added_task(lead_ids: list[int], attempt: int = 0) -> None:
+class LeadRetries(list):
+    delay = 0
+    permanent = False
+
+
+def _amo_lead_added_task(lead_ids: list[int], attempt: int = 0) -> LeadRetries:
     """Новая сделка в amoCRM: звонок коллтрекинга или беседа Talk-me.
 
     Сначала звонок в окне 15 минут, затем беседа. Если нашлись оба, берётся
     то, что ближе по времени к созданию сделки. Контакт цепляется не сразу,
-    событие Телфин тоже может опоздать, поэтому повторы 10, 45 и 120 секунд.
+    событие Телфин тоже может опоздать; повторы сохраняет очередь webhook.
     Сделка без звонка идёт прежним путём чата.
     """
     from app.calltrack.matching import apply_call, decide
@@ -924,15 +932,9 @@ def _amo_lead_added_task(lead_ids: list[int], attempt: int = 0) -> None:
     from app.database import get_session_factory
 
     settings = get_settings()
-    if attempt == 1:
-        time.sleep(10)
-    elif attempt == 2:
-        time.sleep(45)
-    elif attempt >= 3:
-        time.sleep(120)
     Sess = get_session_factory()
     db = Sess()
-    retry: list[int] = []
+    retry = LeadRetries()
     try:
         token = get_valid_access_token(db)
         for lead_id in lead_ids:
@@ -944,6 +946,8 @@ def _amo_lead_added_task(lead_ids: list[int], attempt: int = 0) -> None:
                 if completed:
                     continue
                 lead = amo_v4.get_lead(lead_id=lead_id, access_token=token, settings=settings)
+                if not lead:
+                    continue
                 created_raw = lead.get("created_at")
                 created = datetime.fromtimestamp(int(created_raw or time.time()), tz=timezone.utc)
                 phones = amo_v4.lead_phones(lead=lead, access_token=token, settings=settings)
@@ -961,25 +965,45 @@ def _amo_lead_added_task(lead_ids: list[int], attempt: int = 0) -> None:
                         if attempt < 3:
                             retry.append(lead_id)
                         continue
-                    apply_tracking_to_lead(db, cm, lead_id, token)
+                    result = apply_tracking_to_lead(db, cm, lead_id, token)
+                    if not result.get("ok"):
+                        retry.append(lead_id)
                     continue
-                apply_call(db, decision["call"], lead_id, lead, token)
-            except Exception:
-                log.exception("lead %s: обработка add_lead упала", lead_id)
+                result = apply_call(db, decision["call"], lead_id, lead, token)
+                if not result.get("ok"):
+                    retry.append(lead_id)
+            except Exception as exc:
+                db.rollback()
+                if isinstance(exc, httpx.HTTPStatusError):
+                    retry.append(lead_id)
+                    if exc.response.status_code == 429:
+                        from email.utils import parsedate_to_datetime
+                        raw = exc.response.headers.get("Retry-After", "")
+                        try:
+                            delay = float(raw) if raw.isdigit() else parsedate_to_datetime(raw).timestamp() - time.time()
+                            retry.delay = max(retry.delay, max(0, delay))
+                        except (ValueError, TypeError, OverflowError):
+                            pass
+                    elif exc.response.status_code < 500:
+                        retry.permanent = True
+                else:
+                    retry.append(lead_id)
+                log.warning("lead %s: add_lead error=%s", lead_id, type(exc).__name__)
     finally:
         db.close()
-    if retry and attempt < 3:
-        threading.Thread(target=_amo_lead_added_task, args=(retry, attempt + 1), daemon=True).start()
+    return retry
 
 
 def _lead_ids_from_form(form: dict[str, Any]) -> list[int]:
     """amoCRM шлёт вебхук как form-urlencoded: leads[add][0][id]=123."""
     ids: list[int] = []
     for key, value in form.items():
-        if not key.startswith("leads[add]") or not key.endswith("[id]"):
+        if not re.fullmatch(r"leads\[add\]\[\d+\]\[id\]", key):
             continue
         try:
-            ids.append(int(str(value)))
+            lead_id = int(str(value))
+            if lead_id > 0 and lead_id not in ids:
+                ids.append(lead_id)
         except (TypeError, ValueError):
             continue
     return ids
@@ -1005,7 +1029,9 @@ async def amo_leads_webhook(
         raise HTTPException(status_code=400, detail="Invalid form")
     lead_ids = _lead_ids_from_form(form)
     if lead_ids:
-        background_tasks.add_task(_amo_lead_added_task, lead_ids, 0)
+        from starlette.concurrency import run_in_threadpool
+        await run_in_threadpool(_enqueue_amo_lead_jobs, lead_ids)
+        background_tasks.add_task(_run_amo_lead_jobs)
     else:
         log.info("amo lead hook: нет leads[add] в теле")
     return Response(status_code=200)
@@ -1193,3 +1219,68 @@ async def _talkme_poll_loop() -> None:
         except Exception:
             log.exception("Talk-me poll loop error")
         await asyncio.sleep(interval)
+
+
+# Durable webhook jobs: accept only after commit, recover after process restart.
+def _enqueue_amo_lead_jobs(lead_ids):
+    from app.database import get_session_factory
+    with get_session_factory()() as db:
+        for lid in lead_ids:
+            db.execute(pg_insert(KvState).values(key=f"ct_lead_job:{lid}", value=json.dumps({
+                "version": 1, "lead": lid, "status": "pending", "attempts": 0,
+                "next_try": 0, "created_at": time.time(),
+            })).on_conflict_do_nothing(index_elements=["key"]))
+        db.commit()
+
+
+def _run_amo_lead_jobs():
+    from app.database import get_engine, get_session_factory
+    with get_engine().connect() as lock:
+        if not lock.scalar(text("SELECT pg_try_advisory_lock(95530802, 1001)")):
+            return
+        try:
+            with get_session_factory()() as db:
+                rows = db.scalars(select(KvState).where(
+                    KvState.key.like("ct_lead_job:%"),
+                    text("value::jsonb->>'status' IN ('pending','retry')"),
+                    text("COALESCE((value::jsonb->>'next_try')::float,0) <= extract(epoch from now())"),
+                ).order_by(KvState.updated_at, KvState.key).limit(20)).all()
+                for row in rows:
+                    state = json.loads(row.value)
+                    try:
+                        remaining = _amo_lead_added_task([state["lead"]], min(state["attempts"], 3))
+                        state["attempts"] += 1
+                        if remaining:
+                            state["status"] = "retry" if state["attempts"] < 6 and not getattr(remaining, "permanent", False) else "failed"
+                            state["next_try"] = time.time() + max(getattr(remaining, "delay", 0), min(900, 30 * 2 ** state["attempts"]))
+                        else:
+                            state["status"] = "done"
+                            state["error"] = None
+                    except Exception as exc:
+                        db.rollback()
+                        state["attempts"] += 1
+                        state.update(status="retry" if state["attempts"] < 6 else "failed",
+                                     error=type(exc).__name__, next_try=time.time() + 300)
+                    row.value = json.dumps(state)
+                    row.updated_at = datetime.now(timezone.utc)
+                    db.commit()
+                heartbeat = db.get(KvState, "ct_lead_jobs_state")
+                if heartbeat is None:
+                    heartbeat = KvState(key="ct_lead_jobs_state"); db.add(heartbeat)
+                heartbeat.value = json.dumps({"heartbeat": datetime.now(timezone.utc).isoformat()})
+                heartbeat.updated_at = datetime.now(timezone.utc)
+                db.commit()
+        finally:
+            lock.execute(text("SELECT pg_advisory_unlock(95530802, 1001)"))
+
+
+async def _amo_lead_jobs_loop():
+    await asyncio.sleep(5)
+    while True:
+        try:
+            await asyncio.to_thread(_run_amo_lead_jobs)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            log.warning("lead jobs worker error=%s", type(exc).__name__)
+        await asyncio.sleep(10)

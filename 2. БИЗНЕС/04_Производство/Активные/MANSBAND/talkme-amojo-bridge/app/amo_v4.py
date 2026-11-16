@@ -93,8 +93,13 @@ def get_lead(*, lead_id: int, access_token: str, settings: Optional[Settings] = 
     url = f"{api_base(settings)}/api/v4/leads/{lead_id}"
     with httpx.Client(timeout=30.0) as client:
         r = client.get(url, params={"with": "contacts"}, headers=_headers(access_token))
+        if r.status_code in {204, 404} or (r.is_success and not r.content):
+            return {}
         r.raise_for_status()
-        return r.json() or {}
+        doc = r.json()
+        if not isinstance(doc, dict) or not doc.get("id"):
+            raise ValueError("Invalid CRM lead response")
+        return doc
 
 
 def get_contact(
@@ -104,8 +109,9 @@ def get_contact(
     url = f"{api_base(settings)}/api/v4/contacts/{contact_id}"
     with httpx.Client(timeout=30.0) as client:
         r = client.get(url, headers=_headers(access_token))
-        if r.status_code >= 400:
+        if r.status_code in {204, 404}:
             return {}
+        r.raise_for_status()
         return r.json() or {}
 
 
