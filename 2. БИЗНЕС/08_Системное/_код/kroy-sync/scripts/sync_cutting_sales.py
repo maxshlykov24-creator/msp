@@ -21,6 +21,8 @@ while True:
         except BlockingIOError:
             if not watch:print('Sales reader already running');break
             time.sleep(2);continue
+        if '--stocks-only' in sys.argv:
+            print(json.dumps(sync_ozon(engine,os.environ),ensure_ascii=False));break
         if watch:
             job=claim(engine)
             if job:

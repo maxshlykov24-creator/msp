@@ -64,7 +64,7 @@ def calculate(s, raw):
             secured = min(quantity, supplied.get(line['item_id'],0)) if supplied is not None else quantity
             eligible = bool(due and today <= due <= p['target_date'])
             uncertain = not due or due < today or secured < quantity
-            selected = e.id in p['include_uncertain'] and uncertain
+            selected = e.id in p['include_uncertain'] and uncertain and (not due or due <= p['target_date'])
             coverage[line['item_id']].append(dict(id=e.id, kind=e.kind, title=d.get('title', 'Замороженный выпуск'), quantity=line['quantity'], secured=str(secured), included_quantity=str(quantity if selected else secured if eligible else 0), date=due, included=eligible or selected, uncertain=uncertain, manual=selected))
         if touched: versions.append([e.id, e.version])
     windows = list(s.scalars(select(Entity).where(Entity.kind == 'sales_window')))
@@ -154,6 +154,12 @@ def validate_issue(s, p, meta):
     require(groups, 'Нужны раскладки задания')
     for g in groups:
         require(g.get('ratio', '').strip(), 'Укажи соотношение размеров')
+        if g.get('norm'):
+            from .norms import resolve
+            used = resolve(s,g['norm'],list(g['products']),{iid:g['material'] for iid in g['products']})
+            require(not g.get('norm_snapshot') or g['norm_snapshot']==used,'Норма изменилась. Повтори подбор раскладок')
+            g['norm_snapshot']=used
+            g['norm_value']=next(iter(used.values()))['yield']
         material = get_item(s, g['material'])
         require(material.kind == 'material', 'Укажи материал')
         q = quantity(g['quantity'], material)

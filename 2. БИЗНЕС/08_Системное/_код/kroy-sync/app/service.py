@@ -315,6 +315,8 @@ def dispatch(s, doc, command, p):
             d['status'] = 'cancelled'
         else:
             require(d['status'] in ('approved', 'partial'), 'Задание не утверждено или уже закрыто')
+            # A purchase intention is not available cloth. Revise the remaining
+            # plan explicitly if actual consumption is lower than planned.
             products = lines(s, p.get('products', d['remaining_products']), 'garment')
             materials = lines(s, p.get('materials', d['remaining_materials']), 'material', allow_empty=True)
             require(materials or [f for f in d['facts'] if f not in d.get('reversed_facts', [])], 'Для первого факта нужен подтверждённый расход ткани')
@@ -351,6 +353,7 @@ def dispatch(s, doc, command, p):
                             'until': until, 'mode': 'manual', 'task_id': e.id, 'reminded': False, 'available_on': d.get('available_on', '')})
                 d[key] = [{'item_id': k, 'quantity': str(v)} for k, v in rest.items() if v]
             update_shortages(d)
+            require(d['remaining_products'] or not d.get('awaiting_materials'), 'Осталась недостающая ткань. Сначала прими ткань или явно скорректируй план расхода')
             d['facts'].append(doc)
             if not d['remaining_products']:
                 # Unused allocated cloth is released, never silently consumed.

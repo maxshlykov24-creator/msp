@@ -23,9 +23,10 @@ def allocate(total, weights):
     return out
 
 
-def layout_preview(model, need, ratios, max_rolls, confirmed=False, _budget=None):
-    if model not in NORMS:
+def layout_preview(model, need, ratios, max_rolls, confirmed=False, _budget=None, _norm=None):
+    if _norm is None and model not in NORMS:
         raise ValueError('Нет нормы; доступно ручное задание')
+    norm = _norm if _norm is not None else NORMS[model]
     if not need or any(type(v) is not int or v < 0 for v in need.values()):
         raise ValueError('Потребность должна быть целой и неотрицательной')
     if not 1 <= max_rolls <= 1000 or not 1 <= len(ratios) <= 12:
@@ -33,13 +34,13 @@ def layout_preview(model, need, ratios, max_rolls, confirmed=False, _budget=None
     if any(set(r) != set(need) for r in ratios):
         raise ValueError('Состав размеров раскладок и потребности должен совпадать')
     # Candidate is one roll, with integral garment output; never rounds each size up.
-    per_roll = [allocate(NORMS[model], r) for r in ratios]
+    per_roll = [allocate(norm, r) for r in ratios]
     budget = _budget if _budget is not None else {'remaining': 50000}
     best = None
     checked = 0
     limited = False
-    for rolls in range(max(1, ceil(sum(need.values()) * .8 / NORMS[model])), max_rolls + 1):
-        if rolls * NORMS[model] > sum(need.values()) * Decimal('1.2'):
+    for rolls in range(max(1, ceil(sum(need.values()) * .8 / norm)), max_rolls + 1):
+        if rolls * norm > sum(need.values()) * Decimal('1.2'):
             break
         for picks in combinations_with_replacement(range(len(ratios)), rolls):
             checked += 1
@@ -58,7 +59,7 @@ def layout_preview(model, need, ratios, max_rolls, confirmed=False, _budget=None
                                'deviation_percent': {s: round((output[s] / v - 1) * 100, 2) if v else None for s, v in need.items()}})
         if limited:
             break
-    return {'model': model, 'need': need, 'norm': NORMS[model], 'norm_source': NORM_SOURCE,
+    return {'model': model, 'need': need, 'norm': norm, 'norm_source': NORM_SOURCE,
             'preliminary': True, 'technology_confirmed': confirmed, 'search_limited': limited,
             'result': best[1] if best else None,
             'message': 'Предварительный вариант; норма требует подтверждения' if best else
@@ -76,14 +77,15 @@ def demand(sales, period_days, horizon_days, eligible_stock, expected_remaining)
             'included_stock': eligible_stock, 'included_future': expected_remaining}
 
 
-def grouped_layout_preview(model, needs_by_color, ratios, available_by_color, allow_purchase=False):
+def grouped_layout_preview(model, needs_by_color, ratios, available_by_color, allow_purchase=False, _norm=None):
     """Shared pattern selection across colours with a bounded deterministic search.
 
     Each colour has separate whole-roll availability. Patterns are shared only inside
     a model; the caller must still confirm fabric/technology compatibility.
     """
-    if model not in NORMS:
+    if _norm is None and model not in NORMS:
         raise ValueError('Нет нормы модели')
+    norm = _norm if _norm is not None else NORMS[model]
     if not needs_by_color or set(needs_by_color) != set(available_by_color):
         raise ValueError('Потребность и доступная ткань должны включать одинаковые цвета')
     if len(needs_by_color) > 12 or not 1 <= len(ratios) <= 8:
@@ -100,10 +102,10 @@ def grouped_layout_preview(model, needs_by_color, ratios, available_by_color, al
     for ratio in ratios:
         if set(ratio) != sizes:
             raise ValueError('Размеры раскладки должны совпадать с потребностью')
-        allocate(NORMS[model], ratio)
+        allocate(norm, ratio)
     actual_available = dict(available_by_color)
     if allow_purchase:
-        available_by_color = {c:max(actual_available[c], min(1000, ceil(sum(need.values())*1.2/NORMS[model]))) for c,need in needs_by_color.items()}
+        available_by_color = {c:max(actual_available[c], min(1000, ceil(sum(need.values())*1.2/norm))) for c,need in needs_by_color.items()}
     from itertools import combinations
     colors = sorted(needs_by_color)
     checked = 0
@@ -120,7 +122,7 @@ def grouped_layout_preview(model, needs_by_color, ratios, available_by_color, al
                     continue
                 if available_by_color[color] == 0:
                     break
-                candidate = layout_preview(model, needs_by_color[color], [ratios[i] for i in indices], available_by_color[color], _budget=budget)
+                candidate = layout_preview(model, needs_by_color[color], [ratios[i] for i in indices], available_by_color[color], _budget=budget, _norm=norm)
                 limited = limited or candidate['search_limited']
                 if not candidate['result']:
                     break
@@ -136,7 +138,7 @@ def grouped_layout_preview(model, needs_by_color, ratios, available_by_color, al
             best = min(options, key=lambda x: (x[0], sum(max(needs_by_color[c][s]-row['output'][s],0) for c,row in x[3].items() for s in row['output']), x[1], x[2]))
             for color,row in best[3].items(): row['purchase_rolls'] = max(0,row['rolls']-actual_available[color])
             return {'preliminary': True, 'search_limited': limited, 'patterns_used': list(best[2]),
-                    'result': best[3], 'pattern_outputs': [allocate(NORMS[model], r) for r in ratios], 'norm': NORMS[model], 'norm_source': NORM_SOURCE,
+                    'result': best[3], 'pattern_outputs': [allocate(norm, r) for r in ratios], 'norm': norm, 'norm_source': NORM_SOURCE,
                     'message': ('Достигнут лимит поиска. Показан найденный допустимый вариант, оптимальность не доказана. ' if limited else '') + 'Совместимость ткани и раскладок должна быть подтверждена закройщиком'}
         if limited:
             return {'preliminary':True,'search_limited':True,'result':None,'message':'Лимит поиска. Нельзя утверждать, что решения нет'}

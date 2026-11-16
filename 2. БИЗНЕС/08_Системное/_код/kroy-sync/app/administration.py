@@ -61,6 +61,8 @@ def administer(s, doc, command, p, actor_id):
         q = quantity(p['yield'])
         require(q == q.to_integral_value(), 'Выход должен быть целым')
         require(type(p['confirmed']) is bool, 'Укажи подтверждение применимости', 422)
+        if p.get('material_id'):
+            require(get_item(s,p['material_id']).kind=='material','Норма должна ссылаться на ткань',422)
         key = 'norm:' + doc
         s.add(Entity(id=key, kind='norm', version=1, data={**p, 'yield': str(q), 'model': item.model, 'document_id': doc}))
         return {'id': key, 'version': 1}

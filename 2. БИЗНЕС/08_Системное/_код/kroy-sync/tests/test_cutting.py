@@ -278,3 +278,59 @@ def test_tracked_partial_layout_counts_only_secured_remaining(setup):
         cmd('task.confirm',dict(id=task['id'],version=fact['version'],group_id='first',confirm_actual=True,products=[dict(item_id='s',quantity=8)],materials=[]))
     reversed=cmd('task.reverse_fact',dict(id=task['id'],version=fact['version'],fact_id=fact['document_id']))
     with Session(engine) as s:assert calculate(s,dict(location='own',item_ids=['s']))['rows'][0]['future']=='10'
+
+
+def test_unfunded_completion_requires_explicit_plan_revision(setup):
+    engine,_,cmd=setup
+    p=payload(engine);p['materials'][0]['quantity']='120';p['cutting']['groups'][0]['quantity']='120';p['cutting']['allow_purchase']=True
+    task=cmd('task.issue',p)
+    fact=cmd('task.confirm',dict(id=task['id'],version=task['version'],confirm_actual=True,products=[dict(item_id='s',quantity=1)],materials=[dict(item_id='cloth',quantity=1)]))
+    with pytest.raises(DomainError,match='недостающая ткань'):
+        cmd('task.confirm',dict(id=task['id'],version=fact['version'],confirm_actual=True,products=[dict(item_id='s',quantity=9)],materials=[]))
+    assert balance(engine)['frozen']==1
+    revised=cmd('task.revise',dict(id=task['id'],version=fact['version'],products=p['products'],materials=[dict(item_id='cloth',quantity=1)]))
+    cmd('task.confirm',dict(id=task['id'],version=revised['version'],confirm_actual=True,products=[dict(item_id='s',quantity=9)],materials=[]))
+    assert balance(engine)['frozen']==10
+
+
+def test_manual_uncertain_never_crosses_target_date(setup):
+    engine,_,cmd=setup
+    p=payload(engine);p['materials'][0]['quantity']='120';p['cutting']['groups'][0]['quantity']='120';p['cutting']['allow_purchase']=True
+    p['cutting']['available_on']=str(datetime.now(MSK).date()+timedelta(days=60))
+    task=cmd('task.issue',p)
+    with Session(engine) as s:
+        row=calculate(s,dict(location='own',item_ids=['s'],include_uncertain=[task['id']]))['rows'][0]
+        assert row['future']=='0' and not row['coverage'][0]['included']
+
+
+def test_versioned_norms_preview_and_issue_recheck(setup):
+    from app.api import create_app
+    from fastapi.testclient import TestClient
+    engine,_,cmd=setup
+    client=TestClient(create_app(engine));headers={'Authorization':'Bearer test-only'}
+    cmd('norm.set',dict(item_id='s',effective_date=str(datetime.now(MSK).date()),**{'yield':'99.0'},confirmed=True))
+    r=client.post('/api/planning/grouped-layout',headers=headers,json=dict(model='Лонг скимс',item_ids=['s'],needs_by_color={'red':{'S':99}},ratios=[{'S':1}],available_by_color={'red':1}))
+    assert r.status_code==200,r.text
+    assert r.json()['norm']==99 and r.json()['result']['red']['output']['S']==99
+    assert client.get('/api/norms',headers=headers).json()['overrides'][0]['yield']=='99.0'
+    p=payload(engine);p['cutting']['groups'][0].update(norm='Лонг скимс',norm_snapshot=r.json()['norm_snapshot'])
+    cmd('norm.set',dict(item_id='s',effective_date=str(datetime.now(MSK).date()+timedelta(days=1)),**{'yield':150},confirmed=True))
+    issued=cmd('task.issue',p) # Future norm cannot replace today's version.
+    p=payload(engine);p['cutting']['groups'][0].update(norm='Лонг скимс',norm_snapshot=r.json()['norm_snapshot'])
+    cmd('norm.set',dict(item_id='s',effective_date=str(datetime.now(MSK).date()),**{'yield':100},confirmed=True))
+    with pytest.raises(DomainError,match='Норма изменилась'):cmd('task.issue',p)
+    with Session(engine) as s:assert s.get(Entity,issued['id']).data['cutting']['groups'][0]['norm_value']==99
+
+
+def test_norm_scope_does_not_leak_to_other_sizes_or_materials(setup):
+    from app.norms import resolve
+    engine,_,cmd=setup
+    cmd('norm.set',dict(item_id='s',material_id='cloth',effective_date=str(datetime.now(MSK).date()),**{'yield':99},confirmed=True))
+    with Session(engine) as s:
+        assert resolve(s,'Лонг скимс',['s'],{'s':'cloth'})['s']['yield']==99
+        assert resolve(s,'Лонг скимс',['s'])['s']['yield']==75
+        assert resolve(s,'Лонг скимс',['m'],{'m':'cloth'})['m']['yield']==75
+        with pytest.raises(DomainError,match='разные нормы'):resolve(s,'Лонг скимс',['s','m'],{'s':'cloth','m':'cloth'})
+    cmd('norm.set',dict(item_id='s',material_id='cloth',effective_date=str(datetime.now(MSK).date()),**{'yield':100},confirmed=False))
+    with Session(engine) as s:
+        with pytest.raises(DomainError,match='не подтверждена'):resolve(s,'Лонг скимс',['s'],{'s':'cloth'})

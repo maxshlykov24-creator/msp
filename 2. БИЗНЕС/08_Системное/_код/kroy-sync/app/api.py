@@ -326,19 +326,31 @@ def create_app(engine=None):
 
     @app.get('/api/norms')
     def norms(user=Depends(auth)):
-        return {'values': NORMS, 'source': NORM_SOURCE, 'confirmed': False}
+        from .norms import current
+        with Session(engine) as s:
+            overrides=current(s)
+            values=dict(NORMS)
+            from decimal import Decimal
+            for model in {n['model'] for n in overrides}:
+                yields={int(Decimal(n['yield'])) for n in overrides if n['model']==model and n['confirmed']}
+                if len(yields)==1: values[model]=next(iter(yields))
+            return {'values': values, 'source': NORM_SOURCE, 'confirmed': False, 'overrides': overrides}
 
     @app.post('/api/planning/layout')
     def layout(body: dict, user=Depends(auth)):
         try:
-            return layout_preview(**body)
+            from .norms import prepare
+            with Session(engine) as s: args,snapshot=prepare(s,body)
+            return {**layout_preview(**args),'norm_snapshot':snapshot}
         except (ValueError, TypeError) as exc:
             raise HTTPException(422, str(exc)) from exc
 
     @app.post('/api/planning/grouped-layout')
     def grouped_layout(body: dict, user=Depends(auth)):
         try:
-            return grouped_layout_preview(**body)
+            from .norms import prepare
+            with Session(engine) as s: args,snapshot=prepare(s,body)
+            return {**grouped_layout_preview(**args),'norm_snapshot':snapshot}
         except (ValueError, TypeError, KeyError) as exc:
             raise HTTPException(422, 'Проверь нормы, размеры, раскладки и доступную ткань') from exc
 

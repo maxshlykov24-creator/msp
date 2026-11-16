@@ -33,11 +33,27 @@ TimeoutStartSec=240
 Path('/etc/systemd/system/kroy-app-stage-sales.timer').write_text('''[Unit]
 Description=YUJI.CLO periodic sales refresh
 [Timer]
-OnBootSec=2min
-OnUnitActiveSec=15min
+OnCalendar=*-*-* 00,06,12,18:00:00 UTC
+Persistent=true
+RandomizedDelaySec=60
+[Install]
+WantedBy=timers.target
+''')
+Path('/etc/systemd/system/kroy-app-stage-stocks.service').write_text('''[Unit]
+Description=YUJI.CLO read-only FBO stock refresh
+'''+common+'''Type=oneshot
+ExecStart=/opt/kroy-app-stage/.venv/bin/python scripts/sync_cutting_sales.py --stocks-only
+TimeoutStartSec=240
+''')
+Path('/etc/systemd/system/kroy-app-stage-stocks.timer').write_text('''[Unit]
+Description=YUJI.CLO hourly FBO snapshot
+[Timer]
+OnCalendar=*-*-* *:10:00 UTC
+Persistent=true
+RandomizedDelaySec=60
 [Install]
 WantedBy=timers.target
 ''')
 subprocess.run(['systemctl','daemon-reload'],check=True)
-subprocess.run(['systemctl','enable','--now','kroy-app-stage-sales-worker.service','kroy-app-stage-sales.timer'],check=True)
+subprocess.run(['systemctl','enable','--now','kroy-app-stage-sales-worker.service','kroy-app-stage-sales.timer','kroy-app-stage-stocks.timer'],check=True)
 print('Read-only sales worker and timer installed')

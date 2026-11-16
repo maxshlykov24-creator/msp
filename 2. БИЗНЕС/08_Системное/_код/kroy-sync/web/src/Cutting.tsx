@@ -260,7 +260,7 @@ function LayoutBuilder({ api, selected, qty, groups, materials, norms, location,
                 throw Error('Для подбора нужны известные остатки целых рулонов по каждому цвету'); const used=groups.filter(g=>g.model!==model&&g.material===m.id).reduce((sum,g)=>sum+Number(g.quantity),0);return [c, Math.max(0, Math.floor(Number(b?.free||0)-used))]; }));
             if (new Set(Object.values(bindings)).size !== colors.length)
                 throw Error('Для разных цветов выбери разные материалы');
-            const r = await api('planning/grouped-layout', { model: norm, needs_by_color: needs, ratios: patterns, available_by_color: available, allow_purchase: purchase });
+            const r = await api('planning/grouped-layout', { model: norm, needs_by_color: needs, ratios: patterns, available_by_color: available, allow_purchase: purchase, item_ids:variants.map(i=>i.id), material_by_item:Object.fromEntries(variants.map(i=>[i.id,bindings[i.color]])) });
             setResult({ ...r, ratios: patterns });
         }
         catch (e) {
@@ -277,7 +277,7 @@ function LayoutBuilder({ api, selected, qty, groups, materials, norms, location,
         for (const pattern of [...new Set(row.patterns)] as number[]) {
             const rolls = row.patterns.filter((p: number) => p === pattern).length;
             const output = result!.pattern_outputs[pattern];
-            groups.push({ id: crypto.randomUUID(), model, color, material: bindings[color], quantity: String(rolls), ratio: Object.entries(result!.ratios[pattern]).filter(([, v]) => Number(v) > 0).map(([s, v]) => s + ': ' + v).join(' · '), norm, norm_value: norms[norm], preliminary: true, products: Object.fromEntries(variants.filter(i => i.color === color).map(i => [i.id, String((output[i.size] || 0) * rolls)])) });
+            groups.push({ id: crypto.randomUUID(), model, color, material: bindings[color], quantity: String(rolls), ratio: Object.entries(result!.ratios[pattern]).filter(([, v]) => Number(v) > 0).map(([s, v]) => s + ': ' + v).join(' · '), norm, norm_value: result!.norm, norm_snapshot:Object.fromEntries(Object.entries(result!.norm_snapshot||{}).filter(([id])=>variants.some(i=>i.id===id&&i.color===color))), preliminary: true, products: Object.fromEntries(variants.filter(i => i.color === color).map(i => [i.id, String((output[i.size] || 0) * rolls)])) });
         }
     } add(groups); setResult(null); }
     const rollMaterials = materials.filter(m => m.unit === 'roll');
@@ -290,7 +290,7 @@ function LayoutBuilder({ api, selected, qty, groups, materials, norms, location,
   {norm && Object.values(bindings).some(Boolean) && <label>Допустимые соотношения: {sizes.join(' : ')}<textarea value={ratios} onChange={e => { setRatios(e.target.value); setResult(null); }} placeholder="Каждая раскладка с новой строки, например 1:1:0"/><span className="cut-hint">Укажи только допустимые для ткани соотношения. Норма даёт предварительный выход.</span></label>}
   {error && <CutNotice error>{error}</CutNotice>}
   <div className="cut-button-row"><button className="secondary" disabled={busy || !norm || !ratios} onClick={run}>{busy ? 'Подбираю…' : 'Подобрать'}</button></div>
-  {result && <div className="cut-auto-result"><CutNotice>{result.message}</CutNotice>{result.result && <><div className="cut-output-grid">{Object.entries(result.result).map(([color, row]: [
+  {result && <div className="cut-auto-result"><CutNotice>{result.message}{result.norm&&<div>Применённый выход: {result.norm} шт. с рулона</div>}</CutNotice>{result.result && <><div className="cut-output-grid">{Object.entries(result.result).map(([color, row]: [
         string,
         any
     ]) => <div key={color}><span className="cut-eyebrow">{color}</span><strong>{row.rolls} <small>рул.</small></strong>{row.purchase_rolls>0&&<p>Докупить: {row.purchase_rolls} рул.</p>}<p>{Object.entries(row.output).sort(([a],[b])=>compareSizes(a,b)).map(([size, q]) => size + ' — ' + q + ' шт.').join(' · ')}</p></div>)}</div><div className="cut-button-row"><button onClick={accept}>Добавить в задание</button></div></>}</div>}
