@@ -6,6 +6,7 @@ import config
 sys.path.insert(0,'/opt/kroy-app-stage')
 from app.db import engine_for
 from app.sales import sync
+from app.fbo_stock import sync_ozon
 from app.sales_jobs import claim,finish
 for line in Path('/opt/kroy-app-stage/.env.app').read_text().splitlines():
     if '=' in line:
@@ -23,8 +24,10 @@ while True:
         if watch:
             job=claim(engine)
             if job:
+                sync_ozon(engine,os.environ)
                 try:finish(engine,job['id'],sync(engine,os.environ,job['start'],job['end']))
                 except Exception:finish(engine,job['id'],error='Сверка прервана. Повтори запрос')
         else:
+            sync_ozon(engine,os.environ)
             print(json.dumps(sync(engine,os.environ),ensure_ascii=False));break
     time.sleep(3)

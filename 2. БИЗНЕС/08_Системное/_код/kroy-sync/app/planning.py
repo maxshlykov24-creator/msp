@@ -23,7 +23,7 @@ def allocate(total, weights):
     return out
 
 
-def layout_preview(model, need, ratios, max_rolls, confirmed=False):
+def layout_preview(model, need, ratios, max_rolls, confirmed=False, _budget=None):
     if model not in NORMS:
         raise ValueError('Нет нормы; доступно ручное задание')
     if not need or any(type(v) is not int or v < 0 for v in need.values()):
@@ -34,6 +34,7 @@ def layout_preview(model, need, ratios, max_rolls, confirmed=False):
         raise ValueError('Состав размеров раскладок и потребности должен совпадать')
     # Candidate is one roll, with integral garment output; never rounds each size up.
     per_roll = [allocate(NORMS[model], r) for r in ratios]
+    budget = _budget if _budget is not None else {'remaining': 50000}
     best = None
     checked = 0
     limited = False
@@ -42,7 +43,8 @@ def layout_preview(model, need, ratios, max_rolls, confirmed=False):
             break
         for picks in combinations_with_replacement(range(len(ratios)), rolls):
             checked += 1
-            if checked > 50000:
+            budget['remaining'] -= 1
+            if checked > 50000 or budget['remaining'] < 0:
                 limited = True
                 break
             output = {s: sum(per_roll[i][s] for i in picks) for s in need}
@@ -105,6 +107,8 @@ def grouped_layout_preview(model, needs_by_color, ratios, available_by_color, al
     from itertools import combinations
     colors = sorted(needs_by_color)
     checked = 0
+    budget = {'remaining': 100000}
+    limited = False
     for pattern_count in range(1, len(ratios) + 1):
         options = []
         for indices in combinations(range(len(ratios)), pattern_count):
@@ -116,10 +120,8 @@ def grouped_layout_preview(model, needs_by_color, ratios, available_by_color, al
                     continue
                 if available_by_color[color] == 0:
                     break
-                candidate = layout_preview(model, needs_by_color[color], [ratios[i] for i in indices], available_by_color[color])
-                if candidate['search_limited']:
-                    return {'preliminary': True, 'search_limited': True, 'result': None,
-                            'message': 'Лимит поиска. Нельзя утверждать, что решения нет'}
+                candidate = layout_preview(model, needs_by_color[color], [ratios[i] for i in indices], available_by_color[color], _budget=budget)
+                limited = limited or candidate['search_limited']
                 if not candidate['result']:
                     break
                 row = candidate['result']
@@ -129,11 +131,14 @@ def grouped_layout_preview(model, needs_by_color, ratios, available_by_color, al
                 extra = sum(abs(row['output'][s] - needs_by_color[color][s])
                             for color, row in results.items() for s in row['output'])
                 options.append((extra, sum(r['rolls'] for r in results.values()), indices, results))
+            if limited: break
         if options:
             best = min(options, key=lambda x: (x[0], sum(max(needs_by_color[c][s]-row['output'][s],0) for c,row in x[3].items() for s in row['output']), x[1], x[2]))
             for color,row in best[3].items(): row['purchase_rolls'] = max(0,row['rolls']-actual_available[color])
-            return {'preliminary': True, 'search_limited': False, 'patterns_used': list(best[2]),
+            return {'preliminary': True, 'search_limited': limited, 'patterns_used': list(best[2]),
                     'result': best[3], 'pattern_outputs': [allocate(NORMS[model], r) for r in ratios], 'norm': NORMS[model], 'norm_source': NORM_SOURCE,
-                    'message': 'Совместимость ткани и раскладок должна быть подтверждена закройщиком'}
+                    'message': ('Достигнут лимит поиска. Показан найденный допустимый вариант, оптимальность не доказана. ' if limited else '') + 'Совместимость ткани и раскладок должна быть подтверждена закройщиком'}
+        if limited:
+            return {'preliminary':True,'search_limited':True,'result':None,'message':'Лимит поиска. Нельзя утверждать, что решения нет'}
     return {'preliminary': True, 'search_limited': False, 'result': None,
             'message': 'Решение в заданных раскладках и допуске ±20% не найдено'}

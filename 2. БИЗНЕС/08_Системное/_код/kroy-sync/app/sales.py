@@ -256,6 +256,7 @@ def collect_ozon_catalog(headers, cache_dir, get=get_json):
         seen=set();cursor='';total=None
         for _ in range(1000):
             result=get('https://api-seller.ozon.ru/v3/product/list',headers,dict(filter={'visibility':visibility},limit=1000,last_id=cursor)).get('result',{})
+            result['total']=result.get('total_items',result.get('total'))
             require(isinstance(result.get('items'),list) and type(result.get('total')) is int,'Неполный каталог Ozon',422)
             require(total is None or total==result['total'],'Каталог Ozon изменился во время загрузки',422);total=result['total']
             for row in result['items']:

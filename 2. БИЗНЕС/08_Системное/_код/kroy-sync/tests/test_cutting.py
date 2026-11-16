@@ -214,3 +214,39 @@ def test_purchase_layout_over_thirty_rolls_and_no_fabric(setup):
     result=grouped_layout_preview('Лонг скимс',{'Чёрный':{'S':3000}},[{'S':1}],{'Чёрный':0},allow_purchase=True)
     assert result['result']['Чёрный']['rolls']==40
     assert result['result']['Чёрный']['purchase_rolls']==40
+
+
+def test_purchase_revision_releases_only_allocated_material(setup):
+    engine,_,cmd=setup
+    p=payload(engine);p['materials'][0]['quantity']='120';p['cutting']['groups'][0]['quantity']='120';p['cutting']['allow_purchase']=True
+    task=cmd('task.issue',p)
+    revised=cmd('task.revise',dict(id=task['id'],version=task['version'],products=p['products'],materials=[dict(item_id='cloth',quantity=50)]))
+    assert balance(engine,'cloth')['reserved']==50
+    assert balance(engine,'cloth')['free']==Decimal('50.5')
+    cmd('task.cancel',dict(id=task['id'],version=revised['version']))
+    assert balance(engine,'cloth')['free']==Decimal('100.5')
+
+
+def test_ozon_fbo_only_exact_and_complete():
+    from app.fbo_stock import normalize_ozon
+    catalog={'items':[{'id':1,'sources':[{'sku':11}]},{'id':2,'sources':[{'sku':12}]}]}
+    links={'11':['s'],'12':['s']}
+    rows=[{'product_id':1,'stocks':[{'type':'fbo','sku':11,'present':10,'reserved':2},{'type':'fbs','sku':11,'present':999,'reserved':0}]}, {'product_id':2,'stocks':[{'type':'fbo','sku':12,'present':5,'reserved':1}]}]
+    assert normalize_ozon(rows,catalog,links)=={'s':12}
+    assert normalize_ozon(rows[:1],catalog,links)=={}
+    with pytest.raises(DomainError):normalize_ozon(rows+rows[:1],catalog,links)
+    rows[0]['stocks'][0]['reserved']=11
+    with pytest.raises(DomainError):normalize_ozon(rows,catalog,links)
+
+
+def test_ozon_fbo_cooldown_survives_failure(setup,tmp_path):
+    from app.fbo_stock import sync_ozon
+    from app.sales import RateLimited
+    engine,_,_=setup
+    calls=[]
+    def denied(*args):calls.append(args[0]);raise RateLimited(7200,'ozon')
+    env=dict(OZON_API_KEY='test',OZON_CLIENT_ID='test',KROY_SALES_CACHE=str(tmp_path))
+    first=sync_ozon(engine,env,denied)
+    assert first['state']=='waiting'
+    assert sync_ozon(engine,env,denied)==first
+    assert len(calls)==1

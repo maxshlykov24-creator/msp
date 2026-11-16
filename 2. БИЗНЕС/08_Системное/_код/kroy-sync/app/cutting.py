@@ -44,7 +44,7 @@ def calculate(s, raw):
             done = {i:q-remaining.get(i,0) for i,q in produced.items()}
             supplied = {}
             # Conservative: any partially executed layout waits for explicit allocation.
-            for g in d.get('cutting', {}).get('groups', []):
+            for g in ([] if d.get('cutting', {}).get('layout_outdated') else d.get('cutting', {}).get('groups', [])):
                 if any(done.get(i,0)>0 for i in g.get('products',{})): continue
                 material, need = g['material'], Decimal(str(g['quantity']))
                 if budget.get(material,0) >= need:
