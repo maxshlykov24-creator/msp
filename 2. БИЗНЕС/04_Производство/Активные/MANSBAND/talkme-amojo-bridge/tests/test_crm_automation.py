@@ -435,3 +435,15 @@ def test_first_source_mirrors_manual_value_without_reattribution():
     current=lead(custom_fields_values=[{'field_id':3781223,'values':[{'value':'ВК'}]}])
     result=verified_source_projection(None,current,fields)
     assert result.fields==[{'field_id':3134043,'values':[{'enum_id':2}]}]
+
+
+@pytest.mark.parametrize('failure,expected', [('Спам', False), ('Дорого', True)])
+def test_history_respects_spam_qualification_exclusion(failure,expected):
+    from app.crm_automation_fields import project_stage_history, QUALIFIED_DATE
+    cat=a.Catalog([{'id':a.SALES,'_embedded':{'statuses':[
+        {'id':11,'name':'Встреча назначена','type':0}]}}])
+    item=lead(status_id=143,custom_fields_values=[
+        {'field_id':3134051,'values':[{'value':failure}]}])
+    events=[{'lead_id':55,'at':100,'after':{'pipeline_id':a.SALES,'id':11}}]
+    projected=project_stage_history(item,cat,events)
+    assert any(f['field_id']==QUALIFIED_DATE for f in projected.fields) is expected

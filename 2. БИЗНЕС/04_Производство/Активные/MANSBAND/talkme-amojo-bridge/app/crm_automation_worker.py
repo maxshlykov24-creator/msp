@@ -334,8 +334,7 @@ def process_fields(db, c, catalog, *, preview=True, sources_enabled=False):
                 .order_by(f.FieldExecution.updated_at,f.FieldExecution.id)):
             generation = applied.id
             for field in applied.payload:
-                if field["field_id"] in (3279145,3383324,3390831):
-                    owned[field["field_id"]]=field["values"]
+                owned[field["field_id"]]=field["values"]
         source=f.FieldProjection()
         if sources_enabled:
             creations=[e for e in db.scalars(select(Event).where(Event.lead_id==watch.lead_id))
@@ -346,7 +345,11 @@ def process_fields(db, c, catalog, *, preview=True, sources_enabled=False):
             past=f.project_stage_history(current,catalog,history)
             present=f.project_fields(current,catalog,owned_values=owned)
             attribution=source if not sources_enabled or (current.get('updated_at')==lead.get('updated_at') and current.get('custom_fields_values')==lead.get('custom_fields_values')) else f.FieldProjection(issues=['source_snapshot_changed'])
-            return f.FieldProjection(fields=past.fields+present.fields+attribution.fields,issues=past.issues+present.issues+attribution.issues)
+            combined=past.fields+present.fields+attribution.fields
+            protected=[field['field_id'] for field in combined if field['field_id'] in owned
+                and not f.fields_match(current,[{'field_id':field['field_id'],'values':owned[field['field_id']]}])]
+            return f.FieldProjection(fields=[field for field in combined if field['field_id'] not in protected],
+                issues=past.issues+present.issues+attribution.issues+[f'manual_change_preserved:{fid}' for fid in protected])
         pending = list(db.scalars(select(f.FieldExecution).where(f.FieldExecution.lead_id==watch.lead_id,
             f.FieldExecution.state.in_(("planned","inflight","uncertain")))))
         for job in pending:

@@ -339,3 +339,26 @@ def test_preview_backlog_is_not_replayed_after_cutover(db):
     job=db.scalar(select(a.TaskExecution))
     assert job.reason=='pre_cutover_obligation_requires_reconciliation'
     assert job.task_id is None
+
+
+@pytest.mark.parametrize('manual_values', [[], [{'value':42}]])
+def test_history_does_not_restore_owned_date_after_manual_edit(db, manual_values):
+    c=Client([event()]);collect(db,c)
+    c.lead.update(updated_at=1000)
+    def patch(path,body):
+        c.patches.append(body)
+        current={x['field_id']:x for x in c.lead.get('custom_fields_values',[])}
+        current.update({x['field_id']:x for x in body['custom_fields_values']})
+        c.lead['custom_fields_values']=list(current.values())
+    c.patch=patch
+    w.process_fields(db,c,catalog(),preview=False)
+    date=next(x for x in c.lead['custom_fields_values'] if x['field_id']==3434463)
+    assert date['values']==[{'value':1000}]
+    date['values']=manual_values
+    count=len(c.patches)
+    w.process_fields(db,c,catalog(),preview=False)
+    w.process_fields(db,c,catalog(),preview=False)
+    assert len(c.patches)==count
+    assert date['values']==manual_values
+    if not manual_values:
+        assert 'manual_change_preserved:3434463' in db.get(w.FieldWatch,55).issues

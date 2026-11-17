@@ -228,6 +228,10 @@ def project_stage_history(lead: dict, catalog: Catalog, events: list[dict], *,
         if field_values(lead, field_id) != [True]:
             out.fields.append({'field_id':field_id,'values':[{'value':True}]})
     for field_id, at in sorted(dates.items()):
+        # The existing Digital spam bot intentionally clears qualification.
+        # Historical stage visits must not undo that exclusion from conversion.
+        if field_id==QUALIFIED_DATE and lead.get('status_id')==143 and 'Спам' in field_values(lead,3134051):
+            continue
         if not field_values(lead, field_id):
             out.fields.append({'field_id':field_id,'values':[{'value':at}]})
     if QUALIFIED_DATE in dates and TAKEN_DATE not in dates and not field_values(lead, TAKEN_DATE):
