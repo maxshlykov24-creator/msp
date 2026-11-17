@@ -248,8 +248,9 @@ def scan(c: Clients, s: ReminderSettings) -> list[dict]:
     raise RuntimeError("Incomplete open-lead scan; no jobs updated")
 
 
-def sync_jobs(db: Session, leads: list[dict], s: ReminderSettings, now: datetime) -> dict:
-    from app.pipeline_guard import messaging_allowed
+def sync_jobs(db: Session, leads: list[dict], s: ReminderSettings, now: datetime, *, current_lead=None) -> dict:
+    from app.pipeline_guard import messaging_allowed, migration_blocked
+    held = {int(x["id"]) for x in leads if migration_blocked(x)}
     eligible = {int(x["id"]): expiry(x, s) for x in leads if messaging_allowed(x) and is_open(x) and expiry(x, s)}
     existing = {(j.lead_id, j.until): j for j in db.scalars(select(ReminderJob)).all()}
     for lead_id, until in eligible.items():
@@ -259,6 +260,9 @@ def sync_jobs(db: Session, leads: list[dict], s: ReminderSettings, now: datetime
         if (lead_id, until) not in existing:
             db.add(ReminderJob(lead_id=lead_id, until=until))
     for job in existing.values():
+        if job.lead_id in held: continue
+        if job.state == "ready" and job.lead_id not in eligible and current_lead is not None:
+            if migration_blocked(current_lead(job.lead_id)): continue
         if job.state == "ready" and eligible.get(job.lead_id) != job.until:
             job.state, job.reason = "cancelled", "conditions_changed"
         elif job.state == "ready" and job.until - timedelta(days=s.days_before) < now.astimezone(MSK).date():
@@ -309,7 +313,8 @@ def send_job(db: Session, job_id: int, c: Clients, s: ReminderSettings, now: dat
     if job.state != "ready" or not in_window(job.until, now, s):
         return
     lead = get_lead(c, job.lead_id)
-    from app.pipeline_guard import messaging_allowed
+    from app.pipeline_guard import messaging_allowed, migration_blocked
+    if migration_blocked(lead): return
     if not messaging_allowed(lead) or not is_open(lead) or expiry(lead, s) != job.until:
         job.state, job.reason = "cancelled", "conditions_changed"
         db.commit()
@@ -395,7 +400,7 @@ def tick(s: ReminderSettings, *, do_scan: bool = False) -> dict:
             return {"busy": True}
         c = Clients(db, s)
         now = utcnow()
-        result = sync_jobs(db, scan(c, s), s, now) if do_scan else {}
+        result = sync_jobs(db, scan(c, s), s, now, current_lead=lambda lead_id: get_lead(c, lead_id)) if do_scan else {}
         reconcile(db)
         if s.live_ready():
             ids = list(db.scalars(select(ReminderJob.id).where(ReminderJob.state == "ready")))
@@ -434,6 +439,18 @@ async def worker(s: ReminderSettings):
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     from app import certificate_mail, stage_notifications
+    from app import crm_automation_worker as automation
+    from app import crm_automation_digest as digest
+
+    automation_settings = automation.Settings()
+    automation_settings.rule_ids()
+    automation_task = None
+    digest_settings=digest.Settings()
+    digest_task=None
+    if digest_settings.mode != "off":
+        Base.metadata.create_all(get_engine(), tables=[*digest.TABLES,automation.a.MigrationEntry.__table__])
+    if automation_settings.mode != "off":
+        Base.metadata.create_all(get_engine(), tables=automation.TABLES)
 
     from app import campaign
     Base.metadata.create_all(get_engine(), tables=campaign.TABLES)
@@ -459,6 +476,8 @@ async def lifespan(_: FastAPI):
             try: pipelines = [x["id"] for x in managed.all_pages(c, "/api/v4/leads/pipelines", "pipelines")]
             finally: c.close()
         managed.seed(db, pipelines)
+        if automation_settings.mode != "off":
+            automation.messages.seed_night(db)
         if managed_settings.executor == "live":
             managed.migrate_jobs(db)
     from app import certificate_gift
@@ -475,9 +494,25 @@ async def lifespan(_: FastAPI):
     mail_task = asyncio.create_task(certificate_mail.worker(mail_settings))
     stage_task = asyncio.create_task(stage_notifications.worker(stage_notifications.StageSettings()) if legacy else inactive())
     calendar_task = asyncio.create_task(stage_notifications.calendar_worker(stage_notifications.StageSettings()) if legacy else inactive())
+    if automation_settings.mode != "off":
+        automation_task = asyncio.create_task(automation.worker(automation_settings))
+    if digest_settings.mode != "off":
+        digest_task=asyncio.create_task(digest.worker(digest_settings))
     try:
         yield
     finally:
+        if digest_task:
+            digest_task.cancel()
+            try:
+                await digest_task
+            except asyncio.CancelledError:
+                pass
+        if automation_task:
+            automation_task.cancel()
+            try:
+                await automation_task
+            except asyncio.CancelledError:
+                pass
         gift_task.cancel()
         managed_task.cancel()
         task.cancel()
@@ -553,6 +588,23 @@ def status(x_reminder_key: str = Header(default="")):
                           "reason": a.reason} for a in attempts]}
     finally:
         db.close()
+
+
+@app.get("/internal/crm-automation/status")
+def automation_status(x_reminder_key: str = Header(default="")):
+    from app.message_templates import authorized
+    from app.crm_automation_worker import Settings, Event
+    from app.crm_automation import TaskExecution
+    from sqlalchemy import func
+    authorized(x_reminder_key)
+    settings = Settings()
+    result = {"mode": settings.mode, "enabled_rules": sorted(settings.rule_ids()),
+              "activated_at": settings.activated_at, "cutover_ready": False}
+    if settings.mode != "off":
+        with get_session_factory()() as db:
+            result["events"] = dict(db.execute(select(Event.state, func.count()).group_by(Event.state)).all())
+            result["tasks"] = dict(db.execute(select(TaskExecution.state, func.count()).group_by(TaskExecution.state)).all())
+    return result
 
 
 @app.post("/wazzup/{secret}")

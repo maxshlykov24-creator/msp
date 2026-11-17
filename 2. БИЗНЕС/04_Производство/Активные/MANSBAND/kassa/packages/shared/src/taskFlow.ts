@@ -198,7 +198,7 @@ export interface TaskFlowRule {
 const IN_STORE_STAGE = "Товар в магазине";
 /** После «Отправлено»: товар едет, у получателя задача «Принять товар». */
 export const IN_TRANSIT_STAGE = "Товар в пути";
-/** Доставка: между «Собран» и «Отправлен» (правки владельца 10.08.2026, п.1.5). */
+/** Только распознавание старых записей. С 17.11.2026 новый переход идёт Собран → Отправлен. */
 export const COURIER_STAGE = "Вызван курьер";
 
 export const TASK_FLOW: TaskFlowRule[] = [
@@ -315,18 +315,18 @@ export const TASK_FLOW: TaskFlowRule[] = [
       description: "Консультант собрал заказ",
     },
     assignee: "crm",
-    nextStage: COURIER_STAGE,
-    inside: "Вызвать курьера СДЭК на заказ",
+    followUp: "take_to_cdek",
+    inside: "Организовать отправку заказа в СДЭК. Этап остаётся «Собран» до передачи заказа",
   },
   {
     kind: "take_to_cdek",
     label: "Отнести в СДЭК",
     actionLabel: "Заказ отправлен",
     trigger: {
-      source: "stage",
-      stage: COURIER_STAGE,
+      source: "task_done",
+      afterKind: "call_courier",
       dealKinds: ["delivery"],
-      description: "Курьер вызван",
+      description: "Отправка согласована, заказ нужно передать в СДЭК",
     },
     assignee: "consultant",
     nextStage: "Отправлен",
@@ -487,6 +487,7 @@ export function isObsoleteStageTask(deal: Deal, task: Pick<Task, "kind" | "idemp
     const taskDeadline = task.metadata?.reservedUntil;
     return deal.stage !== "Товар отложен" || (typeof taskDeadline === "string" && taskDeadline !== deadline);
   }
+  if (task.kind === "take_to_cdek") return !["Собран", "Вызван курьер"].includes(deal.stage);
   const flow = taskFlowOf(task.kind);
   return flow?.trigger.source === "stage" && !flowsForStage(deal.stage, deal.kind).some(rule => rule.kind === task.kind);
 }

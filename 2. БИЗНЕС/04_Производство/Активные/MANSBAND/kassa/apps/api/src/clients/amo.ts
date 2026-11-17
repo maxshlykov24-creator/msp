@@ -224,6 +224,14 @@ export async function getLead(id: number): Promise<AmoLead | null> {
   }
 }
 
+/** Read failures propagate: a missing confirmation never permits a handoff. */
+export async function getAutomationTask(id: number): Promise<{
+  id: number; entity_id: number; entity_type: string; is_completed: boolean;
+  task_type_id: number; text: string;
+}> {
+  return http.get(`/tasks/${id}`);
+}
+
 // ── Контакты ────────────────────────────────────────────────────────
 
 export interface AmoContact {

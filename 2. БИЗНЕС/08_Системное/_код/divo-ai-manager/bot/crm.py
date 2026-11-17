@@ -1171,6 +1171,24 @@ def _start_alert(doc: dict, snap: dict, nags: bool, *, reuse_tg: bool = True) ->
     doc["crm"] = crm
 
 
+def finish_clarification(chat_id: str | int, question: str) -> None:
+    """Only called after a verified factual answer was delivered; not at generation."""
+    doc = store.load_doc(chat_id)
+    state = doc.setdefault("crm", {})
+    pending = state.get("clarification_pending") or {}
+    if not question or pending.get("question") != question:
+        return
+    state["clarification_completed"] = dict(pending, source="verified_answer")
+    state.pop("clarification_pending", None)
+    alert = state.get("alert") or {}
+    if alert.get("reason") == "handoff" and (alert.get("snap") or {}).get("ask") == question:
+        alert["active"] = False
+        alert["nags"] = False
+        alert["clarification_resolved"] = True
+        _queue_edit(alert, alert.get("snap") or {}, "Подтверждённый ответ отправлен в чат.")
+    store.save_doc(chat_id, doc)
+
+
 def dismiss_llm_alert(chat_id: str | int) -> None:
     """Бот сам ответил после сбоя модели — карточку «не смог» из группы снимаем."""
     doc = store.load_doc(chat_id)
@@ -1984,6 +2002,18 @@ def on_foreign_out(chat_id: str | int, msg: dict) -> bool:
     doc.setdefault("messages", []).append({
         "role": "assistant", "content": text, "author": "human", "message_id": mid,
     })
+    clarification = crm.get("clarification_pending") or {}
+    try:
+        requested_at = datetime.fromisoformat(str(clarification.get("at") or "")).timestamp()
+    except (ValueError, TypeError):
+        requested_at = float("inf")
+    if clarification and created >= requested_at:
+        crm.pop("clarification_pending", None)
+        crm["clarification_completed"] = dict(clarification, source="human_takeover", message_id=mid)
+    # A real human reply transfers ownership; a button alone never does.
+    old_alert = crm.get("alert") or {}
+    if old_alert.get("picked") == "button":
+        old_alert["picked"] = "chat"
     doc["crm"] = crm
     store.save_doc(chat_id, doc)
     store.pause(chat_id, "менеджер ответил в канале")

@@ -1,0 +1,1 @@
+(()=>{'use strict';let theme='light';try{const saved=localStorage.getItem('ms-product.redesign.theme');if(saved==='light'||saved==='dark')theme=saved;}catch{}document.documentElement.dataset.theme=theme;})();

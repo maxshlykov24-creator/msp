@@ -16,6 +16,7 @@ import * as deals from "./deals.js";
 import * as financeQueue from "./queue.js";
 import { enqueueCompanyChain } from "./sale.js";
 import { appendSystemAudit } from "./audit.js";
+import { getEnv } from "../env.js";
 
 /**
  * Движок формулы задач (созвон 05.08.2026, п.7–9). Реестр правил лежит в
@@ -122,6 +123,7 @@ async function findUserByName(name: string): Promise<{ name: string; role: strin
  * Формулировка — комментарий, срок — «Актуально до». Этап заявки при закрытии не двигаем.
  */
 async function syncPromiseFollowUp(deal: Deal, who: string): Promise<void> {
+  if (deal.amoLeadId && getEnv().CRM_AUTOMATION_TASKS_ENABLED === "true") return;
   if (deal.stage !== "Дано обещание") return;
   const comment = deal.comment?.trim() ?? "";
   const due = (deal.actualUntil ?? "").slice(0, 10);
@@ -209,6 +211,7 @@ export async function onDealStage(deal: Deal, who: string, depth = 0): Promise<v
   const rules = flowsForStage(deal.stage, deal.kind);
   for (const rule of rules) {
     if (rule.kind === "promise_follow") continue;
+    if (rule.kind === "call_courier" && deal.amoLeadId && getEnv().CRM_AUTOMATION_TASKS_ENABLED === "true") continue;
     if (rule.kind === "movement") {
       // Перемещение уже оформляли по этой заявке — второй раз не напоминаем.
       if (await hasTaskForDeal(deal.number, ["movement", "movement_accept"])) continue;
@@ -298,6 +301,25 @@ export async function onDealStage(deal: Deal, who: string, depth = 0): Promise<v
  * Перемещение (movement → movement_accept) живёт в `services/tasks.ts`, потому
  * что там же создаётся документ в МойСклад.
  */
+export async function enqueueCourierHandoff(deal: Deal, who: string): Promise<void> {
+  const inserted = await db.transaction(async tx => {
+    const [current] = await tx.select({stage: dealsTable.stage}).from(dealsTable)
+      .where(eq(dealsTable.number, deal.number)).for("update");
+    if (!current || !["Собран", "Вызван курьер"].includes(current.stage)) throw new Error("courier_stage_changed");
+    // A retry must not reopen a manually cancelled or completed handoff.
+    const prior = await tx.select({id: tasks.id}).from(tasks)
+      .where(and(eq(tasks.dealNumber, deal.number), eq(tasks.kind, "take_to_cdek"))).limit(1);
+    if (prior.length) return [];
+    return tx.insert(tasks).values({
+      kind: "take_to_cdek", title: taskTitle("take_to_cdek", deal.number),
+      assigneeRole: "consultant", store: deal.store ?? null, dealNumber: deal.number,
+      idempotencyKey: `take_to_cdek:${deal.id}`, metadata: deliveryTaskMeta(deal), createdBy: who,
+    }).onConflictDoNothing().returning({id: tasks.id});
+  });
+  if (inserted[0]) await appendSystemAudit({action: "Создана задача передачи в СДЭК",
+    entityType: "task", entityId: inserted[0].id, metadata: {dealNumber: deal.number, trigger: who}});
+}
+
 export async function onTaskCompleted(task: Task, who: string, depth = 0): Promise<void> {
   const rule = taskFlowOf(task.kind);
   if (!rule || !task.dealNumber) return;
@@ -305,6 +327,14 @@ export async function onTaskCompleted(task: Task, who: string, depth = 0): Promi
   if (currentDeal && ["Успех", "Провал", "Не слив"].includes(currentDeal.stage) &&
       !["sary_send", "movement", "movement_accept"].includes(task.kind) &&
       !(task.kind === "unreserve" && task.metadata?.confirmedByRole)) return;
+
+  // 17.11.2026: вызов курьера не означает отправку и не создаёт этап.
+  // Старые записи промежуточного этапа поддерживаем до их завершения.
+  if (task.kind === "call_courier") {
+    if (!currentDeal || !["Собран", "Вызван курьер"].includes(currentDeal.stage)) return;
+    await enqueueCourierHandoff(currentDeal, who);
+    return;
+  }
 
   if (task.kind === "reserve_call") {
     await onReserveCallDone(task, who);

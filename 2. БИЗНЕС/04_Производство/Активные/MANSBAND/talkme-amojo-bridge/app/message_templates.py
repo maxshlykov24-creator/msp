@@ -25,7 +25,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models import Base
 from app.database import get_engine, get_session_factory
-from app.pipeline_guard import messaging_allowed
+from app.pipeline_guard import messaging_allowed, valid_certificate_rule_scope, migration_blocked
 
 log = logging.getLogger(__name__)
 LOCK = 674001929
@@ -98,7 +98,7 @@ class Rule(BaseModel):
     @model_validator(mode="after")
     def complete(self):
         if self.action=="certificate":
-            if self.pipelines!=[9601214] or self.statuses!=[76675038] or self.phone_field!=3830052 or self.trigger.field!=3829442 or self.trigger.type!="date" or self.trigger.offset!=0:
+            if not valid_certificate_rule_scope(self.pipelines, self.statuses) or self.phone_field!=3830052 or self.trigger.field!=3829442 or self.trigger.type!="date" or self.trigger.offset!=0:
                 raise ValueError("Выдача сертификата использует фиксированные поля оплаты и получателя")
         if self.window_start >= self.window_end:
             raise ValueError("Начало окна должно быть раньше окончания")
@@ -720,7 +720,11 @@ def synchronize(db,c,stamp):
         if r.action == "certificate" or not r.enabled: continue
         if r.trigger.type != "date": continue
         found=set()
+        held=set()
         for lead in scan_leads(c,r):
+            if migration_blocked(lead):
+                held.add(lead["id"])
+                continue
             if not matches(lead,r): continue
             try: due=date_due(lead,r)
             except ValueError: continue
@@ -732,7 +736,11 @@ def synchronize(db,c,stamp):
             elif j.state in ("ready","blocked","cancelled") and db.scalar(select(Attempt.id).where(Attempt.job_id==j.id).limit(1)) is None:
                 j.due_at,j.state,j.reason=due,"ready",""
         for j in db.scalars(select(Job).where(Job.rule_id==doc.id,Job.state.in_(["ready","blocked"]))):
-            if (j.lead_id,j.occurrence) not in found: j.state,j.reason="cancelled","conditions_changed"
+            if j.lead_id in held: continue
+            if (j.lead_id,j.occurrence) not in found:
+                # A moved lead may no longer appear in this rule's pipeline scan.
+                if migration_blocked(c.get(f"/api/v4/leads/{j.lead_id}")): continue
+                j.state,j.reason="cancelled","conditions_changed"
         db.commit()
 
 
@@ -777,7 +785,13 @@ def send(db,j,c,stamp):
     if not doc or not doc.active or not doc.active["enabled"]:
         j.state,j.reason="cancelled","disabled";db.commit();return
     r=Rule(**(j.snapshot["rule"] if j.snapshot else doc.active))
+    lead=c.get(f"/api/v4/leads/{j.lead_id}", **{"with":"contacts"})
+    if migration_blocked(lead): return
     local=stamp.astimezone(MSK);due=aware(j.due_at)
+    if j.rule_id == "crm-night-response":
+        from app.crm_automation_messages import night_send_allowed
+        if not night_send_allowed(db,j,lead,stamp,c):
+            j.state,j.reason="cancelled","night_response_no_longer_applicable";db.commit();return
     if j.rule_id == FRIDAY_ID and local.date() > FRIDAY_UNTIL:
         j.state,j.reason="expired","promotion_ended";db.commit();return
     started=db.scalar(select(Attempt.id).where(Attempt.job_id==j.id,Attempt.state!="skipped").limit(1)) is not None
@@ -789,6 +803,7 @@ def send(db,j,c,stamp):
         j.state,j.reason="expired","scheduled_window_passed";db.commit();return
     if local.hour<r.window_start:return
     lead=c.get(f"/api/v4/leads/{j.lead_id}", **{"with":"contacts"})
+    if migration_blocked(lead): return
     if not matches(lead,r) or not matches(lead,Rule(**doc.active)):
         j.state,j.reason="cancelled","conditions_changed";db.commit();return
     if r.trigger.type=="date":
@@ -825,6 +840,9 @@ def send(db,j,c,stamp):
             if channel.get("transport") != ("tgapi" if route["transport"]=="telegram" else route["transport"]):available=False
             if available:
                 fresh=c.get(f"/api/v4/leads/{j.lead_id}", **{"with":"contacts"})
+                if migration_blocked(fresh): return
+                if j.rule_id == "crm-night-response" and not night_send_allowed(db,j,fresh,now(),c):
+                    j.state,j.reason="cancelled","night_response_no_longer_applicable";db.commit();return
                 db.refresh(doc)
                 if not doc.active["enabled"] or not matches(fresh,r) or not matches(fresh,Rule(**doc.active)):
                     j.state,j.reason="cancelled","conditions_changed_before_post";db.commit();return

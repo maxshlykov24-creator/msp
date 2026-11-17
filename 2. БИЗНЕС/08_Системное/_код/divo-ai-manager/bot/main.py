@@ -449,6 +449,12 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
         await _handoff(channel, chat_id, history, reason)
         return
     if clarification:
+        fresh = store.load_doc(chat_id)
+        fresh.setdefault("crm", {})["clarification_pending"] = {
+            "question": user_text, "at": nudge.now_msk().isoformat(timespec="seconds"),
+        }
+        fresh.setdefault("nudge", {})["waiting"] = False
+        store.save_doc(chat_id, fresh)
         # A task about a missing fact does not transfer ownership of the entire chat.
         await crm.capture(chat_id, history, "handoff")
         if store.hard_paused(chat_id):
@@ -670,6 +676,14 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
         log.info("чат %s: после фильтров пусто, передал человеку", chat_id)
         return
 
+    # Capture the exact pending question before delivery; a newer question must survive.
+    current = store.load_doc(chat_id)
+    pending_question = ((current.get("crm") or {}).get("clarification_pending") or {}).get("question", "")
+    verified_lease_answer = (
+        raw.strip() == "Лизинг закрыт."
+        and "лизинг" in pending_question.lower()
+        and avito_match.leasing_status_answer(current, user_text) == "Лизинг закрыт."
+    )
     store.save_history(chat_id, history)
     for i, bubble in enumerate(bubbles):
         await type_and_wait(channel, chat_id, human.typing_delay(bubble, first=i == 0))
@@ -682,6 +696,9 @@ async def _answer_locked(channel, chat_id, chunks: list[str]) -> None:
         history = store.load_history(chat_id)
         history.append({"role": "assistant", "content": bubble})
         store.save_history(chat_id, history)
+
+    if verified_lease_answer:
+        crm.finish_clarification(chat_id, pending_question)
 
     if want_photo or want_video:
         kind = "видео" if want_video else "фото"
@@ -854,13 +871,7 @@ def _build_system(history: list[dict], chat_id: str = "") -> str:
             "сам не предлагай."
         )
     else:
-        system += (
-            "\n\n# Клиент спросил про лизинг\n"
-            "Разделяй прошлый лизинг, текущий статус и покупку в лизинг. "
-            "Выкуплена не значит, что раньше лизинга не было. Историю бери "
-            "из отчёта конкретного автомобиля. Если факта нет, уточни у коллеги. "
-            "Покупку в лизинг обсуждай только по разрешённым условиям конкретной машины."
-        )
+        system += prompt.LEASING_RULES
     if not nudge.asked_credit(history):
         system += (
             "\n\n# Кредит не поднимай\n"
@@ -1046,6 +1057,9 @@ async def _generate(history: list[dict], chat_id: str = "") -> str:
     last = history[-1].get("content", "") if history else ""
     prior = history[:-1]
     listing = avito_match.attached_listing(doc) or {}
+    leasing_answer = avito_match.leasing_status_answer(doc, last)
+    if leasing_answer:
+        return leasing_answer
     if (avito_match.availability_evidence(listing)
             and re.fullmatch(r"\s*(?:(?:добрый (?:день|вечер)|доброе утро|здравствуйте|привет)[!,.\s]*)?(?:(?:машина|авто|автомобиль|она|он)\s+)?(?:ещ[её]\s+)?(?:в наличии|есть в наличии)[?!.\s]*", last, re.I)):
         return "Автомобиль в наличии."
@@ -1351,6 +1365,13 @@ async def send_nudge(chat_id: int | str) -> None:
     if channel is None:
         return
     doc = store.load_doc(chat_id)
+    if (doc.get("crm") or {}).get("clarification_pending") or (
+        (((doc.get("crm") or {}).get("alert") or {}).get("active")
+         or ((doc.get("crm") or {}).get("alert") or {}).get("picked") == "button")
+        and ((doc.get("crm") or {}).get("alert") or {}).get("reason") in {"handoff", "stuck"}
+        and not ((doc.get("crm") or {}).get("alert") or {}).get("clarification_resolved")
+    ):
+        return
     history = list(doc.get("messages") or [])
     listing = avito_match.attached_listing(doc)
     if listing and not avito_match.match_listing(listing):
@@ -1394,6 +1415,13 @@ async def send_nudge(chat_id: int | str) -> None:
     if pending.get(str(chat_id)) or store.is_paused(chat_id):
         return
     doc = store.load_doc(chat_id)
+    if (doc.get("crm") or {}).get("clarification_pending") or (
+        (((doc.get("crm") or {}).get("alert") or {}).get("active")
+         or ((doc.get("crm") or {}).get("alert") or {}).get("picked") == "button")
+        and ((doc.get("crm") or {}).get("alert") or {}).get("reason") in {"handoff", "stuck"}
+        and not ((doc.get("crm") or {}).get("alert") or {}).get("clarification_resolved")
+    ):
+        return
     meta = doc.get("nudge") or {}
     if nudge.ready_to_send(meta) != step:
         return

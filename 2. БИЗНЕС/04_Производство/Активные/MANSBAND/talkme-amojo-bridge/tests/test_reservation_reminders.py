@@ -253,3 +253,16 @@ def test_callback_persisted_even_when_downstream_times_out(monkeypatch):
     monkeypatch.setattr(stage_notifications,'record_messages',lambda *a:None)
     response=TestClient(module.app).post('/wazzup/hook',json={'statuses':[]})
     assert response.status_code==502 and stored==[{'statuses':[]}]
+
+
+def test_migration_preserves_existing_reminder(store,cfg):
+    from app.pipeline_guard import MIGRATION_TAG
+    j=job(store);item=lead()
+    item["_embedded"]={**item.get("_embedded",{}),"tags":[{"name":MIGRATION_TAG}]}
+    sync_jobs(store,[item],cfg,NOW)
+    assert j.state=="ready"
+    sync_jobs(store,[],cfg,NOW,current_lead=lambda _:item)
+    assert j.state=="ready"
+    c=FakeClients([],current_lead=item)
+    send_job(store,j.id,c,cfg,NOW)
+    assert j.state=="ready" and not c.sent

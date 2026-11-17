@@ -339,6 +339,32 @@ def cash_only_doc(doc: dict) -> bool:
     return cash_only_card(title, card)
 
 
+def leasing_status_answer(doc: dict, text: str) -> str:
+    """Keep legal-status questions out of report-based text generation."""
+    low = (text or "").lower()
+    mentioned = bool(re.search(r"лизинг", low))
+    # A purchase request is a different intent; preserve vehicle payment rules.
+    purchase = bool(re.search(r"(?:куп|оформ|приобрест|взять|прода[её]т|продаж|можно|возмож).{0,35}лизинг|лизинг.{0,25}(?:куп|оформ|приобрест|взять|можно|возмож)|лизинг\s+или\s+кредит", low))
+    status = bool(re.search(r"закрыт|выкуп|была|был|наход|числ|действующ|статус|обремен|залож", low))
+    pending = (doc.get("crm") or {}).get("clarification_pending") or {}
+    followup = "лизинг" in str(pending.get("question") or "").lower() and bool(re.fullmatch(r"\s*(?:(?:здравствуйте|добрый день)[!,.\s]*)?(?:(?:ну|а|так)[, ]*)?(?:есть (?:уже )?ответ|ответ (?:есть|будет)|что (?:по ответу|узнали|выяснили)|(?:уточнили|выяснили|узнали)|(?:дадите|можно|жду) ответ)[?!., ]*", low))
+    if not ((mentioned and (status or not purchase)) or followup):
+        return ""
+    if purchase and not status:
+        return ""
+    # Bare «в лизинг?» is a payment question, not a claim about history.
+    if re.fullmatch(r"\s*(?:а\s+)?(?:в\s+)?лизинг[?!., ]*", low):
+        return ""
+    historical = bool(re.search(r"раньше|ранее|когда|была|был|истори|прошл", low))
+    if not historical and not purchase:
+        card = match_listing(attached_listing(doc) or {}) or {}
+        # Only a dedicated per-vehicle field, never dates extracted from Autoteka.
+        confirmed = str(card.get("Статус лизинга") or "").strip().casefold()
+        if confirmed in {"закрыт", "лизинг закрыт"}:
+            return "Лизинг закрыт."
+    return "Уточню этот вопрос у коллеги, ответим здесь. [[УТОЧНЕНИЕ]]"
+
+
 def cash_only_answer(doc: dict, text: str) -> str:
     from tools.stock_sync import CASH_ONLY_REPLY
     if cash_only_doc(doc) and re.search(r"ндс|лизинг|кредит|расч[её]тн|безнал|на\s+юр|юридическ|на\s+организац|наличн|способ\w*\s+оплат", text, re.I):
@@ -428,7 +454,7 @@ def focus_block(
             "Спросили именно про ДТП или кузов — один спокойный факт, без "
             "перечня аварий. Номер и «наберу» из-за отчёта не проси. "
             "Если ссылки нет, а машина с пробегом — не говори «автотеки нет». "
-            "История лизинга и текущий статус различаются: выкуплена не значит, что раньше лизинга не было. На «была?» отвечай по истории отчёта; без истории уточни. "
+            "Статус и историю лизинга не пересказывай из отчёта. Без явного подтверждения сотрудника по этой машине передай вопрос через [[УТОЧНЕНИЕ]]. Покупка в лизинг — отдельный вопрос об условиях продажи. "
             "Отчёт и «на сделке покажем» сам не тащи."
         )
         lines.append(

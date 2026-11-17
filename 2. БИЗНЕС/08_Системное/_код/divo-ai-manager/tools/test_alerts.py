@@ -4232,3 +4232,115 @@ def test_nov13_cme_availability_identity_and_staleness():
         assert not am.match_listing(src,stock=stock)
         focus=am.focus_block(src['title'],listing=src,stock=stock)
         assert '[[УТОЧНЕНИЕ]]' in focus and 'по одному объявлению' not in focus
+
+
+def test_nov17_leasing_status_never_quotes_report():
+    import asyncio
+    from unittest.mock import patch, AsyncMock
+    from tools.rehearse import replay
+    from bot import avito_match as am, llm
+    doc={'messages':[], 'avito':{'title':'Hongqi H5 2023'}}
+    questions=['Она сейчас в лизинге?', 'Здравствуйте, по лизингу дадите ответ?',
+               'Лизинг закрыт?', 'Раньше была в лизинге?', 'В отчёте лизинг до 2029 года, почему?']
+    for question in questions:
+        answer=am.leasing_status_answer(doc,question)
+        assert '[[УТОЧНЕНИЕ]]' in answer and '2029' not in answer and 'подтвержден' not in answer
+    for question in ['Можно купить в лизинг?', 'Оформляете лизинг?', 'В лизинг?', 'Лизинг или кредит?', 'Какая цена?']:
+        assert not am.leasing_status_answer(doc,question),question
+    with patch.object(am,'match_listing',return_value={'Статус лизинга':'закрыт'}):
+        assert am.leasing_status_answer(doc,'Она сейчас в лизинге?')=='Лизинг закрыт.'
+        assert '[[УТОЧНЕНИЕ]]' in am.leasing_status_answer(doc,'Она раньше была в лизинге?')
+    async def run():
+        with patch.object(llm,'reply',AsyncMock(side_effect=AssertionError('LLM must not invent legal status'))):
+            result=await replay(doc,'Она сейчас в лизинге?')
+        assert result['capture']==1 and not result['paused']
+        assert 'коллеги' in ' '.join(result['sent'])
+    asyncio.run(run())
+
+
+def test_nov17_pending_clarification_blocks_nudge():
+    import asyncio
+    from unittest.mock import patch, AsyncMock, Mock
+    from tools.rehearse import Sandbox
+    from bot import main,store
+    async def run():
+        with Sandbox():
+            cid='av:lease-pending'; channel=Mock();channel.send=AsyncMock()
+            store.save_doc(cid,{'messages':[{'role':'assistant','content':'Уточню'}],
+                               'nudge':{'waiting':True},'crm':{'clarification_pending':{'question':'Она сейчас в лизинге?'}}})
+            with patch.object(main,'_nudge_channel',return_value=channel),patch.object(main.nudge,'ready_to_send',return_value=1):
+                await main.send_nudge(cid)
+            channel.send.assert_not_awaited()
+    asyncio.run(run())
+
+
+def test_nov17_manager_button_is_not_resolution():
+    import asyncio
+    from unittest.mock import patch, AsyncMock, Mock
+    from tools.rehearse import Sandbox
+    from bot import main,store
+    async def run():
+        with Sandbox():
+            cid='av:lease-picked'; channel=Mock();channel.send=AsyncMock()
+            store.save_doc(cid,{'messages':[{'role':'assistant','content':'Уточню'}],
+                               'nudge':{'waiting':True},'crm':{'alert':{'active':False,'reason':'handoff','picked':'button'}}})
+            with patch.object(main,'_nudge_channel',return_value=channel),patch.object(main.nudge,'ready_to_send',return_value=1):
+                await main.send_nudge(cid)
+            channel.send.assert_not_awaited()
+    asyncio.run(run())
+
+
+def test_nov17_leasing_purchase_and_other_topic_regression():
+    from bot.avito_match import leasing_status_answer
+    doc={'crm':{'clarification_pending':{'question':'Она сейчас в лизинге?'}}}
+    for q in ['Сейчас можно купить в лизинг?', 'Лизинг возможен?', 'Можно в лизинг?',
+              'Ответьте, какой пробег?', 'Есть ответ по пробегу?', 'Выяснили сколько владельцев?',
+              'Скажите по цене, есть НДС?']:
+        assert leasing_status_answer(doc,q)=='',q
+    for q in ['Есть ответ?', 'Уточнили?', 'Здравствуйте, по лизингу дадите ответ?', 'Она сейчас в лизинге?']:
+        assert '[[УТОЧНЕНИЕ]]' in leasing_status_answer(doc,q),q
+
+
+def test_nov17_clarification_lifecycle():
+    from unittest.mock import patch
+    from tools.rehearse import Sandbox
+    from bot import crm,store
+    with Sandbox():
+        cid='av:clarification-lifecycle'
+        def initial():
+            store.save_doc(cid,{'messages':[], 'crm':{
+                'clarification_pending':{'question':'Она сейчас в лизинге?','at':'1970-01-01T00:01:40+00:00'},
+                'alert':{'reason':'handoff','active':False,'picked':'button','snap':{'ask':'Она сейчас в лизинге?'}}}})
+        initial()
+        crm.finish_clarification(cid,'Другой вопрос')
+        assert store.load_doc(cid)['crm'].get('clarification_pending')
+        crm.finish_clarification(cid,'Она сейчас в лизинге?')
+        d=store.load_doc(cid)['crm']
+        assert not d.get('clarification_pending') and d['alert']['clarification_resolved']
+        assert d['clarification_completed']['source']=='verified_answer'
+        initial()
+        assert crm.on_foreign_out(cid,{'id':'human-1','direction':'out','created':123,
+                                      'content':{'text':'Добрый день, лизинг закрыт'}})
+        d=store.load_doc(cid)['crm']
+        assert not d.get('clarification_pending') and d['alert']['picked']=='chat'
+        assert d['clarification_completed']['source']=='human_takeover'
+        assert store.is_paused(cid)  # human owns the chat; no automatic promotional resume
+
+
+def test_nov17_failed_delivery_keeps_clarification():
+    import asyncio
+    from unittest.mock import patch, AsyncMock, Mock
+    from tools.rehearse import Sandbox
+    from bot import main,store
+    async def run():
+        with Sandbox():
+            cid='av:clarification-failed-send'
+            store.save_doc(cid,{'messages':[], 'avito':{'title':'Hongqi H5 2023'},
+                               'crm':{'clarification_pending':{'question':'Она сейчас в лизинге?'}}})
+            channel=Mock();channel.send=AsyncMock(side_effect=RuntimeError('delivery failed'));channel.typing=AsyncMock();channel.notify_owner=AsyncMock()
+            with patch.object(main,'_generate',AsyncMock(return_value='Лизинг закрыт.')),patch.object(main.avito_match,'leasing_status_answer',return_value='Лизинг закрыт.'):
+                try:await main._answer_locked(channel,cid,['Она сейчас в лизинге?'])
+                except RuntimeError:pass
+                else:raise AssertionError('expected delivery failure')
+            assert store.load_doc(cid)['crm'].get('clarification_pending')
+    asyncio.run(run())

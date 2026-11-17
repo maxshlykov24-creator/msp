@@ -785,3 +785,22 @@ def test_friday_webhook_requires_own_secret(monkeypatch):
     assert c.post('/amo/templates/friday/wrong',data={'leads[status][0][id]':'17'}).status_code==403
     assert c.post('/amo/templates/friday/only-friday',json={}).status_code==422
     assert c.post('/amo/templates/friday/only-friday',content='x',headers={'content-type':'text/plain'}).status_code==415
+
+
+@pytest.mark.parametrize("offset", [0, 2])
+def test_migration_pauses_due_and_late_message_without_cancelling(db,transport,offset):
+    from app.pipeline_guard import MIGRATION_TAG
+    d=doc(db);j=job(db,d)
+    transport.document["_embedded"]={"tags":[{"name":MIGRATION_TAG}]}
+    m.send(db,j,transport,STAMP+timedelta(days=offset))
+    assert j.state=="ready"
+    assert not transport.posts
+
+
+def test_moved_migration_preserves_date_job_outside_scan(db,monkeypatch):
+    from app.pipeline_guard import MIGRATION_TAG
+    d=doc(db);j=job(db,d)
+    c=Fake();c.document["_embedded"]={"tags":[{"name":MIGRATION_TAG}]}
+    monkeypatch.setattr(m,"scan_leads",lambda c,r:[])
+    m.synchronize(db,c,STAMP)
+    assert j.state=="ready"

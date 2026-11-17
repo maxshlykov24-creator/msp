@@ -22,6 +22,7 @@ import { broadcast } from "../ws/hub.js";
 import { withOperationLock } from "../lib/idempotency.js";
 import { getEnv } from "../env.js";
 import { prepareAmoEdit } from "./amoEditQueue.js";
+import { readTypedLead, assertTypedBinding, typedExecutionKind, typedRoutingEnabled, typedPipelines } from "./amoRouting.js";
 import * as financeQueue from "./queue.js";
 import { readAmoEditableFields, buildEditedLeadFields, buildLeadCustomFields, scheduleKassaLinkBackfill } from "./amoMapping.js";
 
@@ -172,16 +173,25 @@ export function kindForAmoStage(stage: string, currentKind: DealKind): DealKind 
  */
 export async function ensureLocalFromAmoLead(lead: amo.AmoLead, stage: string): Promise<Deal> {
   if (!lead?.id) throw new Error("amo lead без id");
+  const typed = readTypedLead(lead);
   const existing = await getByAmoLeadId(lead.id);
-  if (existing) return existing;
+  if (existing) {
+    assertTypedBinding(typed, existing);
+    return existing;
+  }
 
   const byNumber = await getByNumber(lead.id);
   if (byNumber) {
+    if (byNumber.amoLeadId !== lead.id) {
+      throw new Error("Номер заявки совпал с ID другой сделки amoCRM. Автоматическое объединение запрещено.");
+    }
+    assertTypedBinding(typed, byNumber);
     const patched: Deal = {
       ...byNumber,
       amoLeadId: lead.id,
       stage,
-      kind: kindForAmoStage(stage, byNumber.kind),
+      kind: typed ? typedExecutionKind(typed, stage, byNumber.kind) : kindForAmoStage(stage, byNumber.kind),
+      ...(typed ? { funnel: typed.funnel } : {}),
     };
     await persist(patched);
     return patched;
@@ -194,7 +204,7 @@ export async function ensureLocalFromAmoLead(lead: amo.AmoLead, stage: string): 
   const deal: Deal = {
     ...mapped,
     stage,
-    kind: kindForAmoStage(stage, mapped.kind),
+    kind: typed ? typedExecutionKind(typed, stage, mapped.kind) : kindForAmoStage(stage, mapped.kind),
     history: [
       {
         at: new Date().toISOString(),
@@ -996,7 +1006,7 @@ async function mapLeadToDeal(
 ): Promise<Deal> {
   const crmFields = await readAmoEditableFields(lead);
   const store = storeFromLead(lead, storeFieldId);
-  const { funnel, kind } = funnelAndKind(lead.pipeline_id, store);
+  const { funnel, kind } = readTypedLead(lead) ?? funnelAndKind(lead.pipeline_id, store);
   const createdAt = lead.created_at
     ? new Date(lead.created_at * 1000).toISOString()
     : new Date().toISOString();
@@ -1145,34 +1155,33 @@ async function mapLeads(leads: amo.AmoLead[], statuses: StatusRow[]): Promise<De
   return Promise.all(unique.map((lead) => mapLeadToDeal(lead, statuses, storeFieldId, contactsById)));
 }
 
+function boardPipelineIds(): number[] {
+  return [...new Set([AMO_PIPELINE_SALES, AMO_PIPELINE_COMPLAINTS,
+    ...(typedRoutingEnabled() ? Object.values(typedPipelines()) : [])])];
+}
+
 async function fetchAmoOpen(): Promise<Deal[]> {
   const statuses = await statusRows();
-  const salesOpen = openStatusIds(AMO_PIPELINE_SALES, statuses, true);
-  const complaintsOpen = openStatusIds(AMO_PIPELINE_COMPLAINTS, statuses, false);
-  const [salesLeads, complaintsLeads] = await Promise.all([
-    amo.listOpenLeadsInPipeline(AMO_PIPELINE_SALES, salesOpen).catch(() => [] as amo.AmoLead[]),
-    amo.listOpenLeadsInPipeline(AMO_PIPELINE_COMPLAINTS, complaintsOpen).catch(() => [] as amo.AmoLead[]),
-  ]);
-  const leads = [...salesLeads, ...complaintsLeads];
+  // A failed pipeline read must not replace the complete board with a partial
+  // snapshot, otherwise moved orders disappear from the cashier's screen.
+  const groups = await Promise.all(boardPipelineIds().map(async pipeline => {
+    const ids = openStatusIds(pipeline, statuses, pipeline === AMO_PIPELINE_SALES);
+    if (!ids.length) throw new Error(`Нет этапов в справочнике воронки ${pipeline}`);
+    return amo.listOpenLeadsInPipeline(pipeline, ids);
+  }));
+  const leads = groups.flat();
   scheduleKassaLinkBackfill(leads);
   return mapLeads(leads, statuses);
 }
 
 async function fetchAmoClosed(): Promise<Deal[]> {
   const statuses = await statusRows();
-  const salesClosed = closedStatusIds(AMO_PIPELINE_SALES, statuses);
-  const complaintsClosed = closedStatusIds(AMO_PIPELINE_COMPLAINTS, statuses);
-  const [salesDone, complaintsDone] = await Promise.all([
-    amo
-      .listLeadsInPipelineStatuses(AMO_PIPELINE_SALES, salesClosed, { createdFrom: CLOSED_SINCE_UNIX })
-      .catch(() => [] as amo.AmoLead[]),
-    amo
-      .listLeadsInPipelineStatuses(AMO_PIPELINE_COMPLAINTS, complaintsClosed, {
-        createdFrom: CLOSED_SINCE_UNIX,
-      })
-      .catch(() => [] as amo.AmoLead[]),
-  ]);
-  return mapLeads([...salesDone, ...complaintsDone], statuses);
+  const groups = await Promise.all(boardPipelineIds().map(pipeline =>
+    amo.listLeadsInPipelineStatuses(pipeline, closedStatusIds(pipeline, statuses), {
+      createdFrom: CLOSED_SINCE_UNIX,
+    })
+  ));
+  return mapLeads(groups.flat(), statuses);
 }
 
 /** Совместимость со старыми вызовами: открытые плюс уже известные закрытые. */

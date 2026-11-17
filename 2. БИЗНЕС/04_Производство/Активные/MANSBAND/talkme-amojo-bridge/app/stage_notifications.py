@@ -351,6 +351,8 @@ def send_job(db, job, c, s, r, now, *, clock=None, calendar_settings=None):
         db.commit()
         return
     lead = get_lead(c, job.lead_id)
+    from app.pipeline_guard import migration_blocked
+    if migration_blocked(lead): return
     if not valid(lead):
         job.state, job.reason = "cancelled", "stage_changed"
         db.commit()
@@ -391,6 +393,7 @@ def send_job(db, job, c, s, r, now, *, clock=None, calendar_settings=None):
         available = bool(route["recipient"]) and channel.get("state") == "active" and channel.get("transport") == expected
         if available:
             fresh = get_lead(c, job.lead_id)
+            if migration_blocked(fresh): return
             if (not valid(fresh) or (not certificate and primary_contact(fresh) != job.contact_id)):
                 job.state, job.reason = "cancelled", "stage_or_contact_changed"
                 db.commit()

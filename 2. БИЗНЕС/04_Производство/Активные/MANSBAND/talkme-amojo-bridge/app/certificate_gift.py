@@ -16,6 +16,7 @@ from app.certificate_mail import CertificateMailJob,MailSettings,field_value,ann
 from zoneinfo import ZoneInfo
 MSK=ZoneInfo("Europe/Moscow")
 from app import message_templates as m
+from app.pipeline_guard import paid_certificate_scope
 from app.certificate_pdf import render_pdf,DEFAULT_INTRO,DEFAULT_INSTRUCTIONS,CONTACTS
 
 log=logging.getLogger(__name__)
@@ -68,7 +69,7 @@ def seed(db):
 
 def data_for(c,lead):
  from app.stage_notifications import certificate_phone,CalendarSettings
- if lead.get("is_deleted") or lead.get("pipeline_id")!=9601214 or lead.get("status_id") not in (76675038,142):raise ValueError("Сделка больше не является оплаченным сертификатом")
+ if not paid_certificate_scope(lead):raise ValueError("Сделка больше не является оплаченным сертификатом")
  if field_value(lead,3828225).lower() not in ("true","1"):raise ValueError("Не электронный сертификат")
  phone=certificate_phone(lead,CalendarSettings())
  contacts=lead.get("_embedded",{}).get("contacts",[]);main=[x for x in contacts if x.get("is_main")]
@@ -147,8 +148,10 @@ def process(db,c,job,stamp,issuer=issue):
  rule=m.Rule(**doc.active)
  if job.state in ("unknown","partial","failed","sent","delivered","cancelled","pending"):return
  lead=c.get(f"/api/v4/leads/{job.lead_id}",**{"with":"contacts"})
+ from app.pipeline_guard import migration_blocked
+ if migration_blocked(lead):return
  try:
-  if lead.get("is_deleted") or lead.get("pipeline_id")!=9601214 or lead.get("status_id") not in (76675038,142) or field_value(lead,3828225).lower() not in ("true","1"):raise ValueError("Нет подтверждённого оплаченного электронного сертификата")
+  if not paid_certificate_scope(lead) or field_value(lead,3828225).lower() not in ("true","1"):raise ValueError("Нет подтверждённого оплаченного электронного сертификата")
   cert=issuer(job.lead_id)
   lead=c.get(f"/api/v4/leads/{job.lead_id}",**{"with":"contacts"})
   data=data_for(c,lead)
@@ -183,7 +186,9 @@ def process(db,c,job,stamp,issuer=issue):
     # Recheck disabling, source and recipient before every outbound request.
     db.refresh(doc)
     if not doc.active["enabled"]:return
-    fresh=data_for(c,c.get(f"/api/v4/leads/{job.lead_id}",**{"with":"contacts"}))
+    fresh_lead=c.get(f"/api/v4/leads/{job.lead_id}",**{"with":"contacts"})
+    if migration_blocked(fresh_lead):return
+    fresh=data_for(c,fresh_lead)
     if fresh["phone"]!=snap["data"]["phone"]:raise ValueError("Получатель изменился перед отправкой")
     if fresh["nominal"]!=snap["data"]["nominal"]:raise ValueError("Номинал изменился перед отправкой; нужна сверка")
     if any(fresh[k]!=snap["data"][k] for k in ("start","until")):raise ValueError("Срок действия изменился перед отправкой; нужна сверка")
@@ -216,7 +221,7 @@ def process(db,c,job,stamp,issuer=issue):
   job.state="partial" if allowed_parts(job) else "blocked";job.reason=str(exc)[:160];job.check_at=stamp+timedelta(seconds=60);db.commit()
 
 def eligible_legacy(old,lead,activated_at):
- if lead.get("is_deleted") or lead.get("pipeline_id")!=9601214 or lead.get("status_id") not in (76675038,142) or field_value(lead,3828225).lower() not in ("true","1"):return False
+ if not paid_certificate_scope(lead) or field_value(lead,3828225).lower() not in ("true","1"):return False
  if m.aware(old.event_at).timestamp()>=activated_at:return True
  try:start=datetime.fromtimestamp(int(field_value(lead,3829442)),MSK).date()
  except (ValueError,OverflowError,OSError):return False

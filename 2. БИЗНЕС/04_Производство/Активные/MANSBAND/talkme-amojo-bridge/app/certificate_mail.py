@@ -308,6 +308,8 @@ def process_job(db: Session, lead_id: int, s: MailSettings, now: datetime, *, fe
         return
     event_at = job.event_at.replace(tzinfo=timezone.utc) if job.event_at.tzinfo is None else job.event_at
     lead = (fetch or read_lead)(db, lead_id)
+    from app.pipeline_guard import migration_blocked
+    if migration_blocked(lead): return
     if (lead.get("pipeline_id") != s.pipeline_id or lead.get("status_id") != s.status_id
             or lead.get("is_deleted")):
         job.state, job.reason = "cancelled", "stage_changed"
@@ -320,6 +322,7 @@ def process_job(db: Session, lead_id: int, s: MailSettings, now: datetime, *, fe
         if field_value(lead, s.until_field) != str(stamp):
             (persist_expiry or write_expiry)(db, lead_id, stamp, s)
             lead = (fetch or read_lead)(db, lead_id)
+            if migration_blocked(lead): return
             # Never send until the CRM write is confirmed by a fresh read.
             if field_value(lead, s.until_field) != str(stamp):
                 raise RuntimeError("expiry_update_not_confirmed")

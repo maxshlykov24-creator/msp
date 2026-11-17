@@ -25,6 +25,26 @@ class Wz:
         return httpx.Response(*self.reply,request=httpx.Request('POST','https://example.com'))
 class Client:
     def __init__(self,r):self.wz=Wz(r)
+    def get(self,path):return {'id':123}
+
+def test_migration_pauses_unclaimed_message_and_can_resume(db):
+    j=job(db);c=Client((201,))
+    c.get=lambda path:{'id':123,'_embedded':{'tags':[{'name':'MB_MIGRATION_IN_PROGRESS'}]}}
+    assert m.send_part(db,j,c,0,'text','asset')=='migration_guard'
+    assert not c.wz.posts
+    assert db.scalar(select(m.Part.id)) is None
+    assert j.state=='prepared'
+    c.get=lambda path:{'id':123}
+    c.wz.post=lambda *a,**kw:httpx.Response(201,json={'messageId':'resumed'})
+    assert m.send_part(db,j,c,0,'text','asset')=='pending'
+
+def test_campaign_crm_read_failure_does_not_claim_or_send(db):
+    j=job(db);c=Client((201,))
+    def unavailable(path):raise httpx.ReadTimeout('crm unavailable')
+    c.get=unavailable
+    with pytest.raises(httpx.ReadTimeout):m.send_part(db,j,c,0,'text','asset')
+    assert not c.wz.posts
+    assert db.scalar(select(m.Part.id)) is None
 
 def test_unknown_never_reposts(db):
     j=job(db);c=Client(httpx.ReadTimeout('unknown'))

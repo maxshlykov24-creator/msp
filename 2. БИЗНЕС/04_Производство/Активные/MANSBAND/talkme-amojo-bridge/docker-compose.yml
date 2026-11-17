@@ -36,6 +36,8 @@ services:
     command: uvicorn app.main:app --host 0.0.0.0 --port 8080
 
   reminders:
+    extra_hosts:
+      - "api.telegram.org:149.154.167.220"
     build: .
     restart: unless-stopped
     env_file:

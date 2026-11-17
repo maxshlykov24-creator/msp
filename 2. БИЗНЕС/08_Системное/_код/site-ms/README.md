@@ -272,3 +272,46 @@ DNS пока не менялся. Встроенный браузер откры
 A 89380351 переключена на 5.42.104.112 TTL300. Вторая A 95489459 пока остаётся 172.66.3.26: дублирующий новый IP Timeweb не принял, удаление требует подтверждения владельца из-за предупреждения интерфейса о невозможности отмены. Значения и причина снятия сохранены в 99_АРХИВ/2026-10-31_ms-p-DNS-неудачный-Sites-вход/DNS.txt. Попытка перенести старую A по другому имени создала отдельную retired-sites-edge.ms-p.ru (95490841), не сняв старую A; это не исправление корня. Не оставлять смешанный набор в завершённой работе. CNAME www (95489481) меняется на ms-p.ru. Почта, SPF, origin сохранены.
 
 Осталось после подтверждения: снять только лишнюю корневую A 172.66.3.26, проверить все authoritative NS по TCP IPv4, выпустить на новом сервере собственный certbot lineage ms-p-ingress через webroot и включить штатное продление, сменив временные пути TLS в vhost. Затем проверить основной URL без --resolve, браузер и телефон владельца. На момент этой записи восстановление для телефона НЕ подтверждено. Ручной вход владельца в консоль больше не нужен: найден существующий SSH identity из ~/.ssh/config, вход проверен.
+
+## 17.11.2026 · Отдельный редизайн главной
+
+**Статус:** опубликована отдельная копия https://ms-p.ru/redesign/. Основная главная не заменялась. Исходники: `public/redesign/` (HTML, CSS, JavaScript, собственные изображения). Продолжать эту задачу в этой же папке; не менять для неё общие `theme.css`, `brands/` и основной `index.html`.
+
+### Решение и границы
+
+- Основа: переданная база Kris Anfalova от 17.11.2026 и существующие референсы §19, §22, §23. Идея: система за красивым брендом, предметная сцена и понятные состояния заказа. Светлая и тёмная темы; отдельный ключ `ms-product.redesign.theme`.
+- Сравнены предметная, редакционная и пространственная композиции первого экрана в локальном браузере. Выбрана предметная: предложение, действие и сцена помещаются рядом; редакционная отодвигает предметный образ вниз, пространственная слишком усиливает изображение.
+- Четыре переключаемые истории: продажи и сообщения, аналитика и нормы, каталог и крой, лояльность. Пять существующих демо открываются по нажатию в диалоге или отдельной вкладке. Демо не редактировались; iframe сохраняет sandbox без allow-same-origin. Клиентские данные не добавлялись.
+- Изображения обозначены как иллюстрации; график в обложке не является показателем клиента. Портрет и логотип существующие. Оффер двух часов сохранён из действующей главной без новых обязательств.
+- `noindex,nofollow`, ссылка на основной сайт, отдельные OG-метаданные. Это публичный предпросмотр, а не закрытая авторизацией страница. Backend и публичные API не добавлялись.
+
+### Генерации
+
+Встроенный imagegen, без API-ключа. Исходники оставлены в `/Users/max/.codex/generated_images/01a1e9d5-d654-7430-8dad-6ad95ee276e9/`. Проект использует собственные оптимизированные JPEG в `public/redesign/assets/`, а не временные пути. Исходные PNG сохранены. Конвертация JPEG: sips, качество 82, без изменения композиции.
+
+**hero.jpg — финальный промпт:**
+
+> Create a premium editorial still-life photograph for the hero of MS Product, a Russian automation studio for clothing brands. Landscape 3:2 composition. A sculptural folded deep burgundy wool sweater, an elegant blank ivory clothing hangtag with thin burgundy thread, a translucent smoked rose acrylic rectangular slab behind it and a closed warm ivory rigid shipping box. Arrange as a precise quiet architectural composition on a pale warm blush plaster plinth, soft directional sunlight from upper left, refined tactile fabric weave, grounded real shadows, gallery quality luxury fashion art direction. Main sweater in lower middle, taller slab behind right, ample uncluttered light space at top and around edges for separately coded interface overlays. Soft warm off-white and muted rose backdrop, rich wine object provides focus. No people, no logos, no letters, no text, no UI, no graphics, no watermarks, no excessive glow. Photorealistic coherent materials, restrained, confident, beautifully composed. This is an illustrative fictional fashion item, not a real client product.
+
+**material.jpg — финальный промпт:**
+
+> Premium editorial macro still life for an automation studio serving clothing brands, coordinated with a warm ivory and burgundy fashion campaign. Landscape 3:2 photograph, overhead diagonal composition of neatly layered ivory garment pattern paper with subtle unmarked cut lines, folded wine burgundy wool fabric at the upper right, a burgundy thread spool and a narrow satin ribbon curving in one controlled fluid line from lower left to upper right. Elegant tactile materials on warm light stone table, soft daylight upper left, precise natural shadows, quiet architectural arrangement, lots of empty cream space. No writing, numbers, text, people, logos, interface, screens or watermarks. Photorealistic beautiful detail, no random clutter, consistent lighting, luxury fashion editorial. This is an abstract illustration of clothing production, not a real client workshop.
+
+### Публикация и проверка
+
+Фактическая раздача подтверждена через Docker mount: `/opt/ms-p-site/public` → `/usr/share/nginx/html`. Сначала загрузили отдельный staging-каталог вне public, затем перенесли в новый `public/redesign`. Последующие точечные обновления только внутри этой папки. `deploy/deploy.sh` не запускался, контейнер, nginx и DNS не менялись.
+
+Проверки 17.11.2026:
+
+- `node --check` для обоих JavaScript; HTML: уникальные ID, существующие якоря, доступность локальных ссылок и ресурсов.
+- Браузер: ширины 320, 390, 768, 1024, 1440; горизонтального переполнения и незагрузившихся изображений не обнаружено. Исправлена склейка слов при мобильном переносе заголовка.
+- Светлая и тёмная темы, сохранение выбора после перезагрузки, переключение проектов кнопками и стрелкой клавиатуры, выбор этапа до отгрузки.
+- Все пять демо загрузились. На живом сайте в кассе выбран фильтр Отложка: интерфейс обновил список. Мобильная касса отображается адаптивно без масштабирования настольного экрана.
+- Escape закрывает диалог, фокус возвращается на вызвавшую кнопку, src iframe очищается.
+- На отдельном локальном QA-сервере искусственно проверены HTTP 503, повторная попытка и ответ дольше 15 секунд: показаны сообщения ошибки и тайм-аута. Рабочий сайт для этих тестов не ломался.
+- В проверенных сценариях ошибок и предупреждений консоли не было (кроме намеренного 503 на QA-сервере).
+- Контрольные суммы существующих публичных файлов локально и на сервере до и после публикации совпали. Опубликованная основная главная совпала с исходником; все файлы новой папки проверены по HTTPS и SHA-256.
+
+**Ограничения проверки:** физический iPhone не использовался; мобильный вид проверен изменением viewport. Уменьшение движения предусмотрено CSS, отдельная проверка с системной настройкой не проводилась. Конверсия и полевые показатели скорости не измерялись. Независимого пользовательского тестирования нет. Не считать редизайн доказанным ростом продаж.
+
+**Следующий шаг:** просмотр владельцем https://ms-p.ru/redesign/, правки в той же копии. Замена основной страницы требует отдельного решения. При снятии копии сохранить её в архив с причиной, не удалять.

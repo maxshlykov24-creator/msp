@@ -4,7 +4,7 @@ import * as deals from "./deals.js";
 import * as taskFlow from "./taskFlow.js";
 import { writeKassaLink } from "./amoMapping.js";
 import { appendSystemAudit } from "./audit.js";
-import { allowedAmoPipeline } from "./amoRouting.js";
+import { allowedAmoPipeline, migrationBlocked, readTypedLead, assertTypedBinding, typedExecutionKind } from "./amoRouting.js";
 import { withOperationLock } from "../lib/idempotency.js";
 
 /**
@@ -122,10 +122,12 @@ async function applyAmoLeadStatusEventLocked(event: LeadStatusEvent): Promise<{
   // События могут прийти повторно и не по порядку: читаем актуальное состояние CRM.
   let lead = await amo.getLead(event.id);
   if (!lead) return { skipped: "lead_not_found", tasks: false };
+  if (migrationBlocked(lead)) return { skipped: "migration_guard", tasks: false };
   const statusId = lead.status_id;
   const pipelineId = lead.pipeline_id;
   // Проверяем актуальную CRM до зеркала, ссылок, задач и финансовых эффектов.
   if (!allowedAmoPipeline(pipelineId)) return { skipped: "pipeline_disabled", tasks: false };
+  const typed = readTypedLead(lead);
 
   const stage = await deals.stageNameByStatusId(statusId!, pipelineId);
   if (!stage || stage === "—") return { skipped: "unknown_status", tasks: false };
@@ -136,6 +138,7 @@ async function applyAmoLeadStatusEventLocked(event: LeadStatusEvent): Promise<{
     if (!lead?.id) return { skipped: "lead_not_found", tasks: false };
     deal = await deals.ensureLocalFromAmoLead(lead, stage);
   }
+  assertTypedBinding(typed, deal);
   deal = await deals.refreshFieldsFromAmo(deal, lead);
   if (deal.amoEditOutbox) return {dealNumber:deal.number,tasks:false,skipped:"local_edit_pending"};
 
@@ -164,7 +167,7 @@ async function applyAmoLeadStatusEventLocked(event: LeadStatusEvent): Promise<{
 
   // Этап из amo задаёт вид заявки: доставка по воронке СДЭК, отложка по
   // «Ждет товар» / «Товар в магазине» (созвон 04.09, примечание №1).
-  const nextKind = deals.kindForAmoStage(stage, deal.kind);
+  const nextKind = typed ? typedExecutionKind(typed, stage, deal.kind) : deals.kindForAmoStage(stage, deal.kind);
 
   if (deal.stage === stage && deal.kind === nextKind) {
     // Этап уже совпал — задачи всё равно досоздаём (если вебхук пришёл повторно

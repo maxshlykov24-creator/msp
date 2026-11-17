@@ -13,6 +13,7 @@ import dealsRoutes from "./routes/deals.routes.js";
 import catalogRoutes from "./routes/catalog.routes.js";
 import saleRoutes from "./routes/sale.routes.js";
 import certificateServiceRoutes from "./routes/certificateService.routes.js";
+import crmAutomationRoutes from "./routes/crmAutomation.routes.js";
 import certificatesRoutes from "./routes/certificates.routes.js";
 import queueRoutes from "./routes/queue.routes.js";
 import statsRoutes from "./routes/stats.routes.js";
@@ -69,6 +70,7 @@ export async function buildServer() {
       await api.register(saleRoutes);
       await api.register(certificatesRoutes);
       await api.register(certificateServiceRoutes);
+      await api.register(crmAutomationRoutes);
       await api.register(queueRoutes);
       await api.register(statsRoutes);
       await api.register(webhooksRoutes);

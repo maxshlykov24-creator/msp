@@ -268,6 +268,7 @@ test("promise-to-reserve logistics preserves kind, source queue and idempotency"
         "@kassa/shared": shared, "drizzle-orm": orm, "../db/index.js": { db }, "../db/schema.js": schema,
         "./deals.js": dealService, "./audit.js": { appendSystemAudit: async () => {} }, "./queue.js": {},
         "./sale.js": { enqueueCompanyChain: async () => {} },
+        "../env.js": { getEnv: () => ({ CRM_AUTOMATION_TASKS_ENABLED: "false" }) },
         "../clients/ms.js": { createMove: async () => { moves++; return { id: "test-move" }; } },
         "./bootstrap.js": { getMsRef: async () => ({ meta: {} }) },
         "./catalog.js": { resolveAssortment: async () => ({ href: "test", type: "variant" }), productNamesByMsIds: async () => new Map(), productCodesByMsIds: async () => new Map() },
@@ -414,12 +415,12 @@ test("online conversion preserves the order and queues assembly after CRM stage 
   for (const kind of ["sale", "deferred", "promise"]) {
     const original = { ...baseDeal, id: `convert-${kind}`, number: 9100, kind, stage: "Дано обещание", amoLeadId: 123, consultant: "Консультант", clientPhone: "+70000000000", items: [{ productId: "product", name: "Товар", price: 5000, qty: 1 }], payments: [{ id: "p", methodId: "cash_stores", amount: 3000 }], total: 5000, paid: 3000 };
     const table = (table, columns) => Object.assign({ table }, Object.fromEntries(columns.map((c) => [c, c])));
-    const schema = { deals: table("deals", ["number"]), amoMeta: table("meta", ["kind"]), tasks: table("tasks", ["id", "dealNumber", "kind", "status"]), users: table("users", ["name", "role"]), dealItemState: table("items", []) };
+    const schema = { deals: table("deals", ["number", "stage"]), amoMeta: table("meta", ["kind"]), tasks: table("tasks", ["id", "dealNumber", "kind", "status"]), users: table("users", ["name", "role"]), dealItemState: table("items", []) };
     const state = { deals: [{ number: original.number, data: original }], meta: [{ kind: "status", parentId: 99, amoId: 1234, name: "Передан на сборку" }], tasks: [], users: [] };
     const query = (operation, fields) => {
       let target, predicate = () => true, values, cached;
       const q = {
-        from(t) { target = t.table; return q; }, where(p) { predicate = p; return q; }, limit() { return q; },
+        from(t) { target = t.table; return q; }, where(p) { predicate = p; return q; }, limit() { return q; }, for() { return q; },
         values(v) { values = v; return q; }, onConflictDoUpdate() { return q; }, onConflictDoNothing() { return q; }, returning(f) { fields = f; return q; },
         then(resolve, reject) {
           cached ??= Promise.resolve().then(() => {
@@ -433,6 +434,7 @@ test("online conversion preserves the order and queues assembly after CRM stage 
       }; return q;
     };
     const db = { select: (f) => query("select", f), insert: (t) => query("insert").from(t) };
+    db.transaction = fn => fn(db);
     const writes = [];
     const dependencies = {
       "@kassa/shared": shared,
@@ -440,7 +442,7 @@ test("online conversion preserves the order and queues assembly after CRM stage 
       "../db/index.js": { db }, "../db/schema.js": schema,
       "../clients/amo.js": { getLead: async () => ({ pipeline_id: 99 }), updateLead: async (...args) => writes.push(args), addLeadNote: async () => {} },
       "./bootstrap.js": {}, "../ws/hub.js": { broadcast: () => {} }, "./queue.js": {}, "./amoMapping.js": {},
-      "./sale.js": {}, "./audit.js": { appendSystemAudit: async () => {} },
+      "./sale.js": {}, "./amoRouting.js": {readTypedLead: () => null}, "./audit.js": { appendSystemAudit: async () => {} },
       "../lib/idempotency.js": { withOperationLock: async (_key, fn) => fn() },
       "../env.js": { getEnv: () => ({ AMOCRM_ASYNC_EDITS: "false" }) },
       "./amoEditQueue.js": { prepareAmoEdit: async () => { throw new Error("Conversion must not enqueue a descriptive edit"); } },
@@ -463,6 +465,15 @@ test("online conversion preserves the order and queues assembly after CRM stage 
     await flow.onDealStage(converted, "Автор");
     assert.equal(state.tasks.length, 1); assert.equal(state.tasks[0].kind, "assemble_cdek");
     assert.equal(state.tasks[0].assigneeRole, "consultant"); assert.equal(state.tasks[0].store, original.store);
+    state.deals[0].data.stage = "Собран";
+    state.deals[0].stage = "Собран";
+    const beforeCourier = writes.length;
+    await flow.onTaskCompleted({kind:"call_courier", dealNumber:9100}, "Автор");
+    await flow.onTaskCompleted({kind:"call_courier", dealNumber:9100}, "Автор");
+    assert.equal(writes.length, beforeCourier, "courier does not change CRM stage");
+    assert.equal(state.tasks.filter(t => t.kind === "take_to_cdek").length, 1);
+    assert.equal(state.deals[0].data.stage, "Собран");
+
   }
 });
 
@@ -565,4 +576,20 @@ test("test returns do not consume real stock return allowance, but still count w
   assert.equal(returnableItems(source,[returned])[0].qty,1);
   assert.equal(returnableItems({...source,isTest:true},[returned]).length,0);
   assert.equal(returnableItems(source,[{...returned,isTest:false}]).length,0);
+});
+
+
+test("courier completion keeps assembled stage; only handing over means shipped", async () => {
+  const { taskFlowOf, flowsForStage } = await import("../dist/index.js");
+  const courier = taskFlowOf("call_courier");
+  assert.equal(courier.nextStage, undefined);
+  assert.equal(courier.followUp, "take_to_cdek");
+  const handover = taskFlowOf("take_to_cdek");
+  assert.equal(handover.trigger.afterKind, "call_courier");
+  assert.equal(handover.nextStage, "Отправлен");
+  assert.deepEqual(flowsForStage("Собран", "delivery").map(r => r.kind), ["call_courier"]);
+  const task = {kind: "take_to_cdek", idempotencyKey: "take_to_cdek:request-123"};
+  assert.equal(isObsoleteStageTask({...baseDeal, stage: "Собран"}, task), false);
+  assert.equal(isObsoleteStageTask({...baseDeal, stage: "Отправлен"}, task), true);
+  assert.equal(isObsoleteStageTask({...baseDeal, stage: "Отправлен"}, {...task, idempotencyKey: "manual"}), false);
 });

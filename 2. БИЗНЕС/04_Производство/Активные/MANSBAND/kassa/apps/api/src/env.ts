@@ -14,6 +14,8 @@ const schema = z.object({
   JWT_EXPIRES_IN: z.string().default("12h"),
 
   CERTIFICATE_SERVICE_KEY: z.string().min(32).optional(),
+  CRM_AUTOMATION_SERVICE_KEY: z.string().min(32).optional(),
+  CRM_AUTOMATION_TASKS_ENABLED: z.enum(["true", "false"]).default("false"),
   MESSAGE_TEMPLATES_URL: z.string().url().optional(),
   MESSAGE_TEMPLATES_KEY: z.string().min(24).optional(),
 

@@ -19,6 +19,7 @@ from sqlalchemy import Integer, String, JSON, DateTime, Boolean, UniqueConstrain
 from sqlalchemy.orm import Mapped, mapped_column
 from app.models import Base
 from app.database import get_engine, get_session_factory
+from app.pipeline_guard import migration_blocked
 
 MSK = ZoneInfo('Europe/Moscow')
 CAMPAIGN = 'collection-2026-11-10'
@@ -274,6 +275,10 @@ def send_part(db,j,c,position,kind,asset):
         stop(db,j,'channel_not_active');return 'halt'
     if channel.get('transport')!=('tgapi' if route['transport']=='telegram' else route['transport']):
         stop(db,j,'channel_transport_mismatch');return 'halt'
+    # Pause without claiming a Part: after migration the same unsent message
+    # remains eligible. A failed CRM read also prevents the provider request.
+    lead=c.get(f'/api/v4/leads/{j.lead_id}')
+    if migration_blocked(lead):return 'migration_guard'
     p=Part(recipient_id=j.id,position=position,kind=kind,state='inflight',crm_id=f'{CAMPAIGN}-{j.id}-{position}-{kind}')
     db.add(p);j.state='inflight';db.commit()
     payload={'channelId':route['channelId'],'chatType':route['transport'],**route['recipient'],'clearUnanswered':False,'crmMessageId':p.crm_id}
@@ -321,6 +326,7 @@ def dispatch(db,j,c,asset):
         users=c.get('/api/v4/users').get('_embedded',{}).get('users',[])
         if not any(u['id']==owner and u.get('rights',{}).get('is_active') for u in users):stop(db,j,'inactive_shift_owner');return
     lead=c.get(f'/api/v4/leads/{j.lead_id}')
+    if migration_blocked(lead):return
     if lead.get('pipeline_id')!=10730010 or lead.get('status_id')!=89984117:
         stop(db,j,'campaign_stage_changed');return
     if lead.get('responsible_user_id')!=owner:
