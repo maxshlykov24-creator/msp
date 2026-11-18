@@ -4,24 +4,69 @@ const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const themeButton=$('.theme-toggle');
 function syncTheme(){const dark=document.documentElement.dataset.theme==='dark';themeButton.setAttribute('aria-pressed',String(dark));themeButton.setAttribute('aria-label',dark?'Включить светлую тему':'Включить тёмную тему');$('meta[name="theme-color"]').content=dark?'#21171c':'#f5f2ed';}
 themeButton.addEventListener('click',()=>{const theme=document.documentElement.dataset.theme==='dark'?'light':'dark';document.documentElement.dataset.theme=theme;try{localStorage.setItem('ms-product.redesign.theme',theme);}catch{}syncTheme();});syncTheme();
-const states=['Заказ получен','Передан в обработку','Товар в резерве','Оплата получена','Готов к отгрузке'];
-$$('[data-step]').forEach(button=>button.addEventListener('click',()=>{const index=Number(button.dataset.step);$$('[data-step]').forEach((item,i)=>{item.classList.toggle('active',i===index);item.setAttribute('aria-pressed',String(i===index));});$('#step-count').textContent=`0${index+1} · 05`;$('#order-state').textContent=states[index];$('.progress-track span').style.width=`${(index+1)*20}%`;$('.order-status .status-tick').textContent=index===0?'↙':index===4?'↗':'✓';}));
+const choices = $$('.lab-choice');
+choices.forEach(choice => choice.addEventListener('click', () => {
+  choices.forEach(item => {
+    const selected = item === choice;
+    item.setAttribute('aria-expanded', String(selected));
+    document.getElementById(item.getAttribute('aria-controls')).hidden = !selected;
+  });
+}));
+const motionButton = $('.motion-toggle');
+function setPaused(paused) {
+  document.documentElement.toggleAttribute('data-paused', paused);
+  motionButton.setAttribute('aria-pressed', String(paused));
+  motionButton.setAttribute('aria-label', paused ? 'Возобновить движение фона' : 'Приостановить движение фона');
+  motionButton.textContent = paused ? '▷' : 'Ⅱ';
+  document.dispatchEvent(new Event('silk-pause'));
+}
+motionButton.addEventListener('click', () => setPaused(!document.documentElement.hasAttribute('data-paused')));
+try {
+  if (!sessionStorage.getItem('redesign.scene-seen')) document.body.classList.add('first-scene');
+  sessionStorage.setItem('redesign.scene-seen', '1');
+} catch {}
 const slides=$$('.project-slide'),pickers=$$('[data-project]'),names=['Продажи и коммуникации','Аналитика и экономика','Каталог и крой','Программа лояльности'];
 let selected=0;
-function selectProject(index){selected=(index+slides.length)%slides.length;slides.forEach((slide,i)=>{slide.hidden=i!==selected;});pickers.forEach((button,i)=>button.setAttribute('aria-pressed',String(i===selected)));$('#project-announcement').textContent=`0${selected+1} · 04 · ${names[selected]}`;}
+function selectProject(index){const direction=index<selected?-1:1;selected=(index+slides.length)%slides.length;
+slides[selected].style.setProperty('--slide-from', direction*28+'px');slides.forEach((slide,i)=>{slide.hidden=i!==selected;});pickers.forEach((button,i)=>button.setAttribute('aria-pressed',String(i===selected)));$('#project-announcement').textContent=`0${selected+1} · 04 · ${names[selected]}`;}
 pickers.forEach(button=>button.addEventListener('click',()=>selectProject(Number(button.dataset.project))));
 $('#project-prev').addEventListener('click',()=>selectProject(selected-1));$('#project-next').addEventListener('click',()=>selectProject(selected+1));
 $('.project-stage').addEventListener('keydown',event=>{if(event.target!==event.currentTarget)return;if(event.key==='ArrowLeft'||event.key==='ArrowRight'){event.preventDefault();selectProject(selected+(event.key==='ArrowRight'?1:-1));}});
+window.addEventListener('pageshow', () => {
+  const from = history.state?.cuttingReturn;
+  if (!from) return;
+  if (from === 'project') selectProject(2);
+  else choices[choices.length - 1].click();
+  const selector = from === 'project' ? '.project-slide [data-demo="cutting"]' : '#preview-cutting button';
+  $(selector).focus();
+  const state = {...history.state};
+  delete state.cuttingReturn;
+  history.replaceState(state, '');
+});
 let touch=null;
 $('.project-stage').addEventListener('touchstart',event=>{if(event.target.closest('button,a'))return;const t=event.touches[0];touch={x:t.clientX,y:t.clientY};},{passive:true});
 $('.project-stage').addEventListener('touchend',event=>{if(!touch)return;const t=event.changedTouches[0],x=t.clientX-touch.x,y=t.clientY-touch.y;touch=null;if(Math.abs(x)>70&&Math.abs(x)>Math.abs(y)*1.5)selectProject(selected+(x<0?1:-1));},{passive:true});
-const demos={orders:{name:'Заявки и касса',path:'mansband/index.html?v=anonymous-1#board/all/all',instruction:'Выберите Отложка, отфильтруйте магазин и откройте заявку. Все изменения остаются в демонстрации.'},messages:{name:'Автоматические сообщения',path:'mansband/index.html?v=anonymous-1#message-templates',instruction:'Откройте сценарий и проверьте его текст. Реальные сообщения из демо не отправляются.'},analytics:{name:'Аналитика продаж',path:'analytics/index.html',instruction:'Выберите категорию и канал сбыта. Переключитесь на Товары или Клиенты и откройте строку.'},production:{name:'Нормы и себестоимость',path:'production/index.html',instruction:'Найдите модель, откройте норму, выберите размер. Данные здесь демонстрационные.'},cutting:{name:'Каталог и крой',path:'cutting/index.html',instruction:'Найдите модель, раскройте размеры. В разделе Крой откройте задание и посмотрите план партии.'}};
-const dialog=$('#demo-dialog'),frame=$('#demo-frame'),status=$('#demo-status');let currentDemo=null,opener=null,controller=null,timeout=null,loadId=0;
-function resetLoad(){loadId++;controller?.abort();clearTimeout(timeout);frame.removeAttribute('src');frame.hidden=true;}
-async function loadDemo(){resetLoad();const id=loadId;const url='/brands/previews/'+currentDemo.path;status.hidden=false;status.textContent='Загружаем интерфейс…';controller=new AbortController();timeout=setTimeout(()=>{controller?.abort();if(id===loadId){status.hidden=false;status.textContent='Демо загружается дольше обычного. Попробуйте ещё раз или откройте его в отдельной вкладке.';}},15000);
-try{const response=await fetch(url.split('#')[0],{method:'HEAD',signal:controller.signal,credentials:'omit'});if(!response.ok||!response.headers.get('content-type')?.includes('text/html'))throw new Error('unavailable');if(id!==loadId)return;frame.onload=()=>{if(id!==loadId)return;clearTimeout(timeout);frame.hidden=false;status.textContent='Демо загружено. Используются обезличенные демонстрационные данные.';};frame.onerror=()=>{if(id!==loadId)return;clearTimeout(timeout);status.textContent='Не удалось загрузить демо. Повторите попытку или откройте отдельную вкладку.';};frame.hidden=false;frame.src=url;}catch(error){if(id!==loadId)return;clearTimeout(timeout);status.textContent=error.name==='AbortError'?'Загрузка заняла слишком много времени. Повторите попытку или откройте отдельную вкладку.':'Не удалось загрузить демо. Проверьте соединение и повторите попытку.';}}
-$$('[data-demo]').forEach(button=>button.addEventListener('click',()=>{currentDemo=demos[button.dataset.demo];opener=button;$('#demo-title').textContent=currentDemo.name;$('#demo-instruction').textContent=currentDemo.instruction;frame.title=currentDemo.name+' · демонстрационные данные';$('#demo-external').href='/brands/previews/'+currentDemo.path;dialog.showModal();document.body.classList.add('modal-open');loadDemo();}));
-$('#demo-close').addEventListener('click',()=>dialog.close());$('#demo-retry').addEventListener('click',loadDemo);
+const demos={orders:{name:'Заявки и касса',path:'mansband/index.html?v=anonymous-1#board/deferred/all',instruction:'Список уже отфильтрован по отложкам. Откройте строку заявки. Все изменения остаются в демонстрации.'},messages:{name:'Автоматические сообщения',path:'mansband/index.html?v=anonymous-1#message-templates',instruction:'Откройте сценарий и проверьте его текст. Реальные сообщения из демо не отправляются.'},analytics:{name:'Аналитика продаж',path:'analytics/index.html',instruction:'Выберите категорию и канал сбыта. Переключитесь на Товары или Клиенты и откройте строку.'},production:{name:'Нормы и себестоимость',path:'production/index.html',instruction:'Найдите модель, откройте норму, выберите размер. Данные здесь демонстрационные.'},cutting:{name:'Каталог и крой',path:'cutting/index.html',embeddedPath:'./cutting.html',instruction:'Откройте задание и посмотрите план партии. В отдельной вкладке выберите раздел «Крой».'}};
+const dialog=$('#demo-dialog'),frameTemplate=$('#demo-frame'),status=$('#demo-status');
+frameTemplate.remove();
+let frame=null;let currentDemo=null,opener=null,controller=null,timeout=null,loadId=0;
+function resetLoad(){loadId++;controller?.abort();clearTimeout(timeout);frame?.remove();frame=null;}
+async function loadDemo(){resetLoad();const id=loadId;const url=currentDemo.embeddedPath || '/brands/previews/'+currentDemo.path;status.hidden=false;status.textContent='Загружаем интерфейс…';controller=new AbortController();timeout=setTimeout(()=>{controller?.abort();if(id===loadId){status.hidden=false;status.textContent='Демо загружается дольше обычного. Попробуйте ещё раз или откройте его в отдельной вкладке.';}},15000);
+try{const response=await fetch(url.split('#')[0],{method:'HEAD',signal:controller.signal,credentials:'omit'});if(!response.ok||!response.headers.get('content-type')?.includes('text/html'))throw new Error('unavailable');if(id!==loadId)return;frame=frameTemplate.cloneNode(false);frame.title=currentDemo.name+' · демонстрационные данные';frame.onload=()=>{if(id!==loadId)return;clearTimeout(timeout);frame.hidden=false;status.textContent='Демо загружено. Используются обезличенные демонстрационные данные.';};frame.onerror=()=>{if(id!==loadId)return;clearTimeout(timeout);status.textContent='Не удалось загрузить демо. Повторите попытку или откройте отдельную вкладку.';};frame.hidden=false;frame.src=url;dialog.append(frame);}catch(error){if(id!==loadId)return;clearTimeout(timeout);status.textContent=error.name==='AbortError'?'Загрузка заняла слишком много времени. Повторите попытку или откройте отдельную вкладку.':'Не удалось загрузить демо. Проверьте соединение и повторите попытку.';}}
+$$('[data-demo]').forEach(button=>button.addEventListener('click',()=>{currentDemo=demos[button.dataset.demo];opener=button;
+if(button.dataset.demo==='cutting' && matchMedia('(max-width:720px)').matches){
+  history.replaceState({...history.state,cuttingReturn:button.closest('.project-slide')?'project':'lab'},'');
+  location.assign('./cutting.html');
+  return;
+}
+$('#demo-title').textContent=currentDemo.name;$('#demo-instruction').textContent=currentDemo.instruction;$('#demo-external').href='/brands/previews/'+currentDemo.path;history.pushState({...history.state, redesignDemo:true},'');dialog.showModal();document.body.classList.add('modal-open');loadDemo();}));
+function dismissDemo() {
+  resetLoad();dialog.close();
+  if(history.state?.redesignDemo) history.back();
+}
+window.addEventListener('popstate', () => {if(dialog.open) dialog.close();});
+dialog.addEventListener('cancel', event => {event.preventDefault();dismissDemo();});
+$('#demo-close').addEventListener('click',dismissDemo);$('#demo-retry').addEventListener('click',loadDemo);
 dialog.addEventListener('close',()=>{resetLoad();document.body.classList.remove('modal-open');opener?.focus();});
-dialog.addEventListener('click',event=>{if(event.target!==dialog)return;const r=dialog.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)dialog.close();});
+dialog.addEventListener('click',event=>{if(event.target!==dialog)return;const r=dialog.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)dismissDemo();});
 })();
