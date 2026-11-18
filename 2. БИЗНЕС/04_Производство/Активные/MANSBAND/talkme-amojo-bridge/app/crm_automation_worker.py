@@ -633,7 +633,9 @@ def promise_details(snapshot, lead, users):
         day = date.fromisoformat(details.get("due_date") or "")
     except ValueError:
         raise ValueError("invalid_kassa_promise_date") from None
-    assignee = users.get(details["author_id"], lead["responsible_user_id"])
+    # Explicit null from the cash desk also supersedes a legacy environment mapping.
+    mapped = details.get("amo_user_id", users.get(details["author_id"]))
+    assignee = lead["responsible_user_id"] if mapped is None else mapped
     if not isinstance(assignee, int) or assignee <= 0:
         raise ValueError("invalid_promise_assignee")
     body = f"Выполнить обещание.\nАвтор: {author}\nКомментарий: {comment}\nСрок: {day:%d.%m.%Y}"

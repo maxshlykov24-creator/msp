@@ -1,3 +1,5 @@
+import { CRM_USER_PREFIX } from "../services/settings.js";
+import { getDirectoryUsers } from "../clients/amo.js";
 import type { FastifyInstance } from "fastify";
 import { timingSafeEqual, createHash } from "node:crypto";
 import { getEnv } from "../env.js";
@@ -58,7 +60,7 @@ export default async function crmAutomationRoutes(app: FastifyInstance) {
     if (!/^[1-9]\d*$/.test(req.params.leadId)) return reply.code(400).send({ message: "Некорректная сделка" });
     const leadId = Number(req.params.leadId);
     if (!Number.isSafeInteger(leadId)) return reply.code(400).send({ message: "Некорректная сделка" });
-    return sql.begin(async tx => {
+    const snapshot = await sql.begin(async tx => {
       await tx`set transaction isolation level repeatable read, read only`;
       const bindings = await tx`
         select number, amo_lead_id as lead_id, data->>'kind' as kind,
@@ -77,7 +79,7 @@ export default async function crmAutomationRoutes(app: FastifyInstance) {
       if (req.query.include === "promise" && bindings.length === 1 && bindings[0]!.stage === "Дано обещание") {
         const [row] = await tx`
           select d.data->>'comment' as comment, d.data->>'actualUntil' as due_date,
-                 entry.actor_id as author_id, entry.actor_name as author
+                 entry.actor_id as author_id, entry.actor_name as author, mapping.value as amo_user_id
           from deals d
           join lateral (
             select source, actor_id, actor_name, "after"->>'stage' as stage
@@ -88,6 +90,7 @@ export default async function crmAutomationRoutes(app: FastifyInstance) {
               and (action='deal.created' or "before"->>'stage' is not null)
             order by created_at desc, id desc limit 1
           ) entry on entry.stage=d.stage and entry.source='manual' and entry.actor_id is not null
+          left join app_settings mapping on mapping.key=${CRM_USER_PREFIX} || entry.actor_id::text
           where d.number=${bindings[0]!.number} and d.amo_lead_id=${leadId}`;
         promise = row ?? null;
       }
@@ -95,5 +98,10 @@ export default async function crmAutomationRoutes(app: FastifyInstance) {
       return { version: 1, lead_id: leadId, observed_at: new Date().toISOString(),
         execution_owners: { promise: owner, courier: owner }, bindings, tasks, promise };
     });
+    const promise = snapshot.promise;
+    if (promise?.amo_user_id != null && !(await getDirectoryUsers()).some(u => u.id === promise.amo_user_id && u.active)) {
+      promise.amo_user_id = null;
+    }
+    return snapshot;
   });
 }

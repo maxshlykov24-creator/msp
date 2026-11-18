@@ -10,6 +10,18 @@ import * as payroll from "../services/payroll.js";
  * менять — только rop / admin.
  */
 export default async function settingsRoutes(app: FastifyInstance) {
+  app.get("/settings/crm-users", { preHandler: [app.requireRoles(["admin", "rop"])] },
+    async () => settings.getCrmUserLinks());
+  app.put("/settings/crm-users", { preHandler: [app.requireRoles(["admin"])] }, async (req, reply) => {
+    const id = z.number().int().positive().safe().nullable();
+    const parsed = z.object({staffId:z.string().uuid(), amoId:id, previous:id}).strict().safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({message:"Некорректная привязка"});
+    const {staffId, amoId, previous} = parsed.data;
+    const result = await settings.setCrmUserLink(staffId, amoId, previous,
+      {id:req.user.sub, name:req.user.name, role:req.user.role});
+    return "error" in result ? reply.code(409).send({message:result.error}) : result;
+  });
+
   app.get("/settings", { preHandler: [app.authenticate] }, async () => settings.getAppSettings());
 
   app.put("/settings", { preHandler: [app.requireRoles(["rop", "admin"])] }, async (req, reply) => {

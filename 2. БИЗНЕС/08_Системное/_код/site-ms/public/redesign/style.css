@@ -89,6 +89,7 @@ p,dd {color: var(--muted)}
 .hero-cta {display: flex; flex-wrap: wrap; align-items: center; gap: 12px 22px; margin-top: clamp(22px,2.1vw,36px)}
 .garment {position: relative; display: grid; justify-items: center; align-self: center; padding-block: 0 7px}
 .garment-scene {width: min(100%,480px); aspect-ratio: 1.1; position: relative; display: grid; place-items: center; isolation: isolate}
+[data-theme=dark] .garment-scene::before {content: ''; position: absolute; z-index: -1; inset: -5%; background: radial-gradient(ellipse closest-side,#bd8d9f38,transparent)}
 .garment-object {width: 88%; position: relative; transform: translate(var(--object-x,0px),var(--object-y,0px)) rotate(var(--object-turn,0deg)); transition: transform .7s var(--ease)}
 .garment-object img {width: 100%; height: auto; filter: drop-shadow(6px 17px 13px #3d13272b)}
 @media(prefers-reduced-motion:no-preference) {
@@ -200,9 +201,14 @@ dialog::backdrop {background: #170d16bd; backdrop-filter: blur(5px)}
 .dialog-top,.dialog-actions {display: flex; justify-content: space-between; align-items: center; gap: 14px}
 .dialog-top h2 {font-size: 26px; margin-top: 5px}
 .dialog-top .circle-button {flex: none}
-dialog>p {margin-top: 12px; font-size: 14px}
+.demo-help {margin-block: 10px 12px}
+.demo-help summary {display: list-item; width: fit-content; padding-block: 8px; min-height: 36px; font-size: 14px; font-weight: 550; color: var(--wine)}
+.demo-help p {margin-block: 2px 4px; font-size: 14px}
+.dialog-screen {height: 64dvh; position: relative; background: var(--panel); border: 1px solid var(--line)}
+#demo-status {position: absolute; z-index: 1; inset: 0; display: grid; place-items: center; background: var(--surface); padding: 16px; text-align: center}
+#demo-status.loaded {inset: auto; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); pointer-events: none}
 .dialog-actions .quiet-link {font-size: 13px}
-#demo-frame {width: 100%; height: 64dvh; display: block; border: 1px solid var(--line); background: var(--panel); margin-top: 13px}
+#demo-frame {width: 100%; height: 100%; display: block; border: 0; background: var(--panel)}
 body.modal-open {overflow: hidden}
 
 @keyframes type-in {from {opacity: .15; transform: translateY(.32em); clip-path: inset(0 0 77%)} to {opacity: 1; transform: none; clip-path: inset(-15% -3% -20%)}}
@@ -319,7 +325,9 @@ body.modal-open {overflow: hidden}
   #demo-dialog[open] {position: fixed; inset: 0; margin: 0; width: 100%; height: 100dvh; max-height: none; border: 0; border-radius: 0; display: flex; flex-direction: column; padding: 15px}
   .dialog-top .eyebrow {font-size: 9px}
   .dialog-actions {gap: 8px; flex-wrap: wrap}
-  #demo-frame {flex: 1 0 34dvh; min-height: 0}
+  .demo-help {margin-block: 3px 6px}
+  .demo-help summary {min-height: 44px; padding-block: 11px}
+  .dialog-screen {height: auto; flex: 1 0 34dvh; min-height: 0; margin: 0 -15px -15px; border-inline: 0}
 }
 @media(max-width:360px) {
   :root {--gutter: 16px}

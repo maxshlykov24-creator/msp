@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm";
-import { db } from "../db/index.js";
+import { db, sql } from "../db/index.js";
+import { getDirectoryUsers } from "../clients/amo.js";
 import { appSettings } from "../db/schema.js";
 import {
   SARY_MIN_CHECK_DEFAULT,
@@ -154,4 +155,46 @@ export async function updateAppSettings(
     after,
   });
   return after;
+}
+
+export const CRM_USER_PREFIX = "crm_user:";
+
+export async function getCrmUserLinks() {
+  const [staff, accounts] = await Promise.all([
+    sql<{id: string; name: string; login: string; amoId: number | null}[]>`
+      select u.id, u.name, u.login, s.value as "amoId" from users u
+      left join app_settings s on s.key = ${CRM_USER_PREFIX} || u.id::text
+      order by lower(u.name), u.login`,
+    getDirectoryUsers(),
+  ]);
+  return {staff, accounts};
+}
+
+export async function setCrmUserLink(staffId: string, amoId: number | null, previous: number | null, actor: AuditActor) {
+  if (amoId !== null && !(await getDirectoryUsers(true)).some(user => user.id === amoId && user.active)) {
+    return {error: "Аккаунт amoCRM недоступен. Обнови список."};
+  }
+  return sql.begin(async tx => {
+    await tx`select pg_advisory_xact_lock(841901342)`;
+    if (!(await tx`select id from users where id=${staffId} for key share`).length) {
+      return {error: "Сотрудник отсутствует в кассе"};
+    }
+    const key = CRM_USER_PREFIX + staffId;
+    const [row] = await tx`select value from app_settings where key=${key}`;
+    const current = row?.value ?? null;
+    if (current === amoId) return {ok: true};
+    if (current !== previous) return {error: "Привязка уже изменена. Обнови список."};
+    if (amoId !== null && (await tx`
+      select 1 from app_settings where starts_with(key, ${CRM_USER_PREFIX})
+      and key <> ${key} and value=to_jsonb(${amoId}::bigint) limit 1`).length) {
+      return {error: "Аккаунт уже привязан к другому сотруднику"};
+    }
+    await tx`insert into app_settings (key,value,updated_by) values
+      (${key},${JSON.stringify(amoId)}::jsonb,${actor.name})
+      on conflict (key) do update set value=excluded.value,updated_by=excluded.updated_by,updated_at=now()`;
+    await tx`insert into audit_log (actor_id,actor_name,actor_role,action,entity_type,entity_id,source,"before","after")
+      values (${actor.id ?? null},${actor.name},${actor.role},'crm_user_link.changed','user',${staffId},'manual',
+              ${JSON.stringify({amoId:current})}::jsonb,${JSON.stringify({amoId})}::jsonb)`;
+    return {ok: true};
+  });
 }

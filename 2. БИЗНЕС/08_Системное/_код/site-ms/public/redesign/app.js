@@ -172,15 +172,57 @@ const dialog=$('#demo-dialog'),frameTemplate=$('#demo-frame'),status=$('#demo-st
 frameTemplate.remove();
 let frame=null;let currentDemo=null,opener=null,controller=null,timeout=null,loadId=0;
 function resetLoad(){loadId++;controller?.abort();clearTimeout(timeout);frame?.remove();frame=null;}
-async function loadDemo(){resetLoad();const id=loadId;const url=currentDemo.embeddedPath || '/brands/previews/'+currentDemo.path;status.hidden=false;status.textContent='Загружаем интерфейс…';controller=new AbortController();timeout=setTimeout(()=>{controller?.abort();if(id===loadId){status.hidden=false;status.textContent='Демо загружается дольше обычного. Попробуйте ещё раз или откройте его в отдельной вкладке.';}},15000);
-try{const response=await fetch(url.split('#')[0],{method:'HEAD',signal:controller.signal,credentials:'omit'});if(!response.ok||!response.headers.get('content-type')?.includes('text/html'))throw new Error('unavailable');if(id!==loadId)return;frame=frameTemplate.cloneNode(false);frame.title=currentDemo.name+' · демонстрационные данные';frame.onload=()=>{if(id!==loadId)return;clearTimeout(timeout);frame.hidden=false;status.textContent='Демо загружено. Используются обезличенные демонстрационные данные.';};frame.onerror=()=>{if(id!==loadId)return;clearTimeout(timeout);status.textContent='Не удалось загрузить демо. Повторите попытку или откройте отдельную вкладку.';};frame.hidden=false;frame.src=url;dialog.append(frame);}catch(error){if(id!==loadId)return;clearTimeout(timeout);status.textContent=error.name==='AbortError'?'Загрузка заняла слишком много времени. Повторите попытку или откройте отдельную вкладку.':'Не удалось загрузить демо. Проверьте соединение и повторите попытку.';}}
+const demoScreen = $('.dialog-screen');
+const demoHelp = $('.demo-help');
+function showLoadError(message) {
+  demoHelp.open = true;
+  status.classList.remove('loaded');
+  status.textContent = message;
+}
+async function loadDemo() {
+  resetLoad();
+  const id = loadId;
+  const url = currentDemo.embeddedPath || '/brands/previews/' + currentDemo.path;
+  status.classList.remove('loaded');
+  status.textContent = 'Загружаем интерфейс…';
+  controller = new AbortController();
+  timeout = setTimeout(() => {
+    controller.abort();
+    if (id === loadId) showLoadError('Демо загружается дольше обычного. Попробуйте ещё раз или откройте его в отдельной вкладке.');
+  }, 15000);
+  try {
+    const response = await fetch(url.split('#')[0], {method:'HEAD',signal:controller.signal,credentials:'omit'});
+    if (id !== loadId) return;
+    if (!response.ok || !response.headers.get('content-type')?.includes('text/html')) throw new Error('unavailable');
+    frame = frameTemplate.cloneNode(false);
+    frame.title = currentDemo.name + ' · демонстрационные данные';
+    frame.onload = () => {
+      if (id !== loadId) return;
+      clearTimeout(timeout);
+      status.textContent = 'Демо загружено.';
+      status.classList.add('loaded');
+    };
+    frame.onerror = () => {
+      if (id !== loadId) return;
+      clearTimeout(timeout);
+      showLoadError('Не удалось загрузить демо. Повторите попытку или откройте его в отдельной вкладке.');
+    };
+    frame.src = url;
+    demoScreen.append(frame);
+  } catch (error) {
+    if (id !== loadId) return;
+    clearTimeout(timeout);
+    showLoadError(error.name === 'AbortError' ? 'Загрузка заняла слишком много времени. Повторите попытку.' :
+      'Не удалось загрузить демо. Проверьте соединение и повторите попытку.');
+  }
+}
 $$('[data-demo]').forEach(button=>button.addEventListener('click',()=>{currentDemo=demos[button.dataset.demo];opener=button;
 if(button.dataset.demo==='cutting' && matchMedia('(max-width:720px)').matches){
   history.replaceState({...history.state,cuttingReturn:button.closest('.project-slide')?'project':'lab'},'');
   location.assign('./cutting.html');
   return;
 }
-$('#demo-title').textContent=currentDemo.name;$('#demo-instruction').textContent=currentDemo.instruction;$('#demo-external').href='/brands/previews/'+currentDemo.path;history.pushState({...history.state, redesignDemo:true},'');dialog.showModal();document.body.classList.add('modal-open');loadDemo();}));
+$('#demo-title').textContent=currentDemo.name;$('#demo-instruction').textContent=currentDemo.instruction;$('#demo-external').href='/brands/previews/'+currentDemo.path;history.pushState({...history.state, redesignDemo:true},'');demoHelp.open = !smallLab.matches;dialog.showModal();document.body.classList.add('modal-open');loadDemo();}));
 function dismissDemo() {
   resetLoad();dialog.close();
   if(history.state?.redesignDemo) history.back();

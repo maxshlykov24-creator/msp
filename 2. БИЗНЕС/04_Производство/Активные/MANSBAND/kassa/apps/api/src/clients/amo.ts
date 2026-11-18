@@ -51,6 +51,31 @@ interface AmoListResponse<T> {
 
 // ── Справочники ─────────────────────────────────────────────────────
 
+type DirectoryUser = { id: number; name: string; active: boolean };
+let usersCache: { at: number; rows: DirectoryUser[] } | undefined;
+
+export async function getDirectoryUsers(refresh = false): Promise<DirectoryUser[]> {
+  if (!refresh && usersCache && Date.now() - usersCache.at < 30_000) return usersCache.rows;
+  const rows: DirectoryUser[] = [];
+  for (let page = 1; page <= 100; page++) {
+    const response = await http.get<AmoListResponse<{id: number; name: string; rights: {is_active: boolean}}>>(
+      `/users?limit=250&page=${page}`);
+    const batch = response?._embedded?.users;
+    if (!Array.isArray(batch)) throw new Error("Не удалось прочитать справочник amoCRM");
+    for (const user of batch) {
+      if (!Number.isSafeInteger(user.id) || !user.name || typeof user.rights?.is_active !== "boolean") {
+        throw new Error("Некорректная запись в справочнике amoCRM");
+      }
+      rows.push({id: user.id, name: user.name, active: user.rights.is_active});
+    }
+    if (!response._links?.next) {
+      usersCache = {at: Date.now(), rows};
+      return rows;
+    }
+  }
+  throw new Error("Справочник amoCRM прочитан не полностью");
+}
+
 export async function getPipelines(): Promise<AmoPipeline[]> {
   const res = await http.get<AmoListResponse<AmoPipeline>>("/leads/pipelines");
   return res._embedded?.pipelines ?? [];
