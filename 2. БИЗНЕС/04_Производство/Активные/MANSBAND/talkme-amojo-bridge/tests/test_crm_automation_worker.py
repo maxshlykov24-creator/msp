@@ -480,3 +480,11 @@ def test_linked_promise_keeps_author_date_and_single_owned_task(db,user_map,assi
     task["text"]="Ручная редакция"
     run()
     assert task["text"]=="Ручная редакция" and len(c.patches)==1
+
+
+def test_promise_uses_live_cash_settings_even_after_unlink():
+    details={"author_id":"employee","author":"Автор","comment":"Обещание","due_date":"2026-11-20"}
+    lead={"responsible_user_id":12}
+    for mapped,expected in [(51,51),(None,12)]:
+        snapshot={"promise":{**details,"amo_user_id":mapped}}
+        assert w.promise_details(snapshot,lead,{"employee":41})[2]==expected

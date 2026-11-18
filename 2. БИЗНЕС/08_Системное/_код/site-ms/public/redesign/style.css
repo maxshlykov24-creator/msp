@@ -235,6 +235,16 @@ body.modal-open {overflow: hidden}
   .silk-visible::before {animation-play-state: running}
   [data-paused] .silk-visible::before,.opening-silk:has(.ready)::before,.about-backdrop:has(.ready)::before {animation-play-state: paused}
 }
+@supports (animation-timeline: view()) {
+  @media(prefers-reduced-motion:no-preference) {
+    @keyframes garment-exit {from {translate: 0 0; rotate: 0deg} to {translate: 0 -20px; rotate: -2deg}}
+    :root:not([data-paused]) .garment-object {
+      animation: garment-exit auto linear both;
+      animation-timeline: view(block);
+      animation-range: exit 0% exit 95%;
+    }
+  }
+}
 :root[data-paused] *:not(.silk-visible)::before,:root[data-paused] *:not(.silk-visible),:root[data-paused] *::after {animation: none !important; transition: none !important}
 @media(hover:hover) {
   .header a:hover,.hero-index a:hover {color: var(--wine)}

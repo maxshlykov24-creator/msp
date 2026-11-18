@@ -567,7 +567,7 @@ function UserMenu({
                 }}
               >
                 <SlidersHorizontal size={17} />
-                <span className="flex-1">Настройки мотивации</span>
+                <span className="flex-1">Настройки</span>
               </button>
             )}
             <button className={`${itemCls} ${activeRoute === "message-templates" ? "bg-ink-800 text-white" : ""}`} onClick={() => { onNavigate("message-templates"); close(); }}>

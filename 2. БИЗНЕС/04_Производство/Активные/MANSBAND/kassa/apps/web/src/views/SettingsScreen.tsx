@@ -436,9 +436,102 @@ function Stat({ label, value, warn }: { label: string; value: string; warn?: boo
   );
 }
 
+type CrmUserDirectory = {
+  staff: Array<{id: string; name: string; login: string; amoId: number | null}>;
+  accounts: Array<{id: number; name: string; active: boolean}>;
+};
+
+function staffNameWords(value: string) {
+  return value.trim().toLocaleLowerCase("ru").split(/\s+/).map(word =>
+    word === "миша" ? "михаил" : word);
+}
+
+function CrmUserSettings({editable}: {editable: boolean}) {
+  const [directory, setDirectory] = useState<CrmUserDirectory | null>(null);
+  const [drafts, setDrafts] = useState<Record<string, number | null>>({});
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+
+  const load = useCallback(async () => {
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const result = await api.get<CrmUserDirectory>("/settings/crm-users");
+      setDirectory(result);
+      setDrafts({});
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Не удалось загрузить сотрудников");
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+
+  async function save(person: CrmUserDirectory["staff"][number], amoId: number | null) {
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      await api.put("/settings/crm-users", {staffId: person.id, previous: person.amoId, amoId});
+      setDirectory(current => current && ({...current, staff: current.staff.map(row =>
+        row.id === person.id ? {...row, amoId} : row)}));
+      setNotice(`Сохранено для сотрудника ${person.name}`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Не удалось сохранить привязку");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return <section className="card p-4 space-y-4">
+    <h2 className="font-semibold text-white">Сотрудники и аккаунты amoCRM</h2>
+    <p className="text-sm text-mute">Выбери личный аккаунт сотрудника для задач по обещаниям.
+      Без привязки задачу получает ответственный по сделке.</p>
+    {!editable && <p className="text-sm text-mute">Изменять привязки может администратор.</p>}
+    {error && <div role="alert" className="text-sm text-red-400">{error} <button type="button"
+      className="underline" disabled={busy} onClick={() => void load()}>Обновить список</button></div>}
+    {!directory && busy && <p role="status" className="text-sm text-mute">Загружаем сотрудников…</p>}
+    {directory?.staff.map(person => {
+      const selected = person.id in drafts ? drafts[person.id]! : person.amoId;
+      const account = directory.accounts.find(u => u.id === person.amoId);
+      const taken = new Set(directory.staff.filter(p => p.id !== person.id).map(p => p.amoId));
+      const name = staffNameWords(person.name).join(" ");
+      const suggestions = directory.accounts.filter(u => u.active && !taken.has(u.id) &&
+        (staffNameWords(u.name).join(" ") === name || staffNameWords(u.name).includes(name)));
+      return <div key={person.id} className="border-t border-white/10 pt-3 space-y-1">
+        <label htmlFor={`amo-${person.id}`} className="font-medium text-white">{person.name}
+          <span className="ml-2 text-xs text-mute">{person.login}</span></label>
+        <div className="flex flex-wrap items-center gap-2">
+          <select id={`amo-${person.id}`} className="input min-w-0 flex-1"
+            disabled={!editable || busy} value={selected ?? ""}
+            onChange={e => {setDrafts({...drafts,[person.id]: e.target.value ? Number(e.target.value) : null}); setNotice("");}}>
+            <option value="">Ответственный по сделке</option>
+            {person.amoId != null && !account?.active && <option value={person.amoId} disabled>
+              {account?.name ?? `ID ${person.amoId}`} · недоступен</option>}
+            {directory.accounts.filter(u => u.active).map(u =>
+              <option key={u.id} value={u.id} disabled={taken.has(u.id)}>{u.name} · {u.id}</option>)}
+          </select>
+          {editable && selected !== person.amoId && <Button disabled={busy}
+            onClick={() => void save(person, selected)}>Сохранить</Button>}
+        </div>
+        {person.amoId != null && !account?.active && <p className="text-xs text-amber-300">
+          Аккаунт недоступен. Задачи получает ответственный по сделке.</p>}
+        {editable && !selected && !person.amoId && suggestions.length === 1 && <button
+          type="button" className="text-sm text-gold" disabled={busy}
+          onClick={() => setDrafts({...drafts,[person.id]:suggestions[0]!.id})}>
+          Совпадение по имени · выбрать {suggestions[0]!.name}</button>}
+      </div>;
+    })}
+    {notice && <p role="status" className="text-sm text-emerald-300">{notice}</p>}
+  </section>;
+}
+
 export function SettingsScreen() {
   const { user } = useAuth();
   const allowed = user?.role === "rop" || user?.role === "admin";
+  const [tab,setTab] = useState<"payroll" | "crm">("payroll");
 
   const [saryMinCheck, setSaryMinCheck] = useState("");
   // Группы вводятся построчно: так проще править список веток МойСклад.
@@ -533,7 +626,7 @@ export function SettingsScreen() {
   if (!allowed) {
     return (
       <div className="max-w-2xl mx-auto card py-10 text-center text-mute">
-        Настройки мотивации доступны только РОПу и администратору.
+        Настройки доступны только РОПу и администратору.
       </div>
     );
   }
@@ -542,8 +635,14 @@ export function SettingsScreen() {
     <div className="max-w-2xl mx-auto">
       <div className="flex items-center gap-2 mb-1">
         <SlidersHorizontal className="text-gold" size={22} />
-        <h1 className="text-2xl font-extrabold text-white">Настройки мотивации</h1>
+        <h1 className="text-2xl font-extrabold text-white">Настройки</h1>
       </div>
+      <div className="flex gap-2 my-4" aria-label="Раздел настроек">
+        {([["payroll","Мотивация"],["crm","Связь с amoCRM"]] as const).map(([key,label]) =>
+          <button key={key} type="button" aria-pressed={tab === key} onClick={() => setTab(key)}
+            className={`rounded-lg px-3 py-2 text-sm ${tab === key ? "bg-gold text-ink-950" : "bg-ink-800 text-mute"}`}>{label}</button>)}
+      </div>
+      {tab === "crm" ? <CrmUserSettings editable={user?.role === "admin"}/> : <>
       <Hint>
         Порог чека для САР и правила расчёта зарплаты. Условия единые для всех консультантов.
         Доступ — РОП и администратор.
@@ -687,6 +786,7 @@ export function SettingsScreen() {
           </div>
         </div>
       )}
+      </>}
     </div>
   );
 }

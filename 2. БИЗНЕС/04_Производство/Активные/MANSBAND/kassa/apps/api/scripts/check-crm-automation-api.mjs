@@ -4,7 +4,8 @@ import { createServer } from 'node:http';
 import { createHash } from 'node:crypto';
 const integration=process.env.MANSBAND_AUTOMATION_INTEGRATION==='true';
 let crmTask, crmLead;
-const fakeAmo=createServer((req,res)=>{res.setHeader('Content-Type','application/json');res.end(JSON.stringify(req.url.startsWith('/tasks/')?crmTask:crmLead));});
+const directory=[{id:801,name:'Тест CRM',rights:{is_active:true}},{id:802,name:'Отключён',rights:{is_active:false}}];
+const fakeAmo=createServer((req,res)=>{res.setHeader('Content-Type','application/json');res.end(JSON.stringify(req.url.startsWith('/users?')?{_embedded:{users:directory}}:req.url.startsWith('/tasks/')?crmTask:crmLead));});
 if(integration) {
   process.env.PGHOST='/tmp/mansband-f5-pg';process.env.PGUSER='postgres';
   await new Promise(resolve=>fakeAmo.listen(0,'127.0.0.1',resolve));
@@ -70,6 +71,25 @@ try {
     assert.equal((await send()).statusCode,200);
     assert.equal((await sql`select status from tasks where deal_number=${number}`)[0].status,'cancelled');
     crmLead.status_id=89900837;assert.equal((await send()).statusCode,409);
+    await sql.unsafe(`create table if not exists app_settings(key text primary key,value jsonb not null,updated_by text not null,updated_at timestamptz default now());
+      create table if not exists users(id uuid primary key,name text not null,login text not null);`);
+    const staffId='10000000-0000-4000-8000-000000000001';
+    const otherId='10000000-0000-4000-8000-000000000002';
+    await sql`insert into users(id,name,login) values (${staffId},'Автор','author'),(${otherId},'Второй','second') on conflict(id) do nothing`;
+    const {getCrmUserLinks,setCrmUserLink}=await import('../src/services/settings.ts');
+    const actor={name:'Проверка',role:'admin'};
+    for (const id of [staffId,otherId]) {
+      const existing=(await getCrmUserLinks()).staff.find(u=>u.id===id).amoId;
+      if(existing!==null) await setCrmUserLink(id,null,existing,actor);
+    }
+    const assigned=await Promise.all([staffId,otherId].map(id=>setCrmUserLink(id,801,null,actor)));
+    assert.equal(assigned.filter(x=>x.ok).length,1);
+    const first=assigned[0].ok ? staffId : otherId;
+    assert.ok((await setCrmUserLink(first,null,null,actor)).error);
+    assert.ok((await setCrmUserLink(first,null,801,actor)).ok);
+    assert.ok((await setCrmUserLink(staffId,802,null,actor)).error);
+    assert.ok((await setCrmUserLink(staffId,801,null,actor)).ok);
+    assert.equal((await getCrmUserLinks()).staff.find(u=>u.id===staffId).amoId,801);
     const promiseDeal={...deal,stage:'Дано обещание',comment:'Согласовать время',actualUntil:'2026-11-24'};
     await sql`update deals set data=${JSON.stringify(promiseDeal)}::jsonb, stage='Дано обещание' where number=${number}`;
     const promiseUrl=`/internal/crm-automation/leads/${lid}?include=promise`;
@@ -82,8 +102,14 @@ try {
     await sql`insert into audit_log(actor_name,actor_role,action,entity_type,entity_id,source,"before","after")
       values ('Редактор','seller','deal.updated','deal',${String(number)},'manual',
               '{"stage":"Дано обещание"}','{"stage":"Дано обещание"}')`;
-    assert.deepEqual(await readPromise(),{author_id:authorId,author:'Автор',comment:'Согласовать время',due_date:'2026-11-24'});
+    assert.deepEqual(await readPromise(),{author_id:authorId,author:'Автор',amo_user_id:801,comment:'Согласовать время',due_date:'2026-11-24'});
     assert.equal((await app.inject({method:'GET',url:`/internal/crm-automation/leads/${lid}`,headers})).json().promise,undefined);
+    directory[0].rights.is_active=false;
+    const {getDirectoryUsers}=await import('../src/clients/amo.ts');
+    await getDirectoryUsers(true);
+    assert.equal((await readPromise()).amo_user_id,null);
+    assert.ok((await setCrmUserLink(staffId,null,801,actor)).ok);
+    assert.equal((await readPromise()).amo_user_id,null);
     await sql`insert into audit_log(actor_name,actor_role,action,entity_type,entity_id,source,"before","after")
       values ('Касса','system','stage','deal',${String(number)},'auto',
               '{"stage":"Взято в работу"}','{"stage":"Дано обещание"}')`;
