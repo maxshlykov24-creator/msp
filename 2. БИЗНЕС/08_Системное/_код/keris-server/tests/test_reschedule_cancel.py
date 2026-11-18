@@ -190,6 +190,7 @@ def test_reschedule_uses_manual_duration_even_before_webhook(client, sessions, m
     row.yclients_record_id = 777
     master = db.get(Master, row.master_id)
     master.yclients_staff_id = 999
+    db.get(main.Service, row.service_id).yclients_service_ids = {row.pet_size: 123}
     db.commit()
     db.close()
     monkeypatch.setattr(main, "settings", dataclasses.replace(settings, admin_api_key=ADMIN_KEY,

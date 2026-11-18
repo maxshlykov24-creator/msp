@@ -40,6 +40,7 @@ from .booking_logic import (
     catalog_value,
     has_overlap,
     next_booking_id,
+    lock_booking_writes,
     normalize_phone,
     refund_subscription_visit,
     resolve_free_addons,
@@ -970,6 +971,7 @@ def create_booking(payload: BookingIn, db: Session = Depends(get_db)) -> dict:
 
     day = date.fromisoformat(payload.date_iso)
     busy = journal_busy(day, day)
+    lock_booking_writes(db)
     master_id = payload.master_id
     if master_id == "any":
         day = date.fromisoformat(payload.date_iso)

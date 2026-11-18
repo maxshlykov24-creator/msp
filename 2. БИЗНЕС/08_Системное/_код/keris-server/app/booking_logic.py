@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 from datetime import date, datetime, time, timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from . import clock
@@ -456,6 +456,12 @@ def refund_subscription_visit(db: Session, booking: Booking) -> float:
     sub.visits_used = round(max(sub.visits_used - refunded, 0.0), 2)
     booking.visits_charged = None
     return refunded
+
+
+def lock_booking_writes(db: Session) -> None:
+    # Website and journal webhooks allocate IDs from the same counter.
+    if db.get_bind().dialect.name == "postgresql":
+        db.execute(text("SELECT pg_advisory_xact_lock(43176021)"))
 
 
 def next_booking_id(db: Session) -> str:

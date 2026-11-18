@@ -889,6 +889,8 @@ def _apply_yclients_record(db: Session, data: dict, status: str) -> dict:
     if not isinstance(record_id, int):
         return {"status": "skipped", "reason": "no_record_id", "sync_status": "failed"}
 
+    from .booking_logic import lock_booking_writes
+    lock_booking_writes(db)
     booking = db.execute(
         select(Booking).where(Booking.yclients_record_id == record_id)
     ).scalars().first()
