@@ -46,7 +46,7 @@ p,dd {color: var(--muted)}
 .section {padding-block: clamp(72px,7.4vw,124px)}
 .skip {position: fixed; top: -90px; left: 15px; z-index: 20; padding: 12px 18px; background: var(--surface)}
 .skip:focus {top: 12px}
-.eyebrow,.section-label,.delivery article>span,.portrait-frame figcaption {font: 560 11px/1.4 Inter,Arial,sans-serif; letter-spacing: .105em; text-transform: uppercase}
+.eyebrow,.section-label,.delivery article>span {font: 560 11px/1.4 Inter,Arial,sans-serif; letter-spacing: .105em; text-transform: uppercase}
 .section-label {display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: clamp(23px,3vw,45px); color: var(--wine)}
 .section-label>span:last-child {color: var(--muted); text-transform: none; letter-spacing: 0; font-size: 13px; text-align: right; font-weight: 450}
 .section-intro {display: flex; align-items: end; justify-content: space-between; gap: 48px; margin-bottom: clamp(27px,3.4vw,56px)}
@@ -91,6 +91,11 @@ p,dd {color: var(--muted)}
 .garment-scene {width: min(100%,480px); aspect-ratio: 1.1; position: relative; display: grid; place-items: center; isolation: isolate}
 .garment-object {width: 88%; position: relative; transform: translate(var(--object-x,0px),var(--object-y,0px)) rotate(var(--object-turn,0deg)); transition: transform .7s var(--ease)}
 .garment-object img {width: 100%; height: auto; filter: drop-shadow(6px 17px 13px #3d13272b)}
+@media(prefers-reduced-motion:no-preference) {
+  :root:not([data-paused]) .garment-object img {transition: transform .7s var(--ease)}
+  :root:not([data-paused]) .garment-scene[data-step="1"] img {transform: rotate(-3deg) scale(.97)}
+  :root:not([data-paused]) .garment-scene[data-step="2"] img {transform: translateY(-4px) rotate(2deg)}
+}
 .specimen-caption {width: min(90%,370px); margin-top: 14px}
 .route-switch {position: relative; display: grid; grid-template-columns: repeat(3,1fr); border-bottom: 1px solid var(--line)}
 .route-switch::after {content: ''; position: absolute; bottom: -1px; left: 0; height: 2px; width: calc(100% / 3); background: var(--wine); transform: translateX(calc(var(--step,0) * 100%)); transition: transform .45s var(--ease); pointer-events: none}
@@ -139,6 +144,7 @@ p,dd {color: var(--muted)}
 
 .software {--ink: #fbf1ec; --muted: #d6c3cb; --wine: #f8c6d7; --line: #725764; --panel: #38262f; background: radial-gradient(ellipse at 93% 12%,#523447,transparent 55%),#291c24; color: var(--ink); color-scheme: dark}
 .software .section-intro {align-items: end}
+.lab-select {display: none}
 .lab {display: grid; grid-template-columns: minmax(205px,.72fr) minmax(0,1.65fr); column-gap: clamp(28px,4vw,76px)}
 .lab-choice {grid-row: var(--row); grid-column: 1; position: relative; border-top: 1px solid var(--line); text-align: left; padding: 15px 27px 15px 8px; color: var(--muted)}
 .lab-choice strong,.lab-choice span {display: block}
@@ -201,6 +207,8 @@ body.modal-open {overflow: hidden}
 
 @keyframes type-in {from {opacity: .15; transform: translateY(.32em); clip-path: inset(0 0 77%)} to {opacity: 1; transform: none; clip-path: inset(-15% -3% -20%)}}
 @keyframes object-in {from {opacity: 0; transform: translate(14px,24px) rotate(5deg) scale(.94)} to {opacity: 1; transform: none}}
+@keyframes portrait-in {from {clip-path: inset(7% 4% 0 round 47% 47% 2px 2px); transform: scale(.97)} to {clip-path: inset(0 round 47% 47% 2px 2px); transform: none}}
+@keyframes seam-in {from {transform: scaleX(0)} to {transform: scaleX(1)}}
 @keyframes sheet-in {from {opacity: .3; transform: translateY(16px)} to {opacity: 1; transform: none}}
 @keyframes case-in {from {opacity: .4; transform: translateX(var(--slide-from,12px)) scale(1.02)} to {opacity: 1; transform: none}}
 @keyframes silk-drift {from {transform: scale(1.06) translate(-1%,1%)} to {transform: scale(1.13) translate(2%,-1%)}}
@@ -210,6 +218,9 @@ body.modal-open {overflow: hidden}
   .hero h1>:nth-child(2) {animation-delay: .07s}
   .hero h1 em {animation-delay: .14s}
   .garment-scene {animation: object-in 1.12s var(--ease) backwards}
+  .portrait-frame.enter-spread img {animation: portrait-in .95s var(--ease) both}
+  .delivery article.enter-spread {position: relative}
+  .delivery article.enter-spread::before {content: ''; position: absolute; inset: -1px 0 auto; height: 1px; background: var(--wine); transform-origin: left; animation: seam-in .8s var(--entry-delay,0s) var(--ease) backwards}
   .hero-foot,.specimen-caption {animation: sheet-in .72s .16s var(--ease) backwards}
   .enter-spread {animation: sheet-in .65s var(--ease) backwards; animation-delay: var(--entry-delay,0s)}
   .project-slide:not([hidden]) .project-visual>img,.project-slide:not([hidden]) .report-image img {animation: case-in .63s var(--ease) backwards}
@@ -288,6 +299,11 @@ body.modal-open {overflow: hidden}
   .lab {display: block}
   .lab-choice {width: 100%; padding: 13px 32px 13px 3px}
   .lab-choice span {margin-top: 3px}
+  .lab-select:not([hidden]) {display: grid; gap: 7px; margin-bottom: 15px}
+  .lab-select span {font-size: 13px; color: var(--muted)}
+  .lab-select select {width: 100%; min-height: 50px; padding: 8px 38px 8px 14px; border: 1px solid var(--line); border-radius: 4px; background-color: var(--panel); color: var(--ink); font: 500 17px Inter,Arial,sans-serif}
+  .lab-select select:focus-visible {outline: 2px solid var(--wine); outline-offset: 2px}
+  .lab:has(.lab-select:not([hidden])) .lab-choice {display: none}
   .lab-screen {padding: 3px 0 18px}
   .lab-hint {margin-top: 10px}
   .economy-grid,.about,.contact-layout {grid-template-columns: 1fr; gap: 29px}

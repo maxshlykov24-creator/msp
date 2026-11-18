@@ -1,1 +1,7 @@
-(()=>{'use strict';let theme='light';try{const saved=localStorage.getItem('ms-product.redesign.theme');if(saved==='light'||saved==='dark')theme=saved;}catch{}document.documentElement.dataset.theme=theme;})();
+(() => {
+  const root = document.documentElement;
+  try {
+    if (localStorage.getItem('ms-product.redesign.theme') === 'dark') root.dataset.theme = 'dark';
+    root.toggleAttribute('data-paused', localStorage.getItem('ms-product.redesign.paused') === 'true');
+  } catch {}
+})();

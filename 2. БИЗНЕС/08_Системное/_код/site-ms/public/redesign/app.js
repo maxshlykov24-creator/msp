@@ -4,29 +4,117 @@ const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const themeButton=$('.theme-toggle');
 function syncTheme(){const dark=document.documentElement.dataset.theme==='dark';themeButton.setAttribute('aria-pressed',String(dark));themeButton.setAttribute('aria-label',dark?'Включить светлую тему':'Включить тёмную тему');$('meta[name="theme-color"]').content=dark?'#21171c':'#f5f2ed';}
 themeButton.addEventListener('click',()=>{const theme=document.documentElement.dataset.theme==='dark'?'light':'dark';document.documentElement.dataset.theme=theme;try{localStorage.setItem('ms-product.redesign.theme',theme);}catch{}syncTheme();});syncTheme();
+const menu = $('.mobile-menu');
+function closeMenu() { menu.open = false; }
+menu.addEventListener('click', event => {
+  const link = event.target.closest('a');
+  if (!link) return;
+  closeMenu();
+  const target = document.querySelector(link.hash);
+  target.setAttribute('tabindex', '-1');
+  target.focus({preventScroll:true});
+});
+document.addEventListener('click', event => {
+  if (menu.open && !menu.contains(event.target)) closeMenu();
+});
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && menu.open) {
+    closeMenu();
+    menu.querySelector('summary').focus();
+  }
+});
+matchMedia('(max-width:760px)').addEventListener('change', closeMenu);
+
+const smallLab = matchMedia('(max-width:760px)');
 const choices = $$('.lab-choice');
-choices.forEach(choice => choice.addEventListener('click', () => {
+const labSelect = $('#software-select');
+choices.forEach(choice => {
+  const title = choice.querySelector('strong').textContent;
+  labSelect.add(new Option(title, choice.getAttribute('aria-controls')));
+});
+function selectSoftware(choice) {
   choices.forEach(item => {
-    const selected = item === choice;
-    item.setAttribute('aria-expanded', String(selected));
-    document.getElementById(item.getAttribute('aria-controls')).hidden = !selected;
+    const active = item === choice;
+    item.setAttribute('aria-expanded', String(active));
+    document.getElementById(item.getAttribute('aria-controls')).hidden = !active;
   });
-}));
+  labSelect.value = choice.getAttribute('aria-controls');
+}
+choices.forEach(choice => choice.addEventListener('click', () => selectSoftware(choice)));
+labSelect.addEventListener('change', () => selectSoftware(choices[labSelect.selectedIndex]));
+labSelect.parentElement.hidden = false;
+
+const root = document.documentElement;
 const motionButton = $('.motion-toggle');
+const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+function motionEnabled() { return !reducedMotion.matches && !root.hasAttribute('data-paused'); }
 function setPaused(paused) {
-  document.documentElement.toggleAttribute('data-paused', paused);
+  root.toggleAttribute('data-paused', paused);
   motionButton.setAttribute('aria-pressed', String(paused));
-  motionButton.setAttribute('aria-label', paused ? 'Возобновить движение фона' : 'Приостановить движение фона');
-  motionButton.textContent = paused ? '▷' : 'Ⅱ';
+  const label = paused ? 'Возобновить анимацию' : 'Приостановить анимацию';
+  motionButton.setAttribute('aria-label', label);
+  motionButton.title = label;
   document.dispatchEvent(new Event('silk-pause'));
 }
-motionButton.addEventListener('click', () => setPaused(!document.documentElement.hasAttribute('data-paused')));
+setPaused(root.hasAttribute('data-paused'));
+motionButton.addEventListener('click', () => {
+  const paused = !root.hasAttribute('data-paused');
+  setPaused(paused);
+  try { localStorage.setItem('ms-product.redesign.paused', String(paused)); } catch {}
+});
+
+const steps = $$('.route-switch button');
+const route = $('.route-switch');
+const caption = $('#route-description');
+const object = $('.garment-object');
+const scene = $('.garment-scene');
+const stageCopy = [
+  caption.textContent,
+  'Менеджер видит учтённый платёж в карточке заказа.',
+  'Склад получает состав заказа и данные для отправки.'
+];
+let captionMotion;
+function stopObjectMotion() {
+  object.removeAttribute('style');
+  captionMotion?.cancel();
+}
+document.addEventListener('silk-pause', stopObjectMotion);
+reducedMotion.addEventListener('change', stopObjectMotion);
+steps.forEach((button, index) => button.addEventListener('click', () => {
+  if (button.getAttribute('aria-pressed') === 'true') return;
+  steps.forEach(item => item.setAttribute('aria-pressed', String(item === button)));
+  route.style.setProperty('--step', index);
+  caption.textContent = stageCopy[index];
+  scene.dataset.step = index;
+  captionMotion?.cancel();
+  if (motionEnabled() && caption.animate) {
+    captionMotion = caption.animate([{opacity: .35, transform: 'translateY(5px)'}, {opacity: 1, transform: 'none'}],
+      {duration: 300, easing: 'ease-out'});
+  }
+}));
+const finePointer = matchMedia('(hover:hover) and (pointer:fine)');
+scene.addEventListener('pointermove', event => {
+  if (!finePointer.matches || !motionEnabled()) return;
+  const rect = scene.getBoundingClientRect();
+  const x = (event.clientX - rect.left) / rect.width - .5;
+  const y = (event.clientY - rect.top) / rect.height - .5;
+  object.style.setProperty('--object-x', (x * 12) + 'px');
+  object.style.setProperty('--object-y', (y * 9) + 'px');
+  object.style.setProperty('--object-turn', (x * 3) + 'deg');
+});
+scene.addEventListener('pointerleave', () => object.removeAttribute('style'));
 const opening = $('.opening-silk');
 function sizeOpening() {
   opening.style.setProperty('--opening-height', Math.ceil($('.hero').getBoundingClientRect().bottom + window.scrollY) + 'px');
 }
 sizeOpening();
-new ResizeObserver(sizeOpening).observe($('.hero'));
+if ('ResizeObserver' in window) {
+  const sizing = new ResizeObserver(sizeOpening);
+  sizing.observe($('.hero'));
+  sizing.observe($('.header'));
+} else {
+  window.addEventListener('resize', sizeOpening);
+}
 if ('IntersectionObserver' in window) {
   const backgrounds = new IntersectionObserver(entries => {
     for (const entry of entries) entry.target.classList.toggle('silk-visible', entry.isIntersecting);
@@ -35,36 +123,50 @@ if ('IntersectionObserver' in window) {
   const sections = new IntersectionObserver(entries => {
     for (const entry of entries) {
       if (!entry.isIntersecting) continue;
-      entry.target.classList.remove('await-entry');
       entry.target.classList.add('enter-spread');
       sections.unobserve(entry.target);
     }
-  }, {threshold:0.08});
-  $$('.section-intro,.project-picker,.project-stage,.lab-choice,.economy-grid>div,.portrait-frame,.about-copy,.delivery article,.contact-layout>div').forEach(el => {
-    if (el.getBoundingClientRect().top >= innerHeight) el.classList.add('await-entry');
-    sections.observe(el);
   });
-  $$('.lab-choice,.delivery article').forEach((el,i) => el.style.setProperty('--entry-delay',(i % 3 * 0.06)+'s'));
+  $$('.section-intro,.project-stage,.economy-grid>div,.portrait-frame,.about-copy,.delivery article,.contact-layout>div').forEach(el => {
+    if (el.getBoundingClientRect().top >= innerHeight) sections.observe(el);
+  });
+  $$('.delivery article').forEach((el,i) => el.style.setProperty('--entry-delay',(i * .065)+'s'));
 }
 const slides=$$('.project-slide'),pickers=$$('[data-project]'),names=['Продажи и коммуникации','Аналитика и экономика','Каталог и крой','Программа лояльности'];
 let selected=0;
-function selectProject(index){const direction=index<selected?-1:1;selected=(index+slides.length)%slides.length;
-slides[selected].style.setProperty('--slide-from', direction*28+'px');slides.forEach((slide,i)=>{slide.hidden=i!==selected;});pickers.forEach((button,i)=>button.setAttribute('aria-pressed',String(i===selected)));$('#project-announcement').textContent=`0${selected+1} · 04 · ${names[selected]}`;}
-pickers.forEach(button=>button.addEventListener('click',()=>selectProject(Number(button.dataset.project))));
-$('#project-prev').addEventListener('click',()=>selectProject(selected-1));$('#project-next').addEventListener('click',()=>selectProject(selected+1));
+function selectProject(index) {
+  const next = (index + slides.length) % slides.length;
+  if (next === selected) return;
+  slides[next].style.setProperty('--slide-from', (index < selected ? -18 : 18) + 'px');
+  selected = next;
+  slides.forEach((slide,i) => { slide.hidden = i !== selected; });
+  pickers.forEach((button,i) => button.setAttribute('aria-pressed', String(i === selected)));
+  $('#project-announcement').textContent = (selected + 1) + ' из ' + slides.length + ' · ' + names[selected];
+}
+pickers.forEach(button => button.addEventListener('click', () => selectProject(Number(button.dataset.project))));
+function advanceCase(delta) {
+  selectProject(selected + delta);
+  if (smallLab.matches && $('.project-picker').getBoundingClientRect().bottom < 0) {
+    pickers[selected].focus({preventScroll:true});
+    $('.project-picker').scrollIntoView({block:'start'});
+  }
+}
+$('#project-prev').addEventListener('click', () => advanceCase(-1));
+$('#project-next').addEventListener('click', () => advanceCase(1));
 $('.project-stage').addEventListener('keydown',event=>{if(event.target!==event.currentTarget)return;if(event.key==='ArrowLeft'||event.key==='ArrowRight'){event.preventDefault();selectProject(selected+(event.key==='ArrowRight'?1:-1));}});
 window.addEventListener('pageshow', () => {
   const from = history.state?.cuttingReturn;
   if (!from) return;
-  choices[choices.length - 1].click();
+  selectSoftware(choices[choices.length - 1]);
   $('#preview-cutting button').focus();
   const state = {...history.state};
   delete state.cuttingReturn;
   history.replaceState(state, '');
 });
 let touch=null;
-$('.project-stage').addEventListener('touchstart',event=>{if(event.target.closest('button,a'))return;const t=event.touches[0];touch={x:t.clientX,y:t.clientY};},{passive:true});
+$('.project-stage').addEventListener('touchstart',event=>{if(event.touches.length!==1||event.target.closest('button,a,summary')){touch=null;return;};const t=event.touches[0];touch={x:t.clientX,y:t.clientY};},{passive:true});
 $('.project-stage').addEventListener('touchend',event=>{if(!touch)return;const t=event.changedTouches[0],x=t.clientX-touch.x,y=t.clientY-touch.y;touch=null;if(Math.abs(x)>70&&Math.abs(x)>Math.abs(y)*1.5)selectProject(selected+(x<0?1:-1));},{passive:true});
+$('.project-stage').addEventListener('touchcancel',()=>{touch=null;});
 const demos={orders:{name:'Заявки и касса',path:'mansband/index.html?v=anonymous-1#board/deferred/all',instruction:'Список уже отфильтрован по отложкам. Откройте строку заявки. Все изменения остаются в демонстрации.'},messages:{name:'Автоматические сообщения',path:'mansband/index.html?v=anonymous-1#message-templates',instruction:'Откройте сценарий и проверьте его текст. Реальные сообщения из демо не отправляются.'},analytics:{name:'Аналитика продаж',path:'analytics/index.html',instruction:'Выберите категорию и канал сбыта. Переключитесь на Товары или Клиенты и откройте строку.'},production:{name:'Нормы и себестоимость',path:'production/index.html',instruction:'Найдите модель, откройте норму, выберите размер. Данные здесь демонстрационные.'},cutting:{name:'Каталог и крой',path:'cutting/index.html',embeddedPath:'./cutting.html',instruction:'Откройте задание и посмотрите план партии. В отдельной вкладке выберите раздел «Крой».'}};
 const dialog=$('#demo-dialog'),frameTemplate=$('#demo-frame'),status=$('#demo-status');
 frameTemplate.remove();
