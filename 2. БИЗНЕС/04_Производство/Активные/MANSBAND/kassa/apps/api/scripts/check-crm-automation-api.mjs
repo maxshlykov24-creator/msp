@@ -27,6 +27,8 @@ const { default: routes } = await import('../src/routes/crmAutomation.routes.ts'
 const { sql } = await import('../src/db/index.ts');
 const app = Fastify();
 try {
+  await app.register((await import('../src/plugins/auth.ts')).default);
+  await app.register((await import('../src/routes/settings.routes.ts')).default);
   await app.register(routes);
   for (const headers of [{}, {'x-automation-key':'wrong'}, {'x-automation-key':'x'.repeat(38)}]) {
     const response = await app.inject({method:'GET', url:'/internal/crm-automation/leads/55', headers});
@@ -88,7 +90,20 @@ try {
     assert.ok((await setCrmUserLink(first,null,null,actor)).error);
     assert.ok((await setCrmUserLink(first,null,801,actor)).ok);
     assert.ok((await setCrmUserLink(staffId,802,null,actor)).error);
-    assert.ok((await setCrmUserLink(staffId,801,null,actor)).ok);
+    const settingsUrl = '/settings/crm-users';
+    const callSettings = (role, method, payload) => app.inject({
+      method, url:settingsUrl, payload, headers:role ? {authorization:'Bearer ' +
+        app.jwt.sign({sub:staffId, role, name:'Проверка прав'})} : {},
+    });
+    const link = {staffId, amoId:801, previous:null};
+    assert.equal((await callSettings(null,'GET')).statusCode,401);
+    assert.equal((await callSettings('consultant','GET')).statusCode,403);
+    assert.equal((await callSettings('rop','PUT',link)).statusCode,403);
+    assert.equal((await callSettings('admin','PUT',{...link, amoId:'801'})).statusCode,400);
+    assert.equal((await callSettings('admin','PUT',link)).statusCode,200);
+    const readback = await callSettings('rop','GET');
+    assert.equal(readback.statusCode,200);
+    assert.equal(readback.json().staff.find(u=>u.id===staffId).amoId,801);
     assert.equal((await getCrmUserLinks()).staff.find(u=>u.id===staffId).amoId,801);
     const promiseDeal={...deal,stage:'Дано обещание',comment:'Согласовать время',actualUntil:'2026-11-24'};
     await sql`update deals set data=${JSON.stringify(promiseDeal)}::jsonb, stage='Дано обещание' where number=${number}`;

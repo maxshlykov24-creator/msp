@@ -193,7 +193,7 @@ export async function setCrmUserLink(staffId: string, amoId: number | null, prev
       (${key},${JSON.stringify(amoId)}::jsonb,${actor.name})
       on conflict (key) do update set value=excluded.value,updated_by=excluded.updated_by,updated_at=now()`;
     await tx`insert into audit_log (actor_id,actor_name,actor_role,action,entity_type,entity_id,source,"before","after")
-      values (${actor.id ?? null},${actor.name},${actor.role},'crm_user_link.changed','user',${staffId},'manual',
+      values (${actor.id ?? null},${actor.name},${actor.role},'crm_user_link.changed','user',${staffId},${actor.role === "system" ? "auto" : "manual"},
               ${JSON.stringify({amoId:current})}::jsonb,${JSON.stringify({amoId})}::jsonb)`;
     return {ok: true};
   });
