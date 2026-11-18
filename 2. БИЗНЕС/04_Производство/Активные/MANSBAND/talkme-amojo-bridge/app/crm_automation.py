@@ -337,6 +337,10 @@ def complete_owned_task(db: Session, job: TaskExecution, client, reason: str, *,
     if task_marker(job.rule_id, job.lead_id, job.occurrence) not in actual.get("text", ""):
         return "ownership_conflict"
     if not actual.get("is_completed"):
+        if any(actual.get(k) != job.payload.get(k) for k in ("text", "complete_till", "responsible_user_id", "task_type_id")):
+            job.reason = "manual_edit_conflict"
+            db.commit()
+            return job.reason
         client.patch("/api/v4/tasks", [{"id": job.task_id, "is_completed": True, "result": {"text": reason}}])
     job.state, job.reason = "completed", reason
     db.commit()

@@ -469,3 +469,11 @@ def test_shared_ad_number_uses_other_only_with_exact_single_called_number():
     assert {x["field_id"] for x in result.fields}=={3134043,3781223}
     item["_embedded"]["tags"].append({"name":"Вызов-на-номер:1"})
     assert not f.project_first_source(item,fields,first_touch=True).fields
+
+def test_manually_rescheduled_owned_task_survives_stage_exit(db):
+    c=Client()
+    job=plan(db)
+    execute(db,job,c,preview=False)
+    c.task["complete_till"]+=3600
+    assert a.complete_owned_task(db,job,c,"Этап изменился",preview=False)=="manual_edit_conflict"
+    assert not c.patches and job.state=="created"

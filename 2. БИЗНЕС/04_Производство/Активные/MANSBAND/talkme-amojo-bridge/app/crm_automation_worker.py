@@ -720,6 +720,16 @@ def dispatch(db, c, catalog, ids, *, cutover_at, pipelines=None):
         result = a.revise_task(db, job, c, due=due, responsible=responsible,
                               available_at=available, current=current, preview=False, task_text=task_text)
         if result == "replanned":
+            if task_text is not None:
+                fresh = c.kassa_state(job.lead_id, include_promise=True)
+                if (binding_issue(lead, fresh, required=True)
+                        or fresh.get("bindings") != snapshot["bindings"]
+                        or fresh.get("promise") != snapshot["promise"]
+                        or fresh.get("execution_owners", {}).get("promise") != "amocrm"
+                        or any(t["kind"] == "promise_follow" and t["status"] == "pending" for t in fresh["tasks"])):
+                    job.reason = "kassa_promise_changed"
+                    db.commit()
+                    continue
             if rule.id in SHOP_TASK_KINDS:
                 fresh_snapshot = c.kassa_state(job.lead_id)
                 if binding_issue(lead, fresh_snapshot, required=True) or not shop_control_needed(rule.id, fresh_snapshot):

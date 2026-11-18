@@ -834,3 +834,10 @@ def test_widened_stage_rule_uses_crm_origin_and_per_pipeline_activation(db,monke
     assert m.ingest(db,wrapper,STAMP,observed_pipelines=(11482377,11482377))==0
     wrapper["leads[status][0][last_modified]"]=[str(int(STAMP.timestamp()))]
     assert m.ingest(db,wrapper,STAMP,observed_pipelines=(11482377,11482377))==1
+
+def test_shipping_template_requires_single_manually_recorded_track():
+    r=rule(content="Номер трека: {{lead.field.3133923}}")
+    for values in ([], [{"value":"  "}], [{"value":"1"},{"value":"2"}]):
+        with pytest.raises(ValueError,match="трек-номер СДЭК"):
+            m.render({"custom_fields_values":[{"field_id":3133923,"values":values}]},r)
+    assert m.render({"custom_fields_values":[{"field_id":3133923,"values":[{"value":" 00123 "}]}]},r)=="Номер трека: 00123"

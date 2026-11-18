@@ -408,6 +408,11 @@ def render(lead, r):
             if d is None: raise ValueError("Не заполнена дата переменной")
             return d.strftime("%d.%m.%Y")
         vals = entries(lead, int(m[2]))
+        if int(m[2]) == 3133923:
+            track = str(vals[0].get("value") or "").strip() if len(vals) == 1 else ""
+            if not track:
+                raise ValueError("Для уведомления нужен трек-номер СДЭК в карточке сделки")
+            return track
         if len(vals) != 1 or vals[0].get("value") in (None, ""): raise ValueError("Не заполнено поле переменной")
         return str(vals[0]["value"])
     body = re.sub(r"{{\s*([^{}]+?)\s*}}", marker, body)
