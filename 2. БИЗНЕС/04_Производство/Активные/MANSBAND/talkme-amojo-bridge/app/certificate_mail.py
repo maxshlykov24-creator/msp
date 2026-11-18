@@ -196,7 +196,7 @@ def render(lead: dict, s: MailSettings, now: datetime) -> tuple[str, str]:
     return recipient, body
 
 
-def transitions(form: dict[str, list[str]], s: MailSettings, now: datetime) -> list[dict]:
+def transitions(form: dict[str, list[str]], s: MailSettings, now: datetime, *, require_pipeline: bool = False) -> list[dict]:
     grouped: dict[str, dict] = {}
     pattern = re.compile(r"^leads\[status\]\[(\d+)\]\[(id|status_id|old_status_id|pipeline_id|last_modified|account_id)\]$")
     for key, vals in form.items():
@@ -215,7 +215,7 @@ def transitions(form: dict[str, list[str]], s: MailSettings, now: datetime) -> l
         except (KeyError, TypeError, ValueError):
             continue
         if (lid <= 0 or target != s.status_id or old == target or account != s.account_id
-                or pipe not in (0, s.pipeline_id) or stamp < s.activated_at
+                or (require_pipeline and not pipe) or pipe not in (0, s.pipeline_id) or stamp < s.activated_at
                 or stamp > int(now.timestamp()) + 300):
             continue
         raw = f"{account}:{lid}:{old}:{target}:{stamp}"

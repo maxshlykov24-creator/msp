@@ -815,3 +815,22 @@ def test_adding_date_rule_to_new_funnel_preserves_terminal_jobs(db):
     m.publish(d.id,m.Publish(version=d.version,actor="admin"),db,c)
     assert d.active["statuses"]==[77086494,89902109]
     assert (j.state,j.reason)==("expired","scheduled_window_passed")
+
+def test_widened_stage_rule_uses_crm_origin_and_per_pipeline_activation(db,monkeypatch):
+    monkeypatch.setenv("TEMPLATES_EXECUTOR","live")
+    c=CRM();d=doc(db,rule(trigger={"type":"stage","delay_minutes":60,"repeat":"once"}))
+    m.catalog(c)["pipelines"].append({"id":11482377,"_embedded":{"statuses":[{"id":89902109}]}})
+    d.version+=1;d.draft={**d.active,"pipelines":[9601214,11482377],"statuses":[77086494,89902109]}
+    d.checked=m.digest([d.version,d.draft]);db.commit()
+    monkeypatch.setattr(m,"now",lambda:STAMP)
+    m.publish(d.id,m.Publish(version=d.version,actor="admin"),db,c)
+    assert m.ingest(db,form(STAMP-timedelta(minutes=1)),STAMP)==1
+    wrapper=form(STAMP)
+    wrapper["leads[status][0][id]"]=["18"];wrapper["leads[status][0][status_id]"]=["89902109"]
+    wrapper["leads[status][0][pipeline_id]"]=["11482377"]
+    assert m.ingest(db,wrapper,STAMP)==0
+    assert m.ingest(db,wrapper,STAMP,observed_pipelines=(9601214,11482377))==0
+    wrapper["leads[status][0][last_modified]"]=[str(int(STAMP.timestamp())-1)]
+    assert m.ingest(db,wrapper,STAMP,observed_pipelines=(11482377,11482377))==0
+    wrapper["leads[status][0][last_modified]"]=[str(int(STAMP.timestamp()))]
+    assert m.ingest(db,wrapper,STAMP,observed_pipelines=(11482377,11482377))==1

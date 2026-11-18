@@ -635,7 +635,19 @@ def migrate_jobs(db):
     db.commit()
 
 
-def ingest(db, form, stamp):
+def stage_floor_key(doc):
+    return "stage-floors-" + digest(doc.id)[:40]
+
+
+def stage_floors(db, doc, fallback):
+    record = db.get(Operation, stage_floor_key(doc))
+    default = int(aware(doc.published_at or fallback).timestamp())
+    if record and record.result.get("version") == doc.published_version:
+        return record.result["pipelines"]
+    return {str(p): default for p in doc.active["pipelines"]}
+
+
+def ingest(db, form, stamp, *, observed_pipelines=None):
     from app.certificate_mail import transitions, MailSettings
     if Settings().executor != "live": return 0
     count=0
@@ -643,10 +655,17 @@ def ingest(db, form, stamp):
         if not doc.active: continue
         r=Rule(**doc.active)
         if r.action == "certificate" or not r.enabled or r.trigger.type != "stage": continue
+        floors=stage_floors(db, doc, stamp)
+        from app.crm_automation import OFFLINE, ONLINE, RENTAL, COMPANY
+        typed = {OFFLINE, ONLINE, RENTAL, COMPANY}
         for pipeline in r.pipelines:
+            # A webhook need not include the previous pipeline. For the new
+            # funnels use the ordered CRM event with both exact pipeline IDs.
+            if pipeline in typed and observed_pipelines != (pipeline, pipeline):
+                continue
             for status in r.statuses:
-                cfg=MailSettings(pipeline_id=pipeline,status_id=status,activated_at=int(aware(doc.published_at or stamp).timestamp()))
-                for event in transitions(form,cfg,stamp):
+                cfg=MailSettings(pipeline_id=pipeline,status_id=status,activated_at=floors[str(pipeline)])
+                for event in transitions(form,cfg,stamp,require_pipeline=bool(typed.intersection(r.pipelines))):
                     # Last state is rechecked against CRM before each send.
                     occurrence="once" if r.trigger.repeat=="once" else event["key"]
                     j=db.scalar(select(Job).where(Job.rule_id==doc.id,Job.lead_id==event["lead_id"],Job.occurrence==occurrence))
@@ -706,7 +725,9 @@ def recover_stage_events(db, c, stamp):
     for event in sorted(events, key=lambda e: (int(e["created_at"]), e["id"])):
         if event.get("entity_type") != "lead" or event.get("type") != "lead_status_changed":
             raise ValueError("Unexpected CRM event type")
-        count += ingest(db, event_form(event), stamp)
+        before = event["value_before"][0]["lead_status"]["pipeline_id"]
+        after = event["value_after"][0]["lead_status"]["pipeline_id"]
+        count += ingest(db, event_form(event), stamp, observed_pipelines=(before, after))
     cursor.result = {"through": end, "checked_at": stamp.isoformat(), "events": len(events)}
     db.commit()
     return count
@@ -1369,10 +1390,10 @@ def publish(id:str,body:Publish,db=Depends(session),c=Depends(client)):
                 remote=c.get(f"/api/v4/chats/templates/{result['remote_id']}")
                 d.draft={**d.draft,"remote_id":result["remote_id"],"source_hash":remote_digest(remote),"original":remote}
         else:Routing(**d.draft)
-        # Adding calendar coverage to new funnels does not revise the dates,
+        # Adding coverage to new funnels does not revise the dates,
         # contents or outcomes of obligations in the existing funnels.
         preserve_jobs = False
-        if d.kind == "rule" and d.active and r.enabled and r.action == "text" and r.trigger.type == "date":
+        if d.kind == "rule" and d.active and r.enabled and r.action == "text" and r.trigger.type in ("date", "stage"):
             old = Rule(**d.active)
             added_statuses = set(r.statuses) - set(old.statuses)
             if (old.statuses and set(old.pipelines) < set(r.pipelines)
@@ -1381,7 +1402,13 @@ def publish(id:str,body:Publish,db=Depends(session),c=Depends(client)):
                 old_catalog = {stage["id"] for pipe in catalog(c)["pipelines"] if pipe["id"] in old.pipelines
                                for stage in pipe.get("_embedded", {}).get("statuses", [])}
                 preserve_jobs = old_catalog.isdisjoint(added_statuses)
-        d.active=dict(d.draft);d.published_at=now();d.published_version=d.version;d.checked=""
+        publication=now()
+        if preserve_jobs and r.trigger.type == "stage":
+            old_floors=stage_floors(db,d,publication)
+            floors={str(p): old_floors.get(str(p),int(publication.timestamp())) for p in r.pipelines}
+            db.merge(Operation(id=stage_floor_key(d),digest=digest(floors),state="active",
+                               result={"version":d.version,"pipelines":floors}))
+        d.active=dict(d.draft);d.published_at=publication;d.published_version=d.version;d.checked=""
         audit(db,d,body.actor,"published",{"document":d.active,**result})
         if d.kind in ("rule","routing") and not preserve_jobs:
             for j in db.scalars(select(Job).where(Job.state.in_(["ready","blocked","cancelled","expired","failed"] if d.kind=="rule" else ["ready","blocked"]))):
