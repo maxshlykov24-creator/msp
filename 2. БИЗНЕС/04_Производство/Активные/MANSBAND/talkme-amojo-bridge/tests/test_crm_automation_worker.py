@@ -56,7 +56,7 @@ class Client:
         for change in body: self.tasks[change["id"]].update(change)
         return {}
 
-    def kassa_state(self,lead_id):
+    def kassa_state(self,lead_id,*,include_promise=False):
         return {"version":1,"lead_id":lead_id,"bindings":[],"tasks":[]}
 
 
@@ -448,3 +448,35 @@ def test_typed_cutover_ignores_sales_and_cross_pipeline_moves(db):
         w.process_event(db,c,e,cat,frozenset({"qualify"}))
         w.dispatch(db,c,cat,{"qualify"},cutover_at=999,pipelines=scope)
         assert len(c.posts)==int(key=="organic")
+
+
+@pytest.mark.parametrize("user_map,assignee",[({},1),({"staff-1":8},8)])
+def test_linked_promise_keeps_author_date_and_single_owned_task(db,user_map,assignee):
+    c=Client([event()])
+    c.settings=w.Settings(promise_users=user_map)
+    snap={"version":1,"lead_id":55,"bindings":[{"number":31,"kind":"company","lead_id":55}],
+          "tasks":[],"execution_owners":{"promise":"amocrm"},
+          "promise":{"author_id":"staff-1","author":"Автор","comment":"Позвонить","due_date":"2026-11-19"}}
+    def read(lead_id,*,include_promise=False):
+        assert include_promise
+        return snap
+    c.kassa_state=read
+    cat=a.Catalog([{"id":a.SALES,"_embedded":{"statuses":[{"id":11,"name":"Дано обещание","type":0}]}}])
+    collect(db,c)
+    w.process_event(db,c,db.get(w.Event,"one"),cat,{"promise"})
+    def run():
+        w.dispatch(db,c,cat,{"promise"},cutover_at=1)
+    snap["tasks"]=[{"kind":"promise_follow","status":"pending"}]
+    run()
+    assert not c.posts
+    snap["tasks"]=[]
+    run()
+    task=c.tasks[1]
+    assert task["responsible_user_id"]==assignee and "Автор: Автор" in task["text"] and "Позвонить" in task["text"]
+    assert task["complete_till"]==int(datetime(2026,11,19,23,59,tzinfo=a.MSK).timestamp())
+    snap["promise"].update(comment="Перезвонить",due_date="2026-11-20")
+    run()
+    assert len(c.posts)==1 and "Перезвонить" in task["text"] and "20.11.2026" in task["text"]
+    task["text"]="Ручная редакция"
+    run()
+    assert task["text"]=="Ручная редакция" and len(c.patches)==1

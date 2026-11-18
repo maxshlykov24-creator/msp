@@ -8,7 +8,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import httpx
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     ad_call_live_from: int = 0
     visit_task_live_from: int = 0
     typed_tasks_live_from: int = 0
+    promise_users: dict[str, int] = {}
     sources_enabled: bool = False
     messages_enabled: bool = False
     kassa_url: str = "https://mansband-kassa.ru"
@@ -121,12 +122,12 @@ class Client:
         response.raise_for_status()
         return {} if response.status_code == 204 else response.json()
 
-    def kassa_state(self, lead_id):
+    def kassa_state(self, lead_id, *, include_promise=False):
         key = self.settings.service_key.get_secret_value()
         if not key: raise ValueError("kassa_binding_service_required")
         with httpx.Client(base_url=self.settings.kassa_url, timeout=15,
                           headers={"X-Automation-Key": key}) as client:
-            response = client.get(f"/api/internal/crm-automation/leads/{lead_id}")
+            response = client.get(f"/api/internal/crm-automation/leads/{lead_id}", params={"include":"promise"} if include_promise else {})
             response.raise_for_status()
             return response.json()
 
@@ -622,6 +623,23 @@ def shop_control_needed(rule_id, snapshot):
                for task in snapshot.get("tasks") or [])
 
 
+def promise_details(snapshot, lead, users):
+    details = snapshot.get("promise") or {}
+    author = (details.get("author") or "").strip()
+    comment = (details.get("comment") or "").strip()
+    if not details.get("author_id") or not author or not comment:
+        raise ValueError("missing_kassa_promise_details")
+    try:
+        day = date.fromisoformat(details.get("due_date") or "")
+    except ValueError:
+        raise ValueError("invalid_kassa_promise_date") from None
+    assignee = users.get(details["author_id"], lead["responsible_user_id"])
+    if not isinstance(assignee, int) or assignee <= 0:
+        raise ValueError("invalid_promise_assignee")
+    body = f"Выполнить обещание.\nАвтор: {author}\nКомментарий: {comment}\nСрок: {day:%d.%m.%Y}"
+    return body, datetime.combine(day, time(23, 59), a.MSK), assignee
+
+
 def dispatch(db, c, catalog, ids, *, cutover_at, pipelines=None):
     if cutover_at <= 0: raise ValueError("explicit_cutover_boundary_required")
     rules = {r.id: r for r in RULES}
@@ -651,7 +669,8 @@ def dispatch(db, c, catalog, ids, *, cutover_at, pipelines=None):
             continue
         lead = c.get(f"/api/v4/leads/{job.lead_id}")
         if migration_blocked(lead): continue
-        snapshot = c.kassa_state(job.lead_id)
+        snapshot = (c.kassa_state(job.lead_id, include_promise=True) if rule.id == "promise"
+                    else c.kassa_state(job.lead_id))
         problem = binding_issue(lead, snapshot, required=rule.id in SHOP_TASK_KINDS)
         if not problem and rule.id in ("promise","courier") and snapshot.get("bindings"):
             if snapshot.get("execution_owners",{}).get(rule.id) != "amocrm":
@@ -685,8 +704,21 @@ def dispatch(db, c, catalog, ids, *, cutover_at, pipelines=None):
             db.commit()
             continue
         current = lambda value: applicable(rule, value, catalog)
-        result = a.revise_task(db, job, c, due=due, responsible=int(lead.get("responsible_user_id") or 0),
-                              available_at=available, current=current, preview=False)
+        responsible = int(lead.get("responsible_user_id") or 0)
+        task_text = None
+        if rule.id == "promise" and snapshot.get("bindings"):
+            if any(t["kind"] == "promise_follow" and t["status"] == "pending" for t in snapshot["tasks"]):
+                job.reason = "existing_kassa_promise_requires_reconciliation"
+                db.commit()
+                continue
+            try:
+                task_text, due, responsible = promise_details(snapshot, lead, c.settings.promise_users)
+            except ValueError as exc:
+                job.reason = str(exc)
+                db.commit()
+                continue
+        result = a.revise_task(db, job, c, due=due, responsible=responsible,
+                              available_at=available, current=current, preview=False, task_text=task_text)
         if result == "replanned":
             if rule.id in SHOP_TASK_KINDS:
                 fresh_snapshot = c.kassa_state(job.lead_id)

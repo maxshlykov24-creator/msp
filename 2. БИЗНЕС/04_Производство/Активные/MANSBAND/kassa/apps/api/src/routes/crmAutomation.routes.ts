@@ -3,7 +3,7 @@ import { timingSafeEqual, createHash } from "node:crypto";
 import { getEnv } from "../env.js";
 import { sql } from "../db/index.js";
 
-/** Read-only automation contract. Never returns contacts, amounts or task text. */
+/** Authenticated automation contract. Promise details are requested separately. */
 export default async function crmAutomationRoutes(app: FastifyInstance) {
   app.post<{ Params: { leadId: string }; Body: { task_id?: number; occurrence?: string } }>(
     "/internal/crm-automation/leads/:leadId/courier-completed", {
@@ -45,7 +45,7 @@ export default async function crmAutomationRoutes(app: FastifyInstance) {
       await enqueueCourierHandoff(deal, `amoCRM: задача ${taskId}`);
       return { state: "acknowledged", lead_id: leadId, task_id: taskId, stage: deal.stage };
     });
-  app.get<{ Params: { leadId: string } }>("/internal/crm-automation/leads/:leadId", {
+  app.get<{ Params: { leadId: string }; Querystring: { include?: string } }>("/internal/crm-automation/leads/:leadId", {
     preHandler: async (req, reply) => {
       const key = getEnv().CRM_AUTOMATION_SERVICE_KEY;
       const supplied = String(req.headers["x-automation-key"] ?? "");
@@ -71,9 +71,29 @@ export default async function crmAutomationRoutes(app: FastifyInstance) {
                t.created_at, t.completed_at
         from tasks t join deals d on d.number = t.deal_number
         where d.amo_lead_id = ${leadId} order by t.created_at, t.id`;
+      // Only the human actor at the latest real stage entry can own a promise.
+      // Edits to its comment or date do not establish a new author.
+      let promise;
+      if (req.query.include === "promise" && bindings.length === 1 && bindings[0]!.stage === "Дано обещание") {
+        const [row] = await tx`
+          select d.data->>'comment' as comment, d.data->>'actualUntil' as due_date,
+                 entry.actor_id as author_id, entry.actor_name as author
+          from deals d
+          join lateral (
+            select source, actor_id, actor_name, "after"->>'stage' as stage
+            from audit_log
+            where entity_type='deal' and entity_id=d.number::text
+              and "after"->>'stage' is not null
+              and ("before"->>'stage' is distinct from "after"->>'stage')
+              and (action='deal.created' or "before"->>'stage' is not null)
+            order by created_at desc, id desc limit 1
+          ) entry on entry.stage=d.stage and entry.source='manual' and entry.actor_id is not null
+          where d.number=${bindings[0]!.number} and d.amo_lead_id=${leadId}`;
+        promise = row ?? null;
+      }
       const owner = getEnv().CRM_AUTOMATION_TASKS_ENABLED === "true" ? "amocrm" : "kassa";
       return { version: 1, lead_id: leadId, observed_at: new Date().toISOString(),
-        execution_owners: { promise: owner, courier: owner }, bindings, tasks };
+        execution_owners: { promise: owner, courier: owner }, bindings, tasks, promise };
     });
   });
 }

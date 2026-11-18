@@ -70,6 +70,24 @@ try {
     assert.equal((await send()).statusCode,200);
     assert.equal((await sql`select status from tasks where deal_number=${number}`)[0].status,'cancelled');
     crmLead.status_id=89900837;assert.equal((await send()).statusCode,409);
+    const promiseDeal={...deal,stage:'Дано обещание',comment:'Согласовать время',actualUntil:'2026-11-24'};
+    await sql`update deals set data=${JSON.stringify(promiseDeal)}::jsonb, stage='Дано обещание' where number=${number}`;
+    const promiseUrl=`/internal/crm-automation/leads/${lid}?include=promise`;
+    const readPromise=async()=> (await app.inject({method:'GET',url:promiseUrl,headers})).json().promise;
+    assert.equal(await readPromise(),null);
+    const authorId='10000000-0000-4000-8000-000000000001';
+    await sql`insert into audit_log(actor_id,actor_name,actor_role,action,entity_type,entity_id,source,"before","after")
+      values (${authorId},'Автор','seller','deal.stage_changed','deal',${String(number)},'manual',
+              '{"stage":"Взято в работу"}','{"stage":"Дано обещание"}')`;
+    await sql`insert into audit_log(actor_name,actor_role,action,entity_type,entity_id,source,"before","after")
+      values ('Редактор','seller','deal.updated','deal',${String(number)},'manual',
+              '{"stage":"Дано обещание"}','{"stage":"Дано обещание"}')`;
+    assert.deepEqual(await readPromise(),{author_id:authorId,author:'Автор',comment:'Согласовать время',due_date:'2026-11-24'});
+    assert.equal((await app.inject({method:'GET',url:`/internal/crm-automation/leads/${lid}`,headers})).json().promise,undefined);
+    await sql`insert into audit_log(actor_name,actor_role,action,entity_type,entity_id,source,"before","after")
+      values ('Касса','system','stage','deal',${String(number)},'auto',
+              '{"stage":"Взято в работу"}','{"stage":"Дано обещание"}')`;
+    assert.equal(await readPromise(),null);
     console.log('Local PostgreSQL + HTTP integration passed: read snapshot, reject uncompleted/manual/migration, concurrent dedup, no stage move, no cancelled-task reopening');
   }
 } finally {

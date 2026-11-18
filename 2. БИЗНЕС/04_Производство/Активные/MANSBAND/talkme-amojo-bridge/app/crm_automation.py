@@ -352,7 +352,7 @@ def source_fill_patch(lead: dict, field_id: int, enum_id: int) -> dict | None:
 
 def revise_task(db: Session, job: TaskExecution, client, *, due: datetime,
                 responsible: int, available_at: datetime, current: Callable[[dict], bool],
-                preview: bool = True) -> str:
+                preview: bool = True, task_text: str | None = None) -> str:
     """Revise an existing obligation, never create another task on a date edit.
 
     payload is the last acknowledged server value. An uncertain PATCH retains
@@ -373,6 +373,8 @@ def revise_task(db: Session, job: TaskExecution, client, *, due: datetime,
         return "conditions_changed"
     desired = {**job.payload, "complete_till": int(stamp(due).timestamp()),
                "responsible_user_id": responsible}
+    if task_text is not None:
+        desired["text"] = task_text.rstrip() + "\n" + task_marker(job.rule_id, job.lead_id, job.occurrence)
     if job.state == "planned":
         changed = db.execute(update(TaskExecution).where(
             TaskExecution.id == job.id, TaskExecution.state == "planned",
@@ -408,9 +410,9 @@ def revise_task(db: Session, job: TaskExecution, client, *, due: datetime,
     if claimed.rowcount != 1:
         return "concurrent_change"
     try:
-        client.patch("/api/v4/tasks", [{"id": job.task_id,
-            "complete_till": desired["complete_till"],
-            "responsible_user_id": desired["responsible_user_id"]}])
+        changes = {key: desired[key] for key in ("complete_till", "responsible_user_id", "text")
+                   if desired[key] != job.payload[key]}
+        client.patch("/api/v4/tasks", [{"id": job.task_id, **changes}])
         actual = client.get(f"/api/v4/tasks/{job.task_id}")
         return reconcile_task_revision(db, job, actual)
     except Exception:
