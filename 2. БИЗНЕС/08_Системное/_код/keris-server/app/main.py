@@ -712,6 +712,77 @@ def promo_preview(phone: str, service_id: str, db: Session = Depends(get_db)) ->
     }
 
 
+def journal_busy(start: date, end: date, *, exclude_id=None):
+    busy = {}
+    if not settings.yclients_ready or end < start:
+        return busy
+    page = 1
+    seen = set()
+    try:
+        while True:
+            raw = yclients_client._request("GET", f"/records/{settings.yclients_company_id}", params={
+                "start_date": start.isoformat(), "end_date": end.isoformat(), "count": 200, "page": page,
+            })
+            rows = raw["data"]
+            for row in rows:
+                rid = int(row["id"])
+                if rid in seen:
+                    raise ValueError("duplicate page")
+                seen.add(rid)
+                if rid == exclude_id or row.get("deleted") or sync.attendance_status(row) == BookingStatus.no_show:
+                    continue
+                when = sync._record_datetime(row)
+                length = int(row["seance_length"]) + int(row.get("technical_break_duration") or 0)
+                if when is None or length <= 0:
+                    raise ValueError("invalid interval")
+                busy.setdefault(int(row["staff_id"]), []).append((when, when + timedelta(seconds=length)))
+            if len(seen) >= int(raw["meta"]["total_count"]):
+                return busy
+            if not rows:
+                raise ValueError("incomplete records")
+            page += 1
+    except Exception:
+        raise HTTPException(503, "Не удалось проверить расписание в YCLIENTS. Попробуйте позже.") from None
+
+
+def journal_slots(db, master, day, duration, busy):
+    starts = slots_for_master(db, master, day, duration)
+    intervals = busy.get(master.yclients_staff_id, ())
+    free = []
+    for hhmm in starts:
+        start = datetime.fromisoformat(f"{day}T{hhmm}")
+        end = start + timedelta(minutes=duration)
+        if not any(start < occupied_end and end > occupied_start for occupied_start, occupied_end in intervals):
+            free.append(hhmm)
+    return free
+
+
+def reserve_in_journal(db, booking, master, service, *, moving=False):
+    service_id = sync.service_yclients_id(service, booking.pet_size)
+    if not service_id or not master or not master.yclients_staff_id:
+        raise HTTPException(503, "Мастер или услуга недоступны для онлайн-записи")
+    payload = yclients_client.booking_to_yclients_payload(
+        booking, master.yclients_staff_id, service_id, sync.selected_addon_yclients_ids(db, booking))
+    try:
+        if moving and booking.yclients_record_id:
+            raw = yclients_client.update_record(booking.yclients_record_id, payload, allow_time_change=True)
+        else:
+            raw = yclients_client.create_record(payload)
+        record = raw["data"]
+        if isinstance(record, list):
+            record = record[0]
+        record_id = int(record["id"])
+        if record_id <= 0 or raw.get("success") is False:
+            raise ValueError("invalid journal response")
+        booking.yclients_record_id = record_id
+    except yclients_client.YClientsError as exc:
+        if " -> 409:" in str(exc):
+            raise HTTPException(409, "Это время уже занято. Выберите другое окно.") from None
+        raise HTTPException(503, "Не удалось подтвердить запись в YCLIENTS.") from None
+    except Exception:
+        raise HTTPException(503, "Не удалось подтвердить запись в YCLIENTS.") from None
+
+
 @app.get("/api/slots")
 def get_slots(
     date_iso: str,
@@ -742,6 +813,7 @@ def get_slots(
     master_ids = [master_id] if master_id and master_id != "any" else [
         m.id for m in db.execute(select(Master).where(Master.active.is_(True))).scalars().all()
     ]
+    busy = journal_busy(day, day)
     result = {}
     quotes = {}
     for mid in master_ids:
@@ -754,7 +826,7 @@ def get_slots(
                 if not 1 <= duration_min <= 1440:
                     raise HTTPException(422, "Некорректная длительность визита")
                 master_duration = duration_min
-            result[mid] = slots_for_master(db, master, day, master_duration)
+            result[mid] = journal_slots(db, master, day, master_duration, busy)
             quotes[mid] = {"price": price, "duration": master_duration,
                            "service_price": catalog_value(service, size or next(iter(service.prices)), mid, "price"),
                            "addon_prices": {a.id: catalog_value(a, size or next(iter(service.prices)), mid, "price") for a in addons}}
@@ -818,6 +890,7 @@ def get_slots_range(
                            "addon_prices": {a.id: catalog_value(a, size or next(iter(service.prices)), mid, "price") for a in addons}}
         except BookingError:
             pass
+    busy = journal_busy(start, end)
     cursor = start
     while cursor <= end:
         day_slots = {}
@@ -825,7 +898,7 @@ def get_slots_range(
             master = db.get(Master, mid)
             if master is None or not master.active:
                 continue
-            day_slots[mid] = slots_for_master(db, master, cursor, quotes[mid]["duration"]) if mid in quotes else []
+            day_slots[mid] = journal_slots(db, master, cursor, quotes[mid]["duration"], busy) if mid in quotes else []
         days[cursor.isoformat()] = day_slots
         cursor += timedelta(days=1)
     return {"duration": quotes.get(master_id, {}).get("duration", duration), "masters_by_date": days, "quotes": quotes}
@@ -895,6 +968,8 @@ def create_booking(payload: BookingIn, db: Session = Depends(get_db)) -> dict:
     except BookingError as e:
         raise HTTPException(422, e.message)
 
+    day = date.fromisoformat(payload.date_iso)
+    busy = journal_busy(day, day)
     master_id = payload.master_id
     if master_id == "any":
         day = date.fromisoformat(payload.date_iso)
@@ -905,7 +980,7 @@ def create_booking(payload: BookingIn, db: Session = Depends(get_db)) -> dict:
                     service, addons, payload.pet_size, free_addon_ids, master_id=m.id)
             except BookingError:
                 continue
-            if payload.time_hhmm in slots_for_master(db, m, day, candidate_duration):
+            if payload.time_hhmm in journal_slots(db, m, day, candidate_duration, busy):
                 free_master = m
                 price, duration = candidate_price, candidate_duration
                 if subscription is not None:
@@ -923,7 +998,7 @@ def create_booking(payload: BookingIn, db: Session = Depends(get_db)) -> dict:
         raise HTTPException(409, "Цена услуги изменилась в YCLIENTS. Обновите страницу и проверьте запись.")
     if payload.quoted_duration is not None and payload.quoted_duration != duration:
         raise HTTPException(409, "Длительность услуги изменилась в YCLIENTS. Обновите страницу и выберите время заново.")
-    if payload.time_hhmm not in slots_for_master(db, chosen, date.fromisoformat(payload.date_iso), duration):
+    if payload.time_hhmm not in journal_slots(db, chosen, day, duration, busy):
         raise HTTPException(409, "Выбранное время уже недоступно для этой длительности услуги")
 
     starts_at = datetime.combine(date.fromisoformat(payload.date_iso), datetime.min.time()) + timedelta(
@@ -977,11 +1052,15 @@ def create_booking(payload: BookingIn, db: Session = Depends(get_db)) -> dict:
         visits_charged=visits_charged,
     )
     db.add(booking)
+    db.flush()
+    if settings.yclients_ready:
+        reserve_in_journal(db, booking, chosen, service)
     if subscription is not None and visits_charged:
         subscription.visits_used = round(subscription.visits_used + visits_charged, 2)
     db.commit()
 
-    sync.push_booking_to_yclients(db, booking)
+    if not settings.yclients_ready:
+        sync.push_booking_to_yclients(db, booking)
     sync.sync_booking_to_amocrm(
         db, booking,
         note=f"Запись оформлена клиентом: {sync.source_title(booking)}",
@@ -1114,8 +1193,11 @@ def reschedule_booking(booking_id: str, payload: RescheduleIn,
     booking.ends_at = ends_at
     # Напоминания за 24 ч и 3 ч считаются от нового времени.
     booking.reminders_sent = []
+    if settings.yclients_ready:
+        reserve_in_journal(db, booking, db.get(Master, booking.master_id), db.get(Service, booking.service_id), moving=True)
     db.commit()
-    sync.push_booking_to_yclients(db, booking, allow_time_change=True)
+    if not settings.yclients_ready:
+        sync.push_booking_to_yclients(db, booking, allow_time_change=True)
     sync.sync_booking_to_amocrm(
         db, booking,
         note=f"Перенос: было {was:%d.%m %H:%M}, стало {booking.starts_at:%d.%m %H:%M}",

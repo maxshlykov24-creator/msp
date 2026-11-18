@@ -81,25 +81,27 @@ def ensure_columns(engine: Engine) -> None:
                 quoted = f'"{name}"'  # group — зарезервированное слово
                 conn.execute(text(f'ALTER TABLE {table} ADD COLUMN {quoted} {ddl_type}'))
                 log.info("миграция: %s.%s добавлена", table, name)
-    _widen_telegram_chat_id(engine)
+    _widen_external_ids(engine)
     _ensure_journal_source(engine)
 
 
-def _widen_telegram_chat_id(engine: Engine) -> None:
+def _widen_external_ids(engine: Engine) -> None:
     """Старая колонка bookings.telegram_chat_id была INTEGER: chat_id Telegram
     часто > 2_147_483_647 (пример 7251008149) — INSERT падал, запись из YCLIENTS
     не создавалась и клиент не получал «спасибо»."""
     if engine.dialect.name != "postgresql":
         return
     with engine.begin() as conn:
-        kind = conn.execute(text(
-            "SELECT data_type FROM information_schema.columns "
-            "WHERE table_schema = 'public' AND table_name = 'bookings' "
-            "AND column_name = 'telegram_chat_id'"
-        )).scalar()
-        if kind == "integer":
-            conn.execute(text("ALTER TABLE bookings ALTER COLUMN telegram_chat_id TYPE BIGINT"))
-            log.info("миграция: bookings.telegram_chat_id INTEGER → BIGINT")
+        for column in ("telegram_chat_id", "yclients_record_id"):
+            kind = conn.execute(text(
+                "SELECT data_type FROM information_schema.columns "
+                "WHERE table_schema = 'public' AND table_name = 'bookings' "
+                "AND column_name = :column"
+            ), {"column": column}).scalar()
+            if kind == "integer":
+                conn.execute(text(f"ALTER TABLE bookings ALTER COLUMN {column} TYPE BIGINT"))
+                log.info("миграция: bookings.%s INTEGER → BIGINT", column)
+
 
 
 def _ensure_journal_source(engine: Engine) -> None:

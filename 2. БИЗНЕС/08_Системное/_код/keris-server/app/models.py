@@ -210,7 +210,7 @@ class Booking(Base):
     subscription_id: Mapped[Optional[int]] = mapped_column(ForeignKey("subscriptions.id"), nullable=True)
     visits_charged: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
-    yclients_record_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    yclients_record_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     amocrm_lead_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     # Карточка питомца в amoCRM (сущность «Компания», см. АРХИТЕКТУРА_ЭКОСИСТЕМЫ.md).
     amocrm_company_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)

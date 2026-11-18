@@ -197,7 +197,11 @@ def test_reschedule_uses_manual_duration_even_before_webhook(client, sessions, m
     monkeypatch.setattr(main.yclients_client, "get_record", lambda *a: {"data": {
         "datetime": booking["starts_at"], "staff_id": 999, "seance_length": 7200, "attendance": 0}})
     pushes = []
-    monkeypatch.setattr(main.sync, "push_booking_to_yclients", lambda *a, **kw: pushes.append(kw))
+    monkeypatch.setattr(main.yclients_client, "_request", lambda *a, **kw: {"data": [], "meta": {"total_count": 0}})
+    def move_record(*args, **kwargs):
+        pushes.append(kwargs)
+        return {"data": {"id": 777}}
+    monkeypatch.setattr(main.yclients_client, "update_record", move_record)
     new_day, _, new_time = free_slot(client, 8)
     result = client.post(f"/api/bookings/{booking['booking_id']}/reschedule",
                          json={"date_iso": new_day, "time_hhmm": new_time, "phone": PHONE})
