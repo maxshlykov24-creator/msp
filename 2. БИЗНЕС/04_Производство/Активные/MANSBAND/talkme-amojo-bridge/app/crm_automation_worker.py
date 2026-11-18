@@ -8,7 +8,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import httpx
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -438,11 +438,19 @@ OLD_VISIT_TEXT = "Наступила примерная дата встречи.
 
 
 def visit_tasks(db, c, now, live_from):
-    from app.stage_notifications import CalendarJob, CalendarSettings, calendar_valid
-    from app.message_templates import all_pages
+    from app.stage_notifications import CalendarSettings, calendar_date, calendar_scope
+    from app.message_templates import Job, all_pages
+    from app.pipeline_guard import messaging_allowed
     if live_from <= 0 or now.timestamp() < live_from:
         return
     settings = CalendarSettings()
+    def visit_current(lead, target):
+        stores = [v.get("enum_id") for field in lead.get("custom_fields_values") or []
+                  if field["field_id"] == 3158921 for v in field.get("values") or []]
+        return (messaging_allowed(lead) and not lead.get("is_deleted")
+                and (lead.get("pipeline_id"), lead.get("status_id")) in calendar_scope(settings, "wants_visit_status")
+                and calendar_date(lead, settings.approximate_date_field) == target
+                and stores in ([4765787], [4765789]))
     ids = frozenset({VISIT_TASK})
     reconcile_pending(db, c, ids)
     today = now.astimezone(a.MSK).date()
@@ -452,11 +460,7 @@ def visit_tasks(db, c, now, live_from):
         lead = c.get(f"/api/v4/leads/{task.lead_id}")
         if migration_blocked(lead) or a.is_test(lead) or binding_issue(lead, c.kassa_state(task.lead_id)):
             continue
-        calendar = db.scalar(select(CalendarJob).where(CalendarJob.lead_id == task.lead_id,
-            CalendarJob.kind == "wants_visit", CalendarJob.target_date == datetime.strptime(
-                task.occurrence.removeprefix("visit:"), "%Y-%m-%d").date()))
-        if calendar is None:
-            continue
+        target = date.fromisoformat(task.occurrence.removeprefix("visit:"))
         actual = c.get(f"/api/v4/tasks/{task.task_id}")
         if actual.get("entity_id") != task.lead_id or actual.get("entity_type") != "leads":
             continue
@@ -464,13 +468,13 @@ def visit_tasks(db, c, now, live_from):
             task.state, task.reason = "completed", "completed_externally"
         elif any(actual.get(k) != task.payload.get(k) for k in ("text","complete_till","responsible_user_id","task_type_id")):
             task.reason = "manual_edit_conflict"
-        elif not calendar_valid(lead, calendar, settings):
+        elif not visit_current(lead, target):
             a.complete_owned_task(db, task, c, "Изменилась дата или этап визита", preview=False)
         task.updated_at = now
         db.commit()
-    rows = db.scalars(select(CalendarJob).where(CalendarJob.kind == "wants_visit",
-        CalendarJob.target_date == today, CalendarJob.due_at <= now,
-        CalendarJob.due_at >= datetime.fromtimestamp(live_from, timezone.utc)))
+    rows = db.scalars(select(Job).where(Job.rule_id == "legacy-wants_visit",
+        Job.occurrence == today.isoformat(), Job.due_at <= now,
+        Job.due_at >= datetime.fromtimestamp(live_from, timezone.utc)))
     for row in rows:
         key = "visit:" + today.isoformat()
         prior = db.scalar(select(a.TaskExecution).where(a.TaskExecution.rule_id == VISIT_TASK,
@@ -478,9 +482,7 @@ def visit_tasks(db, c, now, live_from):
         if prior and prior.state != "planned":
             continue
         def current(lead):
-            stores = [v.get("enum_id") for field in lead.get("custom_fields_values") or []
-                      if field["field_id"] == 3158921 for v in field.get("values") or []]
-            return calendar_valid(lead, row, settings) and stores in ([4765787], [4765789])
+            return visit_current(lead, today)
         lead = c.get(f"/api/v4/leads/{row.lead_id}")
         if not current(lead) or binding_issue(lead, c.kassa_state(row.lead_id)):
             continue

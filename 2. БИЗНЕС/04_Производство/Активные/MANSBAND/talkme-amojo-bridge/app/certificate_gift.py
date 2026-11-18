@@ -152,8 +152,10 @@ def process(db,c,job,stamp,issuer=issue):
  if migration_blocked(lead):return
  try:
   if not paid_certificate_scope(lead) or field_value(lead,3828225).lower() not in ("true","1"):raise ValueError("Нет подтверждённого оплаченного электронного сертификата")
+  if lead.get("pipeline_id") not in rule.pipelines:raise ValueError("Воронка вне опубликованного сценария выдачи")
   cert=issuer(job.lead_id)
   lead=c.get(f"/api/v4/leads/{job.lead_id}",**{"with":"contacts"})
+  if lead.get("pipeline_id") not in rule.pipelines:raise ValueError("Воронка вне опубликованного сценария выдачи")
   data=data_for(c,lead)
   if job.snapshot and data["phone"]!=job.snapshot["data"]["phone"]:raise ValueError("Получатель изменился после начала отправки")
   if cert["status"]!="active" or cert["balance"]<=0:raise ValueError("Сертификат недействителен или использован")
@@ -188,6 +190,7 @@ def process(db,c,job,stamp,issuer=issue):
     if not doc.active["enabled"]:return
     fresh_lead=c.get(f"/api/v4/leads/{job.lead_id}",**{"with":"contacts"})
     if migration_blocked(fresh_lead):return
+    if fresh_lead.get("pipeline_id") not in doc.active["pipelines"]:raise ValueError("Воронка вне опубликованного сценария выдачи")
     fresh=data_for(c,fresh_lead)
     if fresh["phone"]!=snap["data"]["phone"]:raise ValueError("Получатель изменился перед отправкой")
     if fresh["nominal"]!=snap["data"]["nominal"]:raise ValueError("Номинал изменился перед отправкой; нужна сверка")

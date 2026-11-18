@@ -804,3 +804,14 @@ def test_moved_migration_preserves_date_job_outside_scan(db,monkeypatch):
     monkeypatch.setattr(m,"scan_leads",lambda c,r:[])
     m.synchronize(db,c,STAMP)
     assert j.state=="ready"
+
+def test_adding_date_rule_to_new_funnel_preserves_terminal_jobs(db):
+    c=CRM();d=doc(db);j=job(db,d)
+    cat=m.catalog(c)
+    cat["pipelines"].append({"id":11482377,"_embedded":{"statuses":[{"id":89902109}]}})
+    j.state,j.reason="expired","scheduled_window_passed"
+    d.draft={**d.active,"pipelines":[9601214,11482377],"statuses":[77086494,89902109]}
+    d.checked=m.digest([d.version,d.draft]);db.commit()
+    m.publish(d.id,m.Publish(version=d.version,actor="admin"),db,c)
+    assert d.active["statuses"]==[77086494,89902109]
+    assert (j.state,j.reason)==("expired","scheduled_window_passed")

@@ -1369,9 +1369,21 @@ def publish(id:str,body:Publish,db=Depends(session),c=Depends(client)):
                 remote=c.get(f"/api/v4/chats/templates/{result['remote_id']}")
                 d.draft={**d.draft,"remote_id":result["remote_id"],"source_hash":remote_digest(remote),"original":remote}
         else:Routing(**d.draft)
+        # Adding calendar coverage to new funnels does not revise the dates,
+        # contents or outcomes of obligations in the existing funnels.
+        preserve_jobs = False
+        if d.kind == "rule" and d.active and r.enabled and r.action == "text" and r.trigger.type == "date":
+            old = Rule(**d.active)
+            added_statuses = set(r.statuses) - set(old.statuses)
+            if (old.statuses and set(old.pipelines) < set(r.pipelines)
+                    and set(old.statuses) <= set(r.statuses)
+                    and old.model_dump(exclude={"pipelines","statuses"}) == r.model_dump(exclude={"pipelines","statuses"})):
+                old_catalog = {stage["id"] for pipe in catalog(c)["pipelines"] if pipe["id"] in old.pipelines
+                               for stage in pipe.get("_embedded", {}).get("statuses", [])}
+                preserve_jobs = old_catalog.isdisjoint(added_statuses)
         d.active=dict(d.draft);d.published_at=now();d.published_version=d.version;d.checked=""
         audit(db,d,body.actor,"published",{"document":d.active,**result})
-        if d.kind in ("rule","routing"):
+        if d.kind in ("rule","routing") and not preserve_jobs:
             for j in db.scalars(select(Job).where(Job.state.in_(["ready","blocked","cancelled","expired","failed"] if d.kind=="rule" else ["ready","blocked"]))):
                 if d.kind=="rule" and j.rule_id!=d.id:continue
                 if db.scalar(select(Attempt.id).where(Attempt.job_id==j.id,Attempt.state!="skipped").limit(1)) is None:

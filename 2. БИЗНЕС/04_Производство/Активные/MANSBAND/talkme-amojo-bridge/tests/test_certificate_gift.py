@@ -255,3 +255,10 @@ def test_expiry_change_after_text_stops_pdf(monkeypatch,db):
   return response
  c.post=post;g.process(db,c,j,STAMP,issuer)
  assert len(c.posts)==1 and j.state=="partial"
+
+def test_allowed_messaging_funnel_outside_published_certificate_rule(monkeypatch,db):
+ monkeypatch.setenv("MANSBAND_MESSAGE_PIPELINES","9601214,11482377")
+ c=CRM([]);c.lead.update(pipeline_id=11482377,status_id=89900817)
+ j=prepare(monkeypatch,db,c)
+ g.process(db,c,j,STAMP,lambda _:pytest.fail("unexpected certificate issuance"))
+ assert j.state=="blocked" and not c.posts
