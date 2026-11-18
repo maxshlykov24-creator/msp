@@ -122,3 +122,4 @@ body {position:relative;isolation:isolate}
 [data-paused] .silk-visible:before,.opening-silk:has(.ready):before,.about-backdrop:has(.ready):before {animation-play-state:paused}
 }
 @media(max-width:720px){.lab-hint {padding:0 4px 4px}.project-picker {gap:16px}.project-picker button{font-size:13px}}
+@media(prefers-reduced-motion:no-preference){.await-entry:not(:focus-within){opacity:0}}

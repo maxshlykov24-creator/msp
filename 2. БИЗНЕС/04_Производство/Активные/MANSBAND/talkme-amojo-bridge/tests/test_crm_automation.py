@@ -459,3 +459,13 @@ def test_matching_field_before_first_write_does_not_transfer_ownership(db):
     class ReadOnly:
         def get(self,path): return item
     assert f.execute_fields(db,ReadOnly(),job,lambda _:projection,preview=False)=="matched"
+
+
+def test_shared_ad_number_uses_other_only_with_exact_single_called_number():
+    from app import crm_automation_fields as f
+    fields=[{"id":i,"enums":[{"id":i+1,"value":"Другое"}]} for i in (3134043,3781223)]
+    item=lead(custom_fields_values=[],_embedded={"tags":[{"name":f.SHARED_AD_CALL_TAG}]})
+    result=f.project_first_source(item,fields,first_touch=True)
+    assert {x["field_id"] for x in result.fields}=={3134043,3781223}
+    item["_embedded"]["tags"].append({"name":"Вызов-на-номер:1"})
+    assert not f.project_first_source(item,fields,first_touch=True).fields

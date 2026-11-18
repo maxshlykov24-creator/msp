@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     enabled_rules: str = ""
     allow_cutover: bool = False
     fields_enabled: bool = False
+    ad_call_live_from: int = 0
     sources_enabled: bool = False
     messages_enabled: bool = False
     kassa_url: str = "https://mansband-kassa.ru"
@@ -299,7 +300,7 @@ def tick(settings: Settings):
                         process_event(db, c, event, catalog, ids)
                     if settings.fields_enabled:
                         try:
-                            process_fields(db, c, catalog, preview=settings.mode != "live", sources_enabled=settings.sources_enabled)
+                            process_fields(db, c, catalog, preview=settings.mode != "live", sources_enabled=settings.sources_enabled, ad_call_live_from=settings.ad_call_live_from)
                         except Exception as exc:
                             db.rollback()
                             log.error("CRM field processing: %s",type(exc).__name__)
@@ -317,7 +318,7 @@ def tick(settings: Settings):
             lock.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": LOCK})
 
 
-def process_fields(db, c, catalog, *, preview=True, sources_enabled=False):
+def process_fields(db, c, catalog, *, preview=True, sources_enabled=False, ad_call_live_from=0):
     """Rotate watched leads so date/manual edits are observed even without a stage change.
 
     Stage history is independent of task supersession. Only the collected,
@@ -361,6 +362,8 @@ def process_fields(db, c, catalog, *, preview=True, sources_enabled=False):
                 if e.before.get('kind')=='lead_added' and not migration_event(db,e)]
             observed_creation=creations[0].at if len(creations)==1 else None
             source=f.verified_source_projection(c,lead,fields,created_at=observed_creation,through=cursor.through)
+            if ad_call_live_from > 0 and observed_creation and observed_creation >= ad_call_live_from:
+                apply_shared_ad_source(db, c, lead, fields, source)
         def project(current):
             past=f.project_stage_history(current,catalog,history)
             present=f.project_fields(current,catalog,owned_values=owned)
@@ -371,6 +374,7 @@ def process_fields(db, c, catalog, *, preview=True, sources_enabled=False):
             return f.FieldProjection(fields=[field for field in combined if field['field_id'] not in protected],
                 issues=past.issues+present.issues+attribution.issues+[f'manual_change_preserved:{fid}' for fid in protected])
         pending = list(db.scalars(select(f.FieldExecution).where(f.FieldExecution.lead_id==watch.lead_id,
+            f.FieldExecution.event_id != "shared-ad-call-v1",
             f.FieldExecution.state.in_(("planned","inflight","uncertain")))))
         for job in pending:
             f.execute_fields(db,c,job,project,preview=preview)
@@ -380,6 +384,34 @@ def process_fields(db, c, catalog, *, preview=True, sources_enabled=False):
         job=f.plan_fields(db,fresh,"fields-v1:"+generation,projection)
         db.commit()
         if job: f.execute_fields(db,c,job,project,preview=preview)
+
+
+def apply_shared_ad_source(db, c, lead, fields, source):
+    """Independent cutover for newly observed calls. Never replay older leads."""
+    if not f.shared_ad_call(lead) or source.issues or not source.fields:
+        return
+    if any(a.field_values(lead, fid) for fid in (3781223, 3134043)):
+        return
+    # A more specific UTM or another source stays with its own attribution rule.
+    ids = {item["id"]: {opt["id"] for opt in item.get("enums") or [] if opt["value"] == "Другое"}
+           for item in fields if item["id"] in (3781223, 3134043)}
+    if len(source.fields) != 2 or any(
+        field["values"][0]["enum_id"] not in ids.get(field["field_id"], set()) for field in source.fields
+    ):
+        return
+    if binding_issue(lead, c.kassa_state(lead["id"])):
+        return
+    job = f.plan_fields(db, lead, "shared-ad-call-v1", source)
+    db.commit()
+
+    def still_current(current):
+        if (current.get("updated_at") == lead.get("updated_at")
+                and current.get("custom_fields_values") == lead.get("custom_fields_values")
+                and f.shared_ad_call(current) and not a.is_test(current)
+                and current.get("pipeline_id") in a.PIPELINES and not current.get("is_deleted")):
+            return source
+        return f.FieldProjection()
+    f.execute_fields(db, c, job, still_current, preview=False)
 
 
 def handoff_completed_couriers(db, c, catalog, ids):

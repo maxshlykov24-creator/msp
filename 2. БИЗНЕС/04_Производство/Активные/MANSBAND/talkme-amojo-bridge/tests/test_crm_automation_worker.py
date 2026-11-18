@@ -394,3 +394,16 @@ def test_shop_control_requires_matching_open_work():
     assert not w.shop_control_needed("hold_control",snapshot)
     assert w.shop_control_needed("transfer_control",snapshot)
     assert w.shop_control_needed("company_invoice",{"bindings":[]})
+
+
+def test_scoped_call_write_preserves_intervening_edit(db):
+    from app import crm_automation_fields as f
+    c=Client()
+    item=dict(c.lead,updated_at=100,custom_fields_values=[],
+              _embedded={"tags":[{"name":f.SHARED_AD_CALL_TAG}]})
+    fields=[{"id":i,"enums":[{"id":i+1,"value":"Другое"}]} for i in (3134043,3781223)]
+    source=f.project_first_source(item,fields,first_touch=True)
+    c.lead=dict(item,custom_fields_values=[{"field_id":3781223,"values":[{"value":"ВК"}]}])
+    w.apply_shared_ad_source(db,c,item,fields,source)
+    assert not c.patches
+    assert db.scalar(select(f.FieldExecution)).state=="cancelled"

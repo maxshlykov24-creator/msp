@@ -288,6 +288,8 @@ def project_first_source(lead: dict, fields: list[dict], *, first_touch: bool = 
         for token in re.findall(r"(?<!\d)\d+(?!\d)", incoming_text):
             if token in MESSAGE_SOURCES:
                 candidates.add(MESSAGE_SOURCES[token])
+    if not candidates and shared_ad_call(lead):
+        candidates.add("Другое")
     if len(candidates) > 1:
         out.issues.append("conflicting_first_touch_signals")
         return out
@@ -306,6 +308,14 @@ def project_first_source(lead: dict, fields: list[dict], *, first_touch: bool = 
         proposed.append({"field_id": field_id, "values": [{"enum_id": enums[0]}]})
     out.fields = proposed
     return out
+
+
+SHARED_AD_CALL_TAG = "Вызов-на-номер:79962997303"
+
+
+def shared_ad_call(lead):
+    tags = {tag.get("name", "") for tag in (lead.get("_embedded") or {}).get("tags", [])}
+    return {tag for tag in tags if tag.startswith("Вызов-на-номер:")} == {SHARED_AD_CALL_TAG}
 
 
 def verified_source_projection(c, lead, fields, *, created_at=None, through=0):
@@ -347,6 +357,22 @@ def verified_source_projection(c, lead, fields, *, created_at=None, through=0):
     else: raise ValueError('incomplete_source_history_scan')
     if changes:
         return FieldProjection(issues=['first_source_inputs_changed_since_creation'])
+    if shared_ad_call(lead):
+        from app.message_templates import all_pages
+        for kind in ("entity_tag_added", "entity_tag_deleted"):
+            events = all_pages(c, "/api/v4/events", "events", **{
+                "filter[entity]":"lead", "filter[entity_id]":lead["id"], "filter[type]":kind,
+                "filter[created_at][from]":created_at, "filter[created_at][to]":through})
+            for event in events:
+                if (event.get("entity_id") != lead["id"] or event.get("type") != kind
+                        or event.get("entity_type") != "lead" or not created_at <= event["created_at"] <= through):
+                    raise ValueError("unexpected_tag_history")
+                values = event["value_after"] if kind == "entity_tag_added" else event["value_before"]
+                if not values:
+                    raise ValueError("incomplete_tag_history")
+                if any(v["tag"]["name"].startswith("Вызов-на-номер:") for v in values):
+                    if kind == "entity_tag_deleted" or event["created_at"] != created_at:
+                        return FieldProjection(issues=["called_number_changed_after_creation"])
     return project_first_source(lead,fields,first_touch=True)
 
 

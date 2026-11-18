@@ -35,11 +35,15 @@ if ('IntersectionObserver' in window) {
   const sections = new IntersectionObserver(entries => {
     for (const entry of entries) {
       if (!entry.isIntersecting) continue;
+      entry.target.classList.remove('await-entry');
       entry.target.classList.add('enter-spread');
       sections.unobserve(entry.target);
     }
   }, {threshold:0.08});
-  $$('.section-intro,.project-picker,.project-stage,.lab-choice,.economy-grid>div,.portrait-frame,.about-copy,.delivery article,.contact-layout>div').forEach(el => sections.observe(el));
+  $$('.section-intro,.project-picker,.project-stage,.lab-choice,.economy-grid>div,.portrait-frame,.about-copy,.delivery article,.contact-layout>div').forEach(el => {
+    if (el.getBoundingClientRect().top >= innerHeight) el.classList.add('await-entry');
+    sections.observe(el);
+  });
   $$('.lab-choice,.delivery article').forEach((el,i) => el.style.setProperty('--entry-delay',(i % 3 * 0.06)+'s'));
 }
 const slides=$$('.project-slide'),pickers=$$('[data-project]'),names=['Продажи и коммуникации','Аналитика и экономика','Каталог и крой','Программа лояльности'];
