@@ -21,10 +21,27 @@ function setPaused(paused) {
   document.dispatchEvent(new Event('silk-pause'));
 }
 motionButton.addEventListener('click', () => setPaused(!document.documentElement.hasAttribute('data-paused')));
-try {
-  if (!sessionStorage.getItem('redesign.scene-seen')) document.body.classList.add('first-scene');
-  sessionStorage.setItem('redesign.scene-seen', '1');
-} catch {}
+const opening = $('.opening-silk');
+function sizeOpening() {
+  opening.style.setProperty('--opening-height', Math.ceil($('.hero').getBoundingClientRect().bottom + window.scrollY) + 'px');
+}
+sizeOpening();
+new ResizeObserver(sizeOpening).observe($('.hero'));
+if ('IntersectionObserver' in window) {
+  const backgrounds = new IntersectionObserver(entries => {
+    for (const entry of entries) entry.target.classList.toggle('silk-visible', entry.isIntersecting);
+  });
+  $$('.opening-silk,.about-backdrop').forEach(el => backgrounds.observe(el));
+  const sections = new IntersectionObserver(entries => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue;
+      entry.target.classList.add('enter-spread');
+      sections.unobserve(entry.target);
+    }
+  }, {threshold:0.08});
+  $$('.section-intro,.project-picker,.project-stage,.lab-choice,.economy-grid>div,.portrait-frame,.about-copy,.delivery article,.contact-layout>div').forEach(el => sections.observe(el));
+  $$('.lab-choice,.delivery article').forEach((el,i) => el.style.setProperty('--entry-delay',(i % 3 * 0.06)+'s'));
+}
 const slides=$$('.project-slide'),pickers=$$('[data-project]'),names=['Продажи и коммуникации','Аналитика и экономика','Каталог и крой','Программа лояльности'];
 let selected=0;
 function selectProject(index){const direction=index<selected?-1:1;selected=(index+slides.length)%slides.length;
@@ -35,10 +52,8 @@ $('.project-stage').addEventListener('keydown',event=>{if(event.target!==event.c
 window.addEventListener('pageshow', () => {
   const from = history.state?.cuttingReturn;
   if (!from) return;
-  if (from === 'project') selectProject(2);
-  else choices[choices.length - 1].click();
-  const selector = from === 'project' ? '.project-slide [data-demo="cutting"]' : '#preview-cutting button';
-  $(selector).focus();
+  choices[choices.length - 1].click();
+  $('#preview-cutting button').focus();
   const state = {...history.state};
   delete state.cuttingReturn;
   history.replaceState(state, '');
