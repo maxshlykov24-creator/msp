@@ -8,7 +8,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import httpx
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -37,6 +37,8 @@ class Settings(BaseSettings):
     allow_cutover: bool = False
     fields_enabled: bool = False
     ad_call_live_from: int = 0
+    visit_task_live_from: int = 0
+    typed_tasks_live_from: int = 0
     sources_enabled: bool = False
     messages_enabled: bool = False
     kassa_url: str = "https://mansband-kassa.ru"
@@ -308,6 +310,13 @@ def tick(settings: Settings):
                         reconcile_pending(db, c, ids)
                         dispatch(db, c, catalog, ids, cutover_at=settings.cutover_at)
                         handoff_completed_couriers(db, c, catalog, ids)
+                    elif settings.typed_tasks_live_from > 0:
+                        reconcile_pending(db, c, ids)
+                        dispatch(db, c, catalog, ids, cutover_at=settings.typed_tasks_live_from,
+                                 pipelines={a.OFFLINE, a.ONLINE, a.RENTAL, a.COMPANY})
+                        handoff_completed_couriers(db, c, catalog, ids)
+                    if settings.visit_task_live_from > 0:
+                        visit_tasks(db, c, datetime.now(timezone.utc), settings.visit_task_live_from)
                     if settings.messages_enabled:
                         for direction in ('incoming','outgoing'):
                             messages.collect_chats(db,raw,settings.activated_at,through,direction)
@@ -356,6 +365,15 @@ def process_fields(db, c, catalog, *, preview=True, sources_enabled=False, ad_ca
             generation = applied.id
             for field in applied.payload:
                 owned[field["field_id"]]=field["values"]
+        # Reconcile a lost response even if both fields are already present.
+        # The scoped job must never enter the broad field dispatch path.
+        if ad_call_live_from:
+            ad_pending = db.scalars(select(f.FieldExecution).where(
+                f.FieldExecution.event_id == "shared-ad-call-v1",
+                f.FieldExecution.lead_id == watch.lead_id,
+                f.FieldExecution.state.in_(("inflight", "uncertain"))))
+            for attempt in ad_pending:
+                f.execute_fields(db, c, attempt, lambda _: f.FieldProjection(), preview=False)
         source=f.FieldProjection()
         if sources_enabled:
             creations=[e for e in db.scalars(select(Event).where(Event.lead_id==watch.lead_id))
@@ -414,6 +432,81 @@ def apply_shared_ad_source(db, c, lead, fields, source):
     f.execute_fields(db, c, job, still_current, preview=False)
 
 
+VISIT_TASK = "approximate_store_visit"
+VISIT_TEXT = "Уточнить, планирует ли клиент сегодня приехать в магазин, и зафиксировать договорённость"
+OLD_VISIT_TEXT = "Наступила примерная дата встречи. Выяснить планирует ли клиент сегодня приехать в магазин"
+
+
+def visit_tasks(db, c, now, live_from):
+    from app.stage_notifications import CalendarJob, CalendarSettings, calendar_valid
+    from app.message_templates import all_pages
+    if live_from <= 0 or now.timestamp() < live_from:
+        return
+    settings = CalendarSettings()
+    ids = frozenset({VISIT_TASK})
+    reconcile_pending(db, c, ids)
+    today = now.astimezone(a.MSK).date()
+    # Only the server's own tasks are revised on a changed date/stage.
+    for task in db.scalars(select(a.TaskExecution).where(a.TaskExecution.rule_id == VISIT_TASK,
+            a.TaskExecution.state == "created").order_by(a.TaskExecution.updated_at).limit(25)):
+        lead = c.get(f"/api/v4/leads/{task.lead_id}")
+        if migration_blocked(lead) or a.is_test(lead) or binding_issue(lead, c.kassa_state(task.lead_id)):
+            continue
+        calendar = db.scalar(select(CalendarJob).where(CalendarJob.lead_id == task.lead_id,
+            CalendarJob.kind == "wants_visit", CalendarJob.target_date == datetime.strptime(
+                task.occurrence.removeprefix("visit:"), "%Y-%m-%d").date()))
+        if calendar is None:
+            continue
+        actual = c.get(f"/api/v4/tasks/{task.task_id}")
+        if actual.get("entity_id") != task.lead_id or actual.get("entity_type") != "leads":
+            continue
+        if actual.get("is_completed"):
+            task.state, task.reason = "completed", "completed_externally"
+        elif any(actual.get(k) != task.payload.get(k) for k in ("text","complete_till","responsible_user_id","task_type_id")):
+            task.reason = "manual_edit_conflict"
+        elif not calendar_valid(lead, calendar, settings):
+            a.complete_owned_task(db, task, c, "Изменилась дата или этап визита", preview=False)
+        task.updated_at = now
+        db.commit()
+    rows = db.scalars(select(CalendarJob).where(CalendarJob.kind == "wants_visit",
+        CalendarJob.target_date == today, CalendarJob.due_at <= now,
+        CalendarJob.due_at >= datetime.fromtimestamp(live_from, timezone.utc)))
+    for row in rows:
+        key = "visit:" + today.isoformat()
+        prior = db.scalar(select(a.TaskExecution).where(a.TaskExecution.rule_id == VISIT_TASK,
+            a.TaskExecution.lead_id == row.lead_id, a.TaskExecution.occurrence == key))
+        if prior and prior.state != "planned":
+            continue
+        def current(lead):
+            stores = [v.get("enum_id") for field in lead.get("custom_fields_values") or []
+                      if field["field_id"] == 3158921 for v in field.get("values") or []]
+            return calendar_valid(lead, row, settings) and stores in ([4765787], [4765789])
+        lead = c.get(f"/api/v4/leads/{row.lead_id}")
+        if not current(lead) or binding_issue(lead, c.kassa_state(row.lead_id)):
+            continue
+        migration = db.get(a.MigrationEntry, row.lead_id)
+        if migration and migration.state not in ("preview", "verified", "rolled_back"):
+            continue
+        # A migrated deal needs its old calendar obligation reconciled explicitly.
+        if migration and migration.state == "verified" and migration.target.get("moved_on") in (None, today.isoformat()):
+            continue
+        existing = all_pages(c, "/api/v4/tasks", "tasks", **{
+            "filter[entity_id]":row.lead_id, "filter[entity_type]":"leads"})
+        if any(t.get("entity_id") != row.lead_id or t.get("entity_type") != "leads" for t in existing):
+            raise ValueError("unexpected_visit_task_entity")
+        legacy = any(t.get("task_type_id") == 2 and t.get("text","").strip() == OLD_VISIT_TEXT
+                     and (not t.get("is_completed") or datetime.fromtimestamp(t["created_at"], a.MSK).date()==today)
+                     for t in existing)
+        job = prior or a.plan_task(db, VISIT_TASK, row.lead_id, key, text=VISIT_TEXT,
+            due=now+timedelta(hours=3), responsible=lead["responsible_user_id"], task_type=2,
+            available_at=now)
+        if legacy:
+            job.state, job.reason = "preserved", "matching_legacy_visit_obligation"
+            db.commit()
+        else:
+            a.execute_task(db, job, c, enabled_rules=ids, current=current, preview=False, now=now)
+
+
 def handoff_completed_couriers(db, c, catalog, ids):
     if "courier" not in ids: return
     jobs = list(db.scalars(select(a.TaskExecution).outerjoin(CourierHandoff,
@@ -455,6 +548,7 @@ def handoff_completed_couriers(db, c, catalog, ids):
 def reconcile_pending(db, c, ids):
     """Read both open and completed tasks; an absent match never permits POST."""
     jobs = list(db.scalars(select(a.TaskExecution).where(
+        a.TaskExecution.rule_id.in_(ids),
         a.TaskExecution.state.in_(("inflight", "uncertain", "update_inflight", "update_uncertain"))
     ).order_by(a.TaskExecution.updated_at).limit(25)))
     for job in jobs:
@@ -526,11 +620,15 @@ def shop_control_needed(rule_id, snapshot):
                for task in snapshot.get("tasks") or [])
 
 
-def dispatch(db, c, catalog, ids, *, cutover_at):
+def dispatch(db, c, catalog, ids, *, cutover_at, pipelines=None):
     if cutover_at <= 0: raise ValueError("explicit_cutover_boundary_required")
     rules = {r.id: r for r in RULES}
-    jobs = list(db.scalars(select(a.TaskExecution).where(a.TaskExecution.state.in_(("planned", "created")))
-                          .order_by(a.TaskExecution.updated_at).limit(25)))
+    query = select(a.TaskExecution).where(a.TaskExecution.state.in_(("planned", "created")),
+        a.TaskExecution.rule_id.in_(ids))
+    if pipelines is not None:
+        query = query.join(Event, a.TaskExecution.occurrence == "entry:" + Event.id).where(
+            Event.after["pipeline_id"].as_integer().in_(pipelines))
+    jobs = list(db.scalars(query.order_by(a.TaskExecution.updated_at).limit(25)))
     for job in jobs:
         job.updated_at = datetime.now(timezone.utc)
         db.commit()
@@ -538,6 +636,11 @@ def dispatch(db, c, catalog, ids, *, cutover_at):
         rule = rules[job.rule_id]
         event = db.get(Event, job.occurrence.removeprefix("entry:"))
         if event is None: continue  # Imported obligations need their explicit origin.
+        if pipelines is not None and job.task_id is None and event.before.get("pipeline_id") not in (
+                None, event.after["pipeline_id"]):
+            job.reason = "pipeline_move_requires_reconciliation"
+            db.commit()
+            continue
         if event.at < cutover_at and job.task_id is None:
             # Preview observations overlap old Digital/F5 obligations. They need
             # explicit adoption, never a replay when the mode changes to live.

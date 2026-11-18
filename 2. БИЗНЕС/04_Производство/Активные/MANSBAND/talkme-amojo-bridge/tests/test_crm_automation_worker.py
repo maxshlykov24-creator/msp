@@ -407,3 +407,44 @@ def test_scoped_call_write_preserves_intervening_edit(db):
     w.apply_shared_ad_source(db,c,item,fields,source)
     assert not c.patches
     assert db.scalar(select(f.FieldExecution)).state=="cancelled"
+
+
+@pytest.mark.parametrize("stage,legacy,posts",[(77384722,False,1),(77384722,True,0),(78616338,False,0)])
+def test_visit_task_only_for_current_store_visit(db,monkeypatch,stage,legacy,posts):
+    from app.stage_notifications import CalendarJob
+    from datetime import timedelta
+    CalendarJob.__table__.create(db.get_bind())
+    monkeypatch.setenv("CALENDARNOTIFY_EXTRA_ENABLED","true")
+    now=datetime(2026,11,18,10,tzinfo=a.MSK)
+    c=Client()
+    c.lead.update(status_id=stage,custom_fields_values=[
+        {"field_id":3158921,"values":[{"enum_id":4765787}]},
+        {"field_id":3185681,"values":[{"value":int(now.timestamp())}]}])
+    db.add(CalendarJob(lead_id=55,kind="wants_visit",status_id=77384722,target_date=now.date(),
+        due_at=now.astimezone(timezone.utc),check_at=now.astimezone(timezone.utc),state="sent"))
+    if legacy:
+        c.tasks[77]={"id":77,"entity_id":55,"entity_type":"leads","text":w.OLD_VISIT_TEXT,"task_type_id":2}
+    db.commit()
+    w.visit_tasks(db,c,now,int(now.timestamp())+1)
+    assert not c.posts
+    for _ in range(2): w.visit_tasks(db,c,now,int(now.timestamp())-1)
+    assert len(c.posts)==posts
+    if posts: assert c.posts[0][0]["complete_till"]==int((now+timedelta(hours=3)).timestamp())
+
+
+def test_typed_cutover_ignores_sales_and_cross_pipeline_moves(db):
+    c=Client([event("sales",1000)])
+    collect(db,c)
+    w.process_event(db,c,db.get(w.Event,"sales"),catalog(),frozenset({"qualify"}))
+    scope={a.COMPANY}
+    w.dispatch(db,c,catalog(),{"qualify"},cutover_at=999,pipelines=scope)
+    assert not c.posts
+    cat=a.Catalog([{"id":a.COMPANY,"_embedded":{"statuses":[{"id":11,"name":"Взято в работу","type":0}]}}])
+    c.lead.update(pipeline_id=a.COMPANY)
+    for key,at,origin in [("move",1001,a.SALES),("organic",1002,a.COMPANY)]:
+        e=w.Event(id=key,lead_id=55,at=at,before={"pipeline_id":origin,"id":12},
+                  after={"pipeline_id":a.COMPANY,"id":11})
+        db.add(e);db.commit()
+        w.process_event(db,c,e,cat,frozenset({"qualify"}))
+        w.dispatch(db,c,cat,{"qualify"},cutover_at=999,pipelines=scope)
+        assert len(c.posts)==int(key=="organic")
