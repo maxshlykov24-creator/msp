@@ -82,7 +82,10 @@ def execute_fields(db, c, job, project, *, preview=True):
     lead = c.get(f"/api/v4/leads/{job.lead_id}")
     if migration_blocked(lead): return "migration_guard"
     if fields_match(lead, job.payload):
-        job.state,job.reason="applied","readback_verified"
+        if job.state == "planned":
+            job.state, job.reason = "matched", "already_set_before_write"
+        else:
+            job.state, job.reason = "applied", "readback_verified"
         db.commit()
         return job.state
     if job.state != "planned":

@@ -17,6 +17,7 @@ from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from app.certificate_mail import MSK, transitions, MailSettings
 from app.database import get_engine, get_session_factory
+from app.pipeline_guard import allowed_pipeline, messaging_allowed
 from app.models import Base
 
 log = logging.getLogger(__name__)
@@ -640,11 +641,29 @@ def free_hold_valid(lead, settings):
     return len(entries) == 1 and entries[0].get("enum_id") == settings.free_hold_enum
 
 
+# Exact status pairs from the audited live pipelines. The existing message
+# allowlist controls rollout independently from discovering these definitions.
+TYPED_CALENDAR_STAGES = {
+    "hold_status": {11482373:89900789,11482377:89902109,11482381:89900885,11482385:89900929},
+    "meeting_status": {11482373:89900773,11482381:89900869},
+    "paid_status": {11482381:89900889},
+    "rented_status": {11482381:89900893},
+    "certificate_status": {11482373:89900793,11482377:89900817},
+    "wants_order_status": {11482377:89900813},
+    "wants_visit_status": {11482373:89900769,11482381:89900865,11482385:89900913},
+}
+
+
+def calendar_scope(settings, status):
+    pairs = {9601214: getattr(settings, status), **TYPED_CALENDAR_STAGES[status]}
+    return {(pipeline, stage) for pipeline, stage in pairs.items() if allowed_pipeline(pipeline)}
+
+
 def calendar_valid(lead, job, settings):
     status, field, _, _, _ = CALENDAR_RULES[job.kind]
     return (job.kind in active_calendar_rules(settings)
-            and lead.get("pipeline_id") == 9601214 and not lead.get("is_deleted")
-            and lead.get("status_id") == getattr(settings, status)
+            and messaging_allowed(lead) and not lead.get("is_deleted")
+            and (lead.get("pipeline_id"), lead.get("status_id")) in calendar_scope(settings, status)
             and calendar_date(lead, getattr(settings, field)) == job.target_date
             and (job.kind != "free_hold_expired" or free_hold_valid(lead, settings)))
 
@@ -661,10 +680,10 @@ def sync_calendar(db, leads, settings, now):
     existing = {(j.lead_id, j.kind, j.target_date): j for j in db.scalars(select(CalendarJob))}
     found = set()
     for lead in leads:
-        if lead.get("pipeline_id") != 9601214 or lead.get("is_deleted"):
+        if not messaging_allowed(lead) or lead.get("is_deleted"):
             continue
         for kind, (status, field, offset, hour, minute) in active_calendar_rules(settings).items():
-            if lead.get("status_id") != getattr(settings, status):
+            if (lead.get("pipeline_id"), lead.get("status_id")) not in calendar_scope(settings, status):
                 continue
             if kind == "free_hold_expired" and not free_hold_valid(lead, settings):
                 continue
@@ -874,10 +893,13 @@ def tick_calendar(s, settings):
                 # Standard stage filters only: custom-field filtering is unavailable
                 # in this account. Finish every page before modifying the queue.
                 leads = []
-                statuses = sorted({getattr(settings, rule[0]) for rule in active_calendar_rules(settings).values()})
+                statuses = sorted({pair for rule in active_calendar_rules(settings).values()
+                                   for pair in calendar_scope(settings, rule[0])})
+                if not statuses:
+                    return
                 params = {"limit": 250, "with": "contacts"}
-                for i, status in enumerate(statuses):
-                    params[f"filter[statuses][{i}][pipeline_id]"] = 9601214
+                for i, (pipeline, status) in enumerate(statuses):
+                    params[f"filter[statuses][{i}][pipeline_id]"] = pipeline
                     params[f"filter[statuses][{i}][status_id]"] = status
                 for page in range(1, r.max_pages + 1):
                     data = c.get("/api/v4/leads", **params, page=page)

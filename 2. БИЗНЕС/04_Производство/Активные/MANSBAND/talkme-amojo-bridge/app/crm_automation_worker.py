@@ -76,6 +76,12 @@ class Cursor(Base):
     activated_at: Mapped[int] = mapped_column(Integer)
 
 
+class EventRetry(Base):
+    __tablename__ = "crm_automation_event_retry"
+    event_id: Mapped[str] = mapped_column(String(160), primary_key=True)
+    checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
 class CourierHandoff(Base):
     __tablename__ = "crm_automation_courier_handoff"
     task_id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -90,7 +96,7 @@ class FieldWatch(Base):
     issues: Mapped[list] = mapped_column(JSON, default=list)
 
 
-TABLES = [*a.TABLES, Event.__table__, Cursor.__table__, CourierHandoff.__table__,
+TABLES = [*a.TABLES, Event.__table__, Cursor.__table__, EventRetry.__table__, CourierHandoff.__table__,
           f.FieldExecution.__table__, FieldWatch.__table__, *messages.TABLES]
 
 
@@ -195,7 +201,9 @@ def collect(db, c, settings: Settings, until: int, *, event_type="lead_status_ch
 def migration_event(db, event):
     if event.before.get("kind") == "lead_added": return False
     entry = db.get(a.MigrationEntry, event.lead_id)
-    if entry is None or event.before["pipeline_id"] == event.after["pipeline_id"]:
+    if entry is None or entry.target.get("transition_event_id") != event.id:
+        return False
+    if event.before["pipeline_id"] == event.after["pipeline_id"]:
         return False
     return (entry.before.get("pipeline_id") == event.before["pipeline_id"]
             and entry.before.get("status_id") == event.before["id"]
@@ -260,6 +268,18 @@ def process_event(db, c, event: Event, catalog: a.Catalog, enabled_rules: frozen
     db.commit()
 
 
+def pending_events(db):
+    fresh = list(db.scalars(select(Event).where(Event.state == "received")
+        .order_by(Event.at, Event.id).limit(150)))
+    retries = list(db.scalars(select(Event).outerjoin(EventRetry, EventRetry.event_id == Event.id)
+        .where(Event.state.in_(("held", "blocked")))
+        .order_by(EventRetry.checked_at.asc().nulls_first(), Event.at, Event.id).limit(50)))
+    for event in retries:
+        db.merge(EventRetry(event_id=event.id, checked_at=datetime.now(timezone.utc)))
+    db.commit()
+    return fresh + retries
+
+
 def tick(settings: Settings):
     ids = settings.rule_ids()
     if settings.mode == "off": return
@@ -275,7 +295,7 @@ def tick(settings: Settings):
                     collect(db, c, settings, through)
                     collect(db, c, settings, through, event_type="lead_added")
                     catalog = a.Catalog(c.get("/api/v4/leads/pipelines").get("_embedded", {}).get("pipelines", []))
-                    for event in db.scalars(select(Event).where(Event.state.in_(("received", "held", "blocked"))).order_by(Event.at.desc()).limit(200)):
+                    for event in pending_events(db):
                         process_event(db, c, event, catalog, ids)
                     if settings.fields_enabled:
                         try:
@@ -455,6 +475,25 @@ def binding_issue(lead, snapshot, *, required=False):
     return None
 
 
+SHOP_TASK_KINDS = {
+    "transfer_control": {"movement", "movement_accept"},
+    "hold_control": {"reserve"},
+    "assembly_control": {"assemble_cdek"},
+}
+
+
+def shop_control_needed(rule_id, snapshot):
+    kinds = SHOP_TASK_KINDS.get(rule_id)
+    if kinds is None:
+        return True
+    bindings = snapshot.get("bindings") or []
+    if len(bindings) != 1 or not bindings[0].get("number"):
+        return False
+    return any(task.get("deal_number") == bindings[0]["number"]
+               and task.get("kind") in kinds and task.get("status") == "pending"
+               for task in snapshot.get("tasks") or [])
+
+
 def dispatch(db, c, catalog, ids, *, cutover_at):
     if cutover_at <= 0: raise ValueError("explicit_cutover_boundary_required")
     rules = {r.id: r for r in RULES}
@@ -476,7 +515,7 @@ def dispatch(db, c, catalog, ids, *, cutover_at):
         lead = c.get(f"/api/v4/leads/{job.lead_id}")
         if migration_blocked(lead): continue
         snapshot = c.kassa_state(job.lead_id)
-        problem = binding_issue(lead, snapshot, required=rule.control_only)
+        problem = binding_issue(lead, snapshot, required=rule.id in SHOP_TASK_KINDS)
         if not problem and rule.id in ("promise","courier") and snapshot.get("bindings"):
             if snapshot.get("execution_owners",{}).get(rule.id) != "amocrm":
                 problem = "execution_owner_not_switched"
@@ -504,10 +543,20 @@ def dispatch(db, c, catalog, ids, *, cutover_at):
             job.reason = "missing_required_date"
             db.commit()
             continue
+        if job.state == "planned" and not shop_control_needed(rule.id, snapshot):
+            job.reason = "no_pending_kassa_work"
+            db.commit()
+            continue
         current = lambda value: applicable(rule, value, catalog)
         result = a.revise_task(db, job, c, due=due, responsible=int(lead.get("responsible_user_id") or 0),
                               available_at=available, current=current, preview=False)
         if result == "replanned":
+            if rule.id in SHOP_TASK_KINDS:
+                fresh_snapshot = c.kassa_state(job.lead_id)
+                if binding_issue(lead, fresh_snapshot, required=True) or not shop_control_needed(rule.id, fresh_snapshot):
+                    job.reason = "kassa_work_changed"
+                    db.commit()
+                    continue
             a.execute_task(db, job, c, enabled_rules=ids, current=current, preview=False)
 
 

@@ -872,3 +872,18 @@ def test_managed_vk_without_phone(db,cfg,fallback):
     assert all(not p['recipient'] for p in plan[:3])
     assert [p['transport'] for p in plan]==['telegram','whatsapp','max']+(['vk'] if fallback else [])
     if fallback: assert plan[-1]=={'transport':'vk','channelId':'vk','recipient':{'chatId':'123'}}
+
+
+def test_typed_calendar_requires_exact_enabled_pipeline_and_rechecks_before_send(db, monkeypatch):
+    settings=CalendarSettings()
+    data=calendar_lead("meeting_today")
+    data.update(pipeline_id=11482381,status_id=89900869)
+    monkeypatch.setenv("MANSBAND_MESSAGE_PIPELINES","9601214")
+    assert sync_calendar(db,[data],settings,CAL_NOW)["eligible"]==0
+    monkeypatch.setenv("MANSBAND_MESSAGE_PIPELINES","9601214,11482381")
+    sync_calendar(db,[data],settings,CAL_NOW)
+    job=db.scalar(select(CalendarJob).where(CalendarJob.kind=="meeting_today"))
+    assert job and calendar_valid(data,job,settings)
+    assert not calendar_valid({**data,"pipeline_id":11482377},job,settings)
+    data["_embedded"]={"tags":[{"name":"MB_MIGRATION_IN_PROGRESS"}]}
+    assert not calendar_valid(data,job,settings)

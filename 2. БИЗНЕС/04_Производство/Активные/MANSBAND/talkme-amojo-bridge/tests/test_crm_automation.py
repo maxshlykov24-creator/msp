@@ -447,3 +447,15 @@ def test_history_respects_spam_qualification_exclusion(failure,expected):
     events=[{'lead_id':55,'at':100,'after':{'pipeline_id':a.SALES,'id':11}}]
     projected=project_stage_history(item,cat,events)
     assert any(f['field_id']==QUALIFIED_DATE for f in projected.fields) is expected
+
+
+def test_matching_field_before_first_write_does_not_transfer_ownership(db):
+    from app import crm_automation_fields as f
+    f.FieldExecution.__table__.create(db.get_bind())
+    item=lead(custom_fields_values=[])
+    projection=f.FieldProjection(fields=[{"field_id":3279145,"values":[{"value":123}]}])
+    job=f.plan_fields(db,item,"preview",projection)
+    item["custom_fields_values"]=projection.fields
+    class ReadOnly:
+        def get(self,path): return item
+    assert f.execute_fields(db,ReadOnly(),job,lambda _:projection,preview=False)=="matched"

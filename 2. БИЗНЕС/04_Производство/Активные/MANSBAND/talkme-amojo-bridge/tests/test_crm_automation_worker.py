@@ -362,3 +362,35 @@ def test_history_does_not_restore_owned_date_after_manual_edit(db, manual_values
     assert date['values']==manual_values
     if not manual_values:
         assert 'manual_change_preserved:3434463' in db.get(w.FieldWatch,55).issues
+
+
+def test_retry_queue_rotates_even_with_new_work(db):
+    for i in range(205):
+        db.add(w.Event(id=str(i), lead_id=55, at=i, before={}, after={},
+                       state="blocked" if i < 55 else "received"))
+    db.commit()
+    first = w.pending_events(db)
+    second = w.pending_events(db)
+    assert len(first) == 200
+    assert {e.id for e in first + second} == {str(i) for i in range(205)}
+
+
+def test_migration_excludes_only_verified_transition_id(db):
+    before = {"pipeline_id":a.SALES, "id":11}
+    after = {"pipeline_id":a.OFFLINE, "id":21}
+    db.add(a.MigrationEntry(lead_id=55, state="verified", before={"pipeline_id":a.SALES,"status_id":11},
+        target={"pipeline_id":a.OFFLINE,"status_id":21,"transition_event_id":"first"}, preserved_occurrence="original"))
+    db.commit()
+    for key,expected in [("first",True),("manual",False)]:
+        event=w.Event(id=key,lead_id=55,at=123,before=before,after=after)
+        assert w.migration_event(db,event) is expected
+
+
+def test_shop_control_requires_matching_open_work():
+    snapshot={"bindings":[{"number":18}],"tasks":[
+        {"kind":"reserve","deal_number":18,"status":"done"},
+        {"kind":"reserve","deal_number":19,"status":"pending"},
+        {"kind":"movement","deal_number":18,"status":"pending"}]}
+    assert not w.shop_control_needed("hold_control",snapshot)
+    assert w.shop_control_needed("transfer_control",snapshot)
+    assert w.shop_control_needed("company_invoice",{"bindings":[]})
