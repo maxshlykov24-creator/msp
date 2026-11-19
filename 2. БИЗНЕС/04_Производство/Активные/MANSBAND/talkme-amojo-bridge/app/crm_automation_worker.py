@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     enabled_rules: str = ""
     allow_cutover: bool = False
     fields_enabled: bool = False
+    store_fields_live_from: int = 0
     ad_call_live_from: int = 0
     visit_task_live_from: int = 0
     typed_tasks_live_from: int = 0
@@ -301,9 +302,15 @@ def tick(settings: Settings):
                     catalog = a.Catalog(c.get("/api/v4/leads/pipelines").get("_embedded", {}).get("pipelines", []))
                     for event in pending_events(db):
                         process_event(db, c, event, catalog, ids)
+                    if settings.store_fields_live_from:
+                        try:
+                            process_store_updates(db, c, catalog, settings.store_fields_live_from, through)
+                        except Exception as exc:
+                            db.rollback()
+                            log.error("Store field update: %s", type(exc).__name__)
                     if settings.fields_enabled:
                         try:
-                            process_fields(db, c, catalog, preview=settings.mode != "live", sources_enabled=settings.sources_enabled, ad_call_live_from=settings.ad_call_live_from)
+                            process_fields(db, c, catalog, preview=settings.mode != "live", sources_enabled=settings.sources_enabled, ad_call_live_from=settings.ad_call_live_from, store_scoped=bool(settings.store_fields_live_from))
                         except Exception as exc:
                             db.rollback()
                             log.error("CRM field processing: %s",type(exc).__name__)
@@ -328,7 +335,90 @@ def tick(settings: Settings):
             lock.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": LOCK})
 
 
-def process_fields(db, c, catalog, *, preview=True, sources_enabled=False, ad_call_live_from=0):
+STORE_FIELDS = {3383324, 3390831}
+STORE_JOB_PREFIX = "store-details-v1:"
+
+
+def apply_store_details(db, c, catalog, lead):
+    """Only maintain the address and metro; never reclaim a manually changed value."""
+    lid = lead["id"]
+    if (lead.get("pipeline_id") not in a.PIPELINES or catalog.stage(lead) is None or
+            a.is_test(lead) or migration_blocked(lead) or lead.get("is_deleted")):
+        return
+    migration = db.get(a.MigrationEntry, lid)
+    if migration and migration.state not in ("preview", "verified", "rolled_back"):
+        return
+    jobs = list(db.scalars(select(f.FieldExecution).where(f.FieldExecution.lead_id == lid)
+                           .order_by(f.FieldExecution.updated_at, f.FieldExecution.id)))
+    owned = {}
+    generation = "initial"
+    for job in jobs:
+        if job.state == "applied":
+            for field in job.payload:
+                if field["field_id"] in STORE_FIELDS:
+                    owned[field["field_id"]] = field["values"]
+                    generation = job.id
+
+    def project(current):
+        projection = f.project_fields(current, catalog, owned_values=owned)
+        fields = [item for item in projection.fields if item["field_id"] in STORE_FIELDS and
+                  (item["field_id"] not in owned or f.fields_match(current, [
+                      {"field_id": item["field_id"], "values": owned[item["field_id"]]}]))]
+        return f.FieldProjection(fields=fields)
+
+    for job in jobs:
+        if job.event_id.startswith(STORE_JOB_PREFIX) and job.state in ("inflight", "uncertain"):
+            # Never send again on an ambiguous response; refresh ownership next pass.
+            f.execute_fields(db, c, job, project, preview=False)
+            return
+    projection = project(lead)
+    if not projection.fields:
+        return
+    if binding_issue(lead, c.kassa_state(lid)):
+        return
+    job = f.plan_fields(db, lead, STORE_JOB_PREFIX + str(lead.get("updated_at")) + ":" + generation, projection)
+    db.commit()
+    return f.execute_fields(db, c, job, project, preview=False)
+
+
+def process_store_updates(db, c, catalog, boundary, through):
+    from app.message_templates import all_pages
+    cursor = db.get(Cursor, "store-details-v1")
+    if boundary <= 0 or (cursor and boundary != cursor.activated_at):
+        raise ValueError("invalid_store_field_boundary")
+    start = max(boundary, cursor.through - 30 if cursor else boundary)
+    if through < start:
+        return
+    outstanding = db.scalars(select(f.FieldExecution).where(
+        f.FieldExecution.event_id.startswith(STORE_JOB_PREFIX),
+        f.FieldExecution.state.in_(("planned", "uncertain", "inflight")))
+        .order_by(f.FieldExecution.updated_at).limit(20)).all()
+    for job in outstanding:
+        job.updated_at = datetime.now(timezone.utc)
+        db.commit()
+        current = c.get(f"/api/v4/leads/{job.lead_id}")
+        if job.state == "planned" and current.get("updated_at") != int(job.event_id.split(":")[1]):
+            job.state, job.reason = "cancelled", "snapshot_changed"
+            db.commit()
+        else:
+            apply_store_details(db, c, catalog, current)
+    # A short fixed window and overlap keep paginated reads stable during live edits.
+    end = min(through, start + 600)
+    leads = all_pages(c, "/api/v4/leads", "leads", **{
+        "filter[updated_at][from]": start, "filter[updated_at][to]": end, "order[id]": "asc"})
+    for lead in leads:
+        if not isinstance(lead.get("updated_at"), int) or not start <= lead["updated_at"] <= end:
+            raise ValueError("store_field_filter_not_honored")
+        apply_store_details(db, c, catalog, lead)
+    if not cursor:
+        cursor = Cursor(id="store-details-v1", activated_at=boundary, through=end)
+        db.add(cursor)
+    else:
+        cursor.through = max(cursor.through, end)
+    db.commit()
+
+
+def process_fields(db, c, catalog, *, preview=True, sources_enabled=False, ad_call_live_from=0, store_scoped=False):
     """Rotate watched leads so date/manual edits are observed even without a stage change.
 
     Stage history is independent of task supersession. Only the collected,
@@ -388,12 +478,15 @@ def process_fields(db, c, catalog, *, preview=True, sources_enabled=False, ad_ca
             present=f.project_fields(current,catalog,owned_values=owned)
             attribution=source if not sources_enabled or (current.get('updated_at')==lead.get('updated_at') and current.get('custom_fields_values')==lead.get('custom_fields_values')) else f.FieldProjection(issues=['source_snapshot_changed'])
             combined=past.fields+present.fields+attribution.fields
+            if store_scoped:
+                combined = [item for item in combined if item["field_id"] not in STORE_FIELDS]
             protected=[field['field_id'] for field in combined if field['field_id'] in owned
                 and not f.fields_match(current,[{'field_id':field['field_id'],'values':owned[field['field_id']]}])]
             return f.FieldProjection(fields=[field for field in combined if field['field_id'] not in protected],
                 issues=past.issues+present.issues+attribution.issues+[f'manual_change_preserved:{fid}' for fid in protected])
         pending = list(db.scalars(select(f.FieldExecution).where(f.FieldExecution.lead_id==watch.lead_id,
             f.FieldExecution.event_id != "shared-ad-call-v1",
+            ~f.FieldExecution.event_id.startswith(STORE_JOB_PREFIX),
             f.FieldExecution.state.in_(("planned","inflight","uncertain")))))
         for job in pending:
             f.execute_fields(db,c,job,project,preview=preview)

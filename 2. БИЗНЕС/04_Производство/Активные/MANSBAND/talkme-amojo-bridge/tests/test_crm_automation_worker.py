@@ -488,3 +488,49 @@ def test_promise_uses_live_cash_settings_even_after_unlink():
     for mapped,expected in [(51,51),(None,12)]:
         snapshot={"promise":{**details,"amo_user_id":mapped}}
         assert w.promise_details(snapshot,lead,{"employee":41})[2]==expected
+
+
+def test_store_worker_replaces_only_its_own_values_and_respects_manual_clear(db):
+    c = Client()
+    store = {"field_id":3158921,"values":[{"value":"на Бауманской"}]}
+    c.lead.update(updated_at=1001, custom_fields_values=[store])
+    def patch(path, body):
+        assert path == "/api/v4/leads/55"
+        changes = {item["field_id"]:item for item in body["custom_fields_values"]}
+        assert set(changes) <= w.STORE_FIELDS
+        current = {item["field_id"]:item for item in c.lead["custom_fields_values"]}
+        c.lead["custom_fields_values"] = list((current | changes).values())
+        c.patches.append(body)
+    c.patch = patch
+    assert w.apply_store_details(db,c,catalog(),c.lead) == "applied"
+    w.apply_store_details(db,c,catalog(),c.lead)
+    assert len(c.patches) == 1
+    assert a.field_values(c.lead,3390831) == ["Бауманской"]
+    store["values"][0]["value"] = "на Пятницкой"
+    c.lead["updated_at"] += 1
+    assert w.apply_store_details(db,c,catalog(),c.lead) == "applied"
+    assert a.field_values(c.lead,3390831) == ["Новокузнецкой"]
+    for item in c.lead["custom_fields_values"]:
+        if item["field_id"] == 3390831:
+            item["values"] = []
+        if item["field_id"] == 3383324:
+            item["values"] = [{"value":"Вход по звонку"}]
+    store["values"][0]["value"] = "на Бауманской"
+    w.apply_store_details(db,c,catalog(),c.lead)
+    assert len(c.patches) == 2
+
+
+def test_store_cursor_rejects_out_of_window_and_replays_overlap(db):
+    c = Client()
+    def get(path, **params):
+        assert path == "/api/v4/leads"
+        return {"_embedded":{"leads":[c.lead]}}
+    c.get = get
+    c.lead.update(updated_at=989,isTest=True)
+    with pytest.raises(ValueError,match="filter_not_honored"):
+        w.process_store_updates(db,c,catalog(),1000,1100)
+    assert db.get(w.Cursor,"store-details-v1") is None
+    c.lead["updated_at"] = 1099
+    w.process_store_updates(db,c,catalog(),1000,1100)
+    w.process_store_updates(db,c,catalog(),1000,1120)
+    assert db.get(w.Cursor,"store-details-v1").through == 1120 and not c.patches
