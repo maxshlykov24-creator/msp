@@ -681,6 +681,14 @@ html.theme-light nav {
   background: rgb(var(--ink-950));
 }
 
+/* Fit the report between the real header and the reserved mobile navigation. */
+.analytics-layout { height: 100dvh; min-height: 0; overflow: hidden; }
+.analytics-layout header { flex-shrink: 0; }
+.analytics-layout .kassa-main,
+.analytics-layout .kassa-main > .page-in,
+.analytics-layout .analytics-screen { display: flex; flex: 1 1 0%; flex-direction: column; min-height: 0; }
+.analytics-layout .analytics-screen iframe { flex: 1 1 0%; min-height: 0; }
+
 .kassa-action-dock {
   bottom: var(--mobile-nav-height);
 }

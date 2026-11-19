@@ -23,7 +23,7 @@ export function CrmAnalytics() {
     return () => { active = false; };
   }, [admin, user?.id, attempt]);
 
-  return <section>
+  return <section className="analytics-screen">
     <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-sm">
       <a href="#dashboard" className="text-mute-soft underline underline-offset-4">К статистике кассы</a>
       {admin && <span className="rounded-full border border-ink-600 px-3 py-1 text-mute-soft">Прототип · демоданные</span>}
@@ -31,7 +31,7 @@ export function CrmAnalytics() {
     {!admin ? <p role="status">Эта страница доступна только администраторам.</p>
       : error ? <div role="alert" className="card p-4">{error} <button className="ml-2 underline" onClick={() => setAttempt((n) => n + 1)}>Повторить</button></div>
       : html ? <iframe title="Аналитика CRM и логистики" sandbox="allow-scripts" srcDoc={html}
-          className="block w-full rounded-xl border-0" style={{ height: "calc(100dvh - 185px)", minHeight: 320 }} />
+          className="block w-full rounded-xl border-0" />
       : <p role="status">Загружаем аналитику…</p>}
   </section>;
 }

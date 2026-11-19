@@ -7,8 +7,9 @@ import hashlib
 import json
 from collections import defaultdict
 from datetime import datetime, timezone
-from sqlalchemy import select, func, cast, Text, case, and_
-from .db import Entity, Item, Balance, now, transaction
+from sqlalchemy import select, func
+from sqlalchemy.orm import Session
+from .db import Entity, Item, OrderListEntry, now, transaction
 from .service import require
 
 STATES={'ordered','new','assembling','ready','shipping','pickup','delivered','cancelled','returned','unknown'}
@@ -144,47 +145,63 @@ def set_sync(engine,key,**values):
 
 
 def sync_state(engine):
-    with transaction(engine) as s:return {e.id.split(':',1)[1]:dict(e.data) for e in s.scalars(select(Entity).where(Entity.kind=='order_sync'))}
-
-
-def shown_status():
-    return case((and_(Entity.data['platform'].as_string()=='ozon',Entity.data['raw_status'].as_string()=='awaiting_packaging'),'new'),(and_(Entity.data['platform'].as_string()=='ozon',Entity.data['raw_status'].as_string().in_(['arbitration','client_arbitration'])),'shipping'),else_=Entity.data['status'].as_string())
+    with Session(engine) as s:
+        return {e.id.split(':',1)[1]:dict(e.data) for e in s.scalars(select(Entity).where(Entity.kind=='order_sync'))}
 
 
 def order_scope(platform='',scheme='',query='',start='',end='',attention=False):
-    filters=[Entity.kind=='market_order']
-    for key,value in [('platform',platform),('scheme',scheme)]:
-        if value:filters.append(Entity.data[key].as_string()==value)
-    if start:filters.append(Entity.data['created_at'].as_string()>=timestamp(start+'T00:00:00',True))
+    filters = []
+    for column, value in [(OrderListEntry.platform, platform), (OrderListEntry.scheme, scheme)]:
+        if value:
+            filters.append(column == value)
+    if start:
+        filters.append(OrderListEntry.created_at >= timestamp(start+'T00:00:00', True))
     if end:
-        from datetime import date,timedelta
-        filters.append(Entity.data['created_at'].as_string()<timestamp(str(date.fromisoformat(end)+timedelta(days=1))+'T00:00:00',True))
-    if query:filters.append(cast(Entity.data,Text).ilike('%'+query.replace('\\','\\\\').replace('%','\\%').replace('_','\\_')+'%',escape='\\'))
-    if attention:filters.append((Entity.data['needs_mapping'].as_boolean()==True)|(Entity.data['accounting_state'].as_string().in_(['shortage','needs_review','waiting_stock'])))
+        from datetime import date, timedelta
+        next_day = date.fromisoformat(end) + timedelta(days=1)
+        if not start:
+            filters.append(OrderListEntry.created_at != '')
+        filters.append(OrderListEntry.created_at < timestamp(str(next_day)+'T00:00:00', True))
+    if query.strip():
+        filters.append(OrderListEntry.search_text.icontains(query.strip(), autoescape=True))
+    if attention:
+        filters.append(OrderListEntry.attention.is_(True))
     return filters
 
 
 def list_orders(s,platform='',scheme='',status='',query='',start='',end='',page=1,per_page=50,attention=False,compact=False):
-    filters=order_scope(platform,scheme,query,start,end,attention)
-    grouped=shown_status()
-    counts={row[0] or 'unknown':row[1] for row in s.execute(select(grouped,func.count()).where(*filters).group_by(grouped))}
-    counts['all']=sum(counts.values())
-    if status=='open':filters.append(grouped.in_(['new','assembling','ready']))
-    elif status=='closed':filters.append(grouped.in_(['cancelled','returned']))
-    elif status:filters.append(grouped==status)
-    q=select(Entity).where(*filters)
-    total=s.scalar(select(func.count()).select_from(q.subquery()))
-    result=[]
-    page_rows=list(s.scalars(q.order_by(Entity.data['created_at'].as_string().desc(),Entity.id).offset((page-1)*per_page).limit(per_page)))
-    returned=set()
+    filters = order_scope(platform,scheme,query,start,end,attention)
+    stage = OrderListEntry.stage
+    counts = dict(s.execute(select(stage, func.count()).where(*filters).group_by(stage)).all())
+    counts['all'] = sum(counts.values())
+    stages = {'open': ('new','assembling','ready'), 'closed': ('cancelled','returned')}.get(status, (status,))
+    total = counts['all']
+    if status:
+        filters.append(stage.in_(stages))
+        total = sum(counts.get(key, 0) for key in stages)
+    if (page-1)*per_page >= total:
+        return dict(rows=[], total=total, page=page, per_page=per_page, counts=counts)
+
+    page_ids = select(OrderListEntry.id).where(*filters).order_by(
+        OrderListEntry.created_at.desc(), OrderListEntry.id).offset((page-1)*per_page).limit(per_page)
+    ids = s.scalars(page_ids).all()
+    found = {e.id:e for e in s.scalars(select(Entity).where(Entity.id.in_(ids)))}
+    page_rows = [found[key] for key in ids if key in found]
+    result = []
+    returned = set()
     if compact:
         for market,kind,ref,field in [('ozon','market_return','posting_number','external_id'),('wb','market_sale','order_ref','source_ref')]:
-            keys={r.data.get(field) for r in page_rows if r.data['platform']==market and r.data.get(field)}
-            if not keys: continue
-            ref_col=Entity.data[ref].as_string()
-            lookup=select(Entity.data['account'].as_string(),ref_col).where(Entity.kind==kind,ref_col.in_(keys))
-            if market=='wb':lookup=lookup.where(Entity.data['kind'].as_string()=='return')
-            returned.update((market,account,value) for account,value in s.execute(lookup))
+            by_account = defaultdict(set)
+            for order in page_rows:
+                d = order.data
+                if d['platform'] == market and d.get(field):
+                    by_account[d['account']].add(d[field])
+            ref_col = Entity.data[ref].as_string()
+            for account, keys in by_account.items():
+                lookup = select(ref_col).where(Entity.kind==kind, Entity.data['account'].as_string()==account, ref_col.in_(keys))
+                if market=='wb':
+                    lookup = lookup.where(Entity.data['kind'].as_string()=='return')
+                returned.update((market,account,value) for value in s.scalars(lookup))
     for e in page_rows:
         if compact:
             d=e.data

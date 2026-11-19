@@ -450,6 +450,28 @@ def test_bereza_status_grouping_is_consistent_with_filter(setup):
   assert list_orders(s,scheme='fbo')['total']==0
 
 
+def test_list_tracks_existing_orders_edits_and_rollback(setup):
+ from app.db import OrderListEntry
+ engine,_,_=setup
+ later={**wb(),'id':124,'rid':'ref-2','article':'Blue_50%','createdAt':'2026-11-05T10:00:00Z'}
+ ingest(engine,'wb','fbs','seller',[{**wb(),'createdAt':'2026-11-04T10:00:00Z'},later],'wb-fbs')
+ with Session(engine) as s:
+  def feed(**filters):return list_orders(s,compact=True,**filters)
+  assert feed(per_page=1)['rows'][0]['external_id']=='124'
+  assert feed(per_page=1,page=2)['rows'][0]['external_id']=='123'
+  assert feed(query='lue_50%')['total']==1
+  assert feed(query='BlueX50')['total']==0
+  assert feed(query='observed_at')['total']==0
+  assert feed(status='open')['total']==2
+  doc=s.get(Entity,stable_id('wb','seller','fbs','ref-2'))
+  doc.data={**doc.data,'scheme':'fbo','status':'delivered','accounting_state':'shortage'}
+  s.flush()
+  assert feed(scheme='fbo',attention=True)['counts']=={'delivered':1,'all':1}
+  s.rollback()
+  assert feed(scheme='fbo')['rows']==[] and feed(status='new')['total']==2
+  assert s.scalar(select(func.count()).select_from(OrderListEntry))==2
+
+
 def test_429_uses_retry_deadline_without_counting_rejected_request_as_success(setup,monkeypatch):
  from datetime import datetime,timezone
  import io

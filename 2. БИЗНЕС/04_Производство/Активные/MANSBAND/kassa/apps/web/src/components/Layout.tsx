@@ -224,7 +224,7 @@ export function Layout({
   ];
 
   return (
-    <div className="min-h-screen flex flex-col w-full overflow-x-hidden">
+    <div className={`min-h-screen flex flex-col w-full overflow-x-hidden ${route === "crm-analytics" ? "analytics-layout" : ""}`}>
       <OfflineBanner />
       <div className="flex flex-1 min-h-0 w-full">
       <aside className="hidden md:flex shrink-0 sticky top-0 h-dvh p-3 z-20">

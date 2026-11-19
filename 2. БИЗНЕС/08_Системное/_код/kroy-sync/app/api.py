@@ -206,7 +206,10 @@ def create_app(engine=None):
             if end:date.fromisoformat(end)
             if start and end and start>end:raise ValueError()
         except ValueError:raise HTTPException(422,'Проверь период заказов')
-        with Session(engine) as s:return list_orders(s,platform,scheme,status,q,start,end,page,per_page,attention,compact)
+        with Session(engine) as s:
+            if engine.dialect.name == 'postgresql':
+                s.execute(text('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY'))
+            return list_orders(s,platform,scheme,status,q,start,end,page,per_page,attention,compact)
 
     @app.get('/api/orders/sync')
     def order_sync_state(user=Depends(auth)):

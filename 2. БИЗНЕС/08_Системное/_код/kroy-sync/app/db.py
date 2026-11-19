@@ -3,8 +3,8 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import (Boolean, DateTime, Integer, JSON, Numeric, String, Text,
-                        UniqueConstraint, create_engine, text)
+from sqlalchemy import (Boolean, DateTime, ForeignKey, Index, Integer, JSON, Numeric,
+                        String, Text, UniqueConstraint, create_engine, event, text)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, Session
 
 
@@ -85,6 +85,28 @@ class Entity(Base):
     kind: Mapped[str] = mapped_column(String(30), index=True)
     version: Mapped[int] = mapped_column(Integer, default=1)
     data: Mapped[dict] = mapped_column(JSON)
+
+
+class OrderListEntry(Base):
+    __tablename__ = 'order_list_entries'
+    id: Mapped[str] = mapped_column(ForeignKey('entities.id', ondelete='CASCADE'), primary_key=True)
+    platform: Mapped[str] = mapped_column(Text)
+    scheme: Mapped[str] = mapped_column(Text)
+    stage: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[str] = mapped_column(Text)
+    attention: Mapped[bool] = mapped_column(Boolean)
+    search_text: Mapped[str] = mapped_column(Text)
+
+
+Index('ix_order_list_recent', OrderListEntry.created_at.desc(), OrderListEntry.id)
+Index('ix_order_list_stage', OrderListEntry.stage, OrderListEntry.created_at.desc(), OrderListEntry.id)
+Index('ix_order_list_scope', OrderListEntry.platform, OrderListEntry.scheme, OrderListEntry.stage, OrderListEntry.created_at)
+
+
+@event.listens_for(OrderListEntry.__table__, 'after_create')
+def initialize_order_list(table, connection, **kwargs):
+    from .order_index import install
+    install(connection, connection.schema_for_object(table))
 
 
 class Operation(Base):
