@@ -57,7 +57,7 @@ def link_card(s, item, platform, identifier, doc):
     key = 'mapping:' + platform + ':' + item.id
     previous = s.get(Entity, key)
     require(not previous or previous.data['state']=='missing', 'Для этой позиции уже есть сопоставление или конфликт')
-    data = dict(item_id=item.id, platform=platform, state='unique', candidates=[card], approved=True,
+    data = dict(item_id=item.id, platform=platform, state='unique', candidates=[card], approved=False,
                 local_conflicts=[], observed_at=snapshot.data['at'], document_id=doc, manual_card=card)
     if previous:
         previous.data=data

@@ -41,7 +41,7 @@ def refresh_wb_mappings(engine,catalog):
             if state=='unique' and any(set(c['market_barcodes'])-previous_aliases for c in rows):aliases_added.add(i.id)
             if e:
                 if e.data.get('manual_card'):
-                    data.update(manual_card=e.data['manual_card'],document_id=e.data['document_id'],approved=state=='unique' and rows[0]['variant_id']==e.data['manual_card']['variant_id'])
+                    data.update(manual_card=e.data['manual_card'],document_id=e.data['document_id'])
                 if e.data.get('candidates')==rows and e.data.get('state')==state:data['approved']=e.data.get('approved',False)
                 if any(e.data.get(k)!=data.get(k) for k in ('candidates','state','local_conflicts')):e.version+=1;changed+=1
                 e.data=data

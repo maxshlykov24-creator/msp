@@ -292,7 +292,7 @@ def catalog_links(engine, catalog):
             skus[sku]|=ids
             if len(ids)==1:covered|=ids
         for e in s.scalars(select(Entity).where(Entity.kind=='mapping',Entity.data['platform'].as_string()=='ozon')):
-            if e.data.get('approved') and e.data.get('state')=='unique':
+            if e.data.get('manual_card') and e.data.get('state')=='unique':
                 for card in e.data['candidates']:
                     for sku in card.get('skus',[]):manual[sku].add(e.data['item_id'])
         for product in catalog['items']:
