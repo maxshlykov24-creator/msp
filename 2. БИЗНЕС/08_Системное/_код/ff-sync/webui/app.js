@@ -2558,16 +2558,16 @@ async function loadKizStep() {
     const res = await api("/api/assembly/" + id + "/kiz");
     if (mine !== kizLoad) return;
     if (res.marketplace === "ozon" && res.skip_scan && !(kizState.manual && res.can_submit)) {
-      kizState.skipped = kizState.skipped || [];
-      kizState.skipped.push(`${res.ext_id}: ${res.note}`);
-      say($("aMsg"), kizState.skipped.join("\n"));
+      kizState.skippedCount += 1;
       if (kizState.index < kizState.ids.length - 1) {
         kizState.index += 1;
         return await loadKizStep();
       }
       $("kizModal").classList.remove("on");
       await loadAsm();
-      say($("aMsg"), kizState.skipped.join("\n"));
+      if (kizState.skippedCount === total) {
+        say($("aMsg"), total === 1 ? "Для этого заказа КиЗ не требуется." : "Для выбранных заказов КиЗ не требуется.");
+      }
       return;
     }
     kizState.canSubmit = res.can_submit !== false;
@@ -2613,7 +2613,7 @@ async function openKizQueue(ids, opts) {
     }
     await loadAsm();
   }
-  kizState = { ids, index: 0, id: 0, need: 0, codes: [], products: [], assignments: {}, manual: !!(opts && opts.manual) };
+  kizState = { ids, index: 0, skippedCount: 0, id: 0, need: 0, codes: [], products: [], assignments: {}, manual: !!(opts && opts.manual) };
   $("kizModal").classList.add("on");
   await loadKizStep();
 }
