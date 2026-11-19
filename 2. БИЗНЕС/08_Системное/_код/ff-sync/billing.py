@@ -4,6 +4,7 @@
 Начало руками не задаём — иначе неоплаченные сутки молча выпадут из счёта.
 """
 
+import hashlib
 import json
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -94,6 +95,12 @@ def span_of(detail, end):
     return (min(starts) if starts else end.isoformat()), end.isoformat()
 
 
+def calculation_revision(detail, end):
+    fields = ('bill_from', 'bill_to', 'liters', 'rate', 'pick_rate', 'liter_days', 'pick_qty', 'storage', 'pick')
+    rows = sorted((lot['id'], [calc[k] for k in fields]) for lot, calc in detail)
+    return hashlib.sha256(json.dumps([end.isoformat(), rows]).encode()).hexdigest()
+
+
 def _preview(lot_ids, date_to=""):
     client, detail, parts, end = collect(lot_ids, date_to)
     moves = moves_by_day()
@@ -103,6 +110,7 @@ def _preview(lot_ids, date_to=""):
         "client_id": client["id"],
         "period_from": start,
         "period_to": stop,
+        "revision": calculation_revision(detail, end),
         "lines": lines_of(parts),
         "liter_days": round(sum(c["liter_days"] for _l, c in detail), 2),
         "pick_qty": round(sum(c["pick_qty"] for _l, c in detail), 3),
@@ -173,12 +181,12 @@ def invoice_profile(invoice_id):
     return frozen or client_invoice_profile(get_client_by_id(inv["client_id"]))
 
 
-def create(lot_ids, author="", date_to=""):
+def create(lot_ids, author="", date_to="", revision=None):
     with run_lock(name="billing"):
-        return _create(lot_ids, author, date_to)
+        return _create(lot_ids, author, date_to, revision)
 
 
-def _create(lot_ids, author="", date_to=""):
+def _create(lot_ids, author="", date_to="", revision=None):
     # A lost HTTP response must recover the same document and the same calculation.
     from contextlib import closing
     with closing(connect()) as conn:
@@ -193,6 +201,8 @@ def _create(lot_ids, author="", date_to=""):
             pending = unresolved[cid][1]
             raise ValueError("предыдущий счёт ещё не подтверждён. Повтори создание для тех же партий и даты: %s" % pending["request"]["to"])
     client, detail, parts, end = collect(lot_ids, date_to)
+    if revision is not None and revision != calculation_revision(detail, end):
+        raise ValueError("Расчёт изменился. Закрой окно и открой предпросмотр счёта заново.")
     if parts["total"] <= 0:
         raise ValueError("по выбранным позициям нечего выставлять")
     if not client["ms_counterparty_id"]:

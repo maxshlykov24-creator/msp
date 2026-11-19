@@ -20,7 +20,12 @@ async function api(path, opts) {
   const res = await fetch(path, Object.assign({ headers: { "Content-Type": "application/json" } }, opts || {}));
   let data = null;
   try { data = await res.json(); } catch (e) { throw new Error("Сервер вернул непонятный ответ. Проверь результат операции перед повтором."); }
-  if (!res.ok) throw new Error(data.detail || ("ошибка " + res.status));
+  if (!res.ok) {
+    const error = new Error(data.detail || ("ошибка " + res.status));
+    error.code = data.code;
+    error.status = res.status;
+    throw error;
+  }
   if (data.ok === false) throw new Error(data.msg || "Операция не выполнена.");
   return data;
 }
@@ -1228,7 +1233,9 @@ $("sTbl").onclick = (e) => {
 let stockProduct = null;
 let stockProductLoad = 0;
 let stockProductSaving = false;
+let cancelProductWait = null;
 async function openStockProduct(lotId, focus) {
+  if (stockProductSaving) return;
   const mine = ++stockProductLoad;
   stockProduct = null;
   $("pModal").classList.add("on");
@@ -1254,6 +1261,7 @@ async function openStockProduct(lotId, focus) {
 }
 
 function closeStockProduct() {
+  if (cancelProductWait) cancelProductWait();
   if (stockProductSaving) return;
   ++stockProductLoad;
   stockProduct = null;
@@ -1272,12 +1280,34 @@ $("pForm").onsubmit = async (e) => {
   say($("pMsg"), "Сохраняю в МойСклад и пересчитываю учёт…");
   let saved = false;
   try {
-    const res = await api(`/api/lots/${p.lotId}/product`, { method: "POST", body: JSON.stringify(data) });
+    let res;
+    while (!res) {
+      try {
+        res = await api(`/api/lots/${p.lotId}/product`, { method: "POST", body: JSON.stringify(data) });
+      } catch (err) {
+        if (err.status !== 423 || err.code !== "product_save_busy") throw err;
+        say($("pMsg"), "Идёт другая операция. Оставь окно открытым, данные сохранятся автоматически.");
+        $("pClose").disabled = false;
+        const retry = await new Promise(resolve => {
+          const timer = setTimeout(() => resolve(true), 3000);
+          cancelProductWait = () => { clearTimeout(timer); resolve(false); };
+        });
+        cancelProductWait = null;
+        $("pClose").disabled = true;
+        if (!retry) {
+          stockProductSaving = false;
+          closeStockProduct();
+          return;
+        }
+        say($("pMsg"), "Сохраняю в МойСклад…");
+      }
+    }
     saved = true;
     stockProduct = { lotId: p.lotId, ...res.product };
     if (res.synced) {
-      stockProductSaving = false;
-      closeStockProduct();
+      ++stockProductLoad;
+      stockProduct = null;
+      $("pModal").classList.remove("on");
       await loadLots();
       if (!$("sMsg").textContent) say($("sMsg"), "Сохранено. Расчёт обновлён." + (!$("sBill").disabled ? " Можно сформировать счёт." : ""), "ok");
     } else {
@@ -1405,7 +1435,7 @@ $("sBill").onclick = async () => {
       body: JSON.stringify(request),
     });
     if (mine !== invoicePreviewLoad) return;
-    state.invoiceRequest = request;
+    state.invoiceRequest = { ...request, revision: res.revision };
     $("mTitle").textContent = "Счёт: " + res.client;
     $("mPeriod").textContent = "Услуги за " + ruDay(res.period_from) + " — " + ruDay(res.period_to) + " · литро-суток " + num(res.liter_days, 1);
     $("mLines").innerHTML = res.lines.map((l) => `<div class="inv-line"><span>${esc(l.name)}</span><b>${num(l.sum)} ₽</b></div>`).join("");

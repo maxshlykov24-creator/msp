@@ -500,6 +500,9 @@ def ledger_status(client_id=None, date_to=None):
         settings = dict(conn.execute(
             "SELECT key,value FROM settings WHERE key IN ('ledger:last_error','ledger:last_success','ledger:last_attempt','ledger:enabled',?)",
             (scope_key,)))
+        edit_pattern = 'ledger:card:%s:*' % int(client_id) if client_id else 'ledger:card:*'
+        edits = [r[0] for r in conn.execute(
+            'SELECT DISTINCT value FROM settings WHERE key GLOB ? ORDER BY value', (edit_pattern,))]
     error = settings.get('ledger:last_error') or ''
     last = settings.get('ledger:last_success') or ''
     if error and client_id:
@@ -515,6 +518,8 @@ def ledger_status(client_id=None, date_to=None):
     if not error and settings.get('ledger:enabled') == '1':
         if not last or (datetime.now(MSK) - datetime.fromisoformat(last)).total_seconds() > 1800:
             error = 'Данные учёта требуют обновления. Нажми «Обновить учёт».'
+    if edits:
+        error = ' '.join(filter(None, [error, 'Нужно сверить сохранение карточки в МойСклад: ' + ', '.join(edits)]))
     return {'last_sync': last, 'sync_error': error}
 
 
@@ -580,11 +585,15 @@ def lot_product(lot_id):
     return _product_card(_product_for_lot(lot_id))
 
 
+class ProductSaveBusy(Exception):
+    """Замок занят до начала записи карточки."""
+
+
 def save_lot_product(lot_id, data, actor):
-    """Обновить только введённые допполя; пересчитать весь источник под замками."""
-    from accept import canonical, configured_snapshot, ms_get, number, reconcile_snapshot, set_ledger_failure
+    """Обновить допполя и применить подтверждённые значения к партиям товара."""
+    from accept import canonical, ms_get, number
     from db import connect, get_setting, pending_invoices, run_lock
-    from contextlib import closing
+    from contextlib import closing, ExitStack
     from ms import attr_value
     from net import MS_BASE, ms_headers, req
     from intake import parse_liters
@@ -608,11 +617,16 @@ def save_lot_product(lot_id, data, actor):
         desired[key] = value
     if not desired:
         raise ValueError('Введи литраж или стоимость сборки.')
-    with run_lock('ledger', blocking=False), run_lock('billing', blocking=False):
+    with ExitStack() as locks:
+        try:
+            locks.enter_context(run_lock('ledger', blocking=False))
+            locks.enter_context(run_lock('billing', blocking=False))
+        except BlockingIOError as exc:
+            raise ProductSaveBusy() from exc
         pid = _product_for_lot(lot_id)
         with closing(connect()) as conn:
             pending = pending_invoices(conn)
-            affected = {r[0] for r in conn.execute("SELECT DISTINCT client_id FROM lots WHERE ms_product_id=?", (pid,))}
+            affected = {r[0] for r in conn.execute("SELECT DISTINCT client_id FROM lots WHERE ms_product_id=? AND source_active=1", (pid,))}
         if not affected.isdisjoint(pending):
             raise ValueError('Есть неподтверждённый счёт по клиенту этого товара. Сначала заверши его.')
         current = _product_card(pid)
@@ -630,7 +644,10 @@ def save_lot_product(lot_id, data, actor):
                     raise ValueError('Не найдено числовое допполе МойСклад «%s».' % name)
                 attrs.append(attr_value('product', name, setting, value))
             # Если процесс прервётся после записи, счета останутся заблокированы до сверки.
-            set_ledger_failure('Обновляется карточка товара. Требуется завершить сверку учёта.')
+            with closing(connect()) as conn, conn:
+                conn.executemany('INSERT OR REPLACE INTO settings(key,value) VALUES (?,?)',
+                                 [('ledger:card:%s:%s' % (cid, pid), current['article'] or current['name'] or pid)
+                                  for cid in affected])
             try:
                 response = req('PUT', MS_BASE + '/entity/product/' + pid, headers=ms_headers(),
                                json={'attributes': attrs}, retry_safe=False)
@@ -645,19 +662,14 @@ def save_lot_product(lot_id, data, actor):
             if any(current[key] != value for key, value in changed.items()):
                 raise ValueError('МойСклад не сохранил введённые значения. Открой товар заново и проверь карточку.')
             print('Учёт: допполя товара %s, пользователь %s, %s' % (pid, actor, canonical(changed)))
-        try:
-            snapshot, groups = configured_snapshot()
-            if any(snapshot['products'][pid][key] != value for key, value in desired.items()):
-                raise ValueError('Карточка изменилась во время сверки. Проверь её значения.')
-            result = reconcile_snapshot(snapshot, groups)
-        except Exception as exc:
-            set_ledger_failure(exc)
-            return {'ok': True, 'saved': True, 'synced': False, 'product': current,
-                    'msg': 'Данные карточки сохранены в МойСклад. Учёт требует обновления: ' + str(exc)}
-        if result.get('partial'):
-            from db import get_lot
-            status = ledger_status(get_lot(lot_id)['client_id'])
-            if status['sync_error']:
-                return {'ok': True, 'saved': True, 'synced': False, 'product': current,
-                        'msg': 'Данные сохранены. Счёт пока недоступен: ' + status['sync_error']}
-        return {'ok': True, 'saved': True, 'synced': True, 'product': current, 'last_sync': result['last_sync']}
+        with closing(connect()) as conn, conn:
+            conn.execute('UPDATE lots SET liters=?,pick_rate=? WHERE ms_product_id=? AND source_active=1',
+                         (current['liters'], current['pick_rate'], pid))
+            row = conn.execute('SELECT data_json FROM ms_ledger_products WHERE id=?', (pid,)).fetchone()
+            if row:
+                cached = json.loads(row[0])
+                cached.update(liters=current['liters'], pick_rate=current['pick_rate'])
+                conn.execute('UPDATE ms_ledger_products SET data_json=? WHERE id=?', (canonical(cached), pid))
+            conn.executemany('DELETE FROM settings WHERE key=?',
+                             [('ledger:card:%s:%s' % (cid, pid),) for cid in affected])
+        return {'ok': True, 'saved': True, 'synced': True, 'product': current}

@@ -606,6 +606,11 @@ def apply_plan(snapshot, plan, groups, scope_parties=None):
                     proof = canonical(dict(json.loads(proof), verified_through=snapshot['verified_through'],
                                            later_error=snapshot['later_error']))
                 settings = {'ledger:scope:%s' % cid: proof for cid in scope_ids}
+            if scope_ids is None:
+                conn.execute("DELETE FROM settings WHERE key GLOB 'ledger:card:*'")
+            else:
+                conn.executemany("DELETE FROM settings WHERE key GLOB ?",
+                                 [('ledger:card:%s:*' % cid,) for cid in scope_ids])
             for k,v in settings.items():
                 conn.execute('INSERT OR REPLACE INTO settings(key,value) VALUES (?,?)',(k,v))
             return dict(summary, checked=len(snapshot['documents']), accepted=[{'id':i} for i in lot_ids.values()], errors=[], last_sync=now)
