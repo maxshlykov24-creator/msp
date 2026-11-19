@@ -1,11 +1,11 @@
 [
   {
     "cell": "B136", "source": "m03-642mb3", "variations": ["M03/642MB3", "M03/642B3+"],
-    "models": ["Пиджак однобортный", "Брюки", "Жилет"], "color": "красный", "pattern": "однотонный", "suit": true
+    "models": ["Пиджак однобортный"], "color": "красный", "pattern": "однотонный", "suit": true
   },
   {
     "cell": "D2", "source": "m23-33-120", "variations": ["M23/33-120"],
-    "models": ["Пиджак двубортный", "Брюки"], "color": "черный", "pattern": "однотонный", "suit": true
+    "models": ["Пиджак двубортный"], "color": "черный", "pattern": "однотонный", "suit": true
   },
   {
     "cell": "L12", "source": "s90-75h", "variations": ["S90/75H", "UT90/75BA+"],

@@ -70,7 +70,7 @@ def read_inputs(args):
     book.close()
     with args.catalog.open(encoding="utf-8-sig", newline="") as stream:
         reader = csv.DictReader(stream)
-        required = {"ms_id", "ms_type", "name", "size", "height", "color", "pattern", "fit",
+        required = {"ms_id", "ms_type", "name", "category", "size", "height", "color", "pattern", "fit",
                     "variation", "suit_part", "suit_line"}
         if not required.issubset(reader.fieldnames or ()):
             raise ValueError("Выгрузи каталог с колонками из плана")
@@ -251,6 +251,18 @@ def suit_key(row):
     return "|".join(norm(row[field]) for field in ("suit_line", "variation", "color", "pattern", "fit"))
 
 
+def suit_piece_without_photo(row):
+    model = norm(row["name"]).partition(" (")[0]
+    if row["suit_part"] not in ("trousers", "vest") and not any(w in model for w in ("брюки", "слаксы", "жилет")):
+        return False
+    category = norm(row["category"])
+    if any(word in category or word in model for word in ("костюм", "смокинг")):
+        return True
+    # У отдельных брюк в папке одежды тоже бывает suit_part=trousers.
+    # Без подтверждающей папки отдельного товара оставляем часть без фото.
+    return "одежд" not in category and category.split("/")[0] not in ("clothes", "outerwear")
+
+
 def match_selection(choice, group, by_variation):
     codes = {norm(v) for v in choice["variations"]}
     color, pattern = norm(choice["color"]), norm(choice["pattern"])
@@ -291,6 +303,11 @@ def match_selection(choice, group, by_variation):
         raise ValueError(f"{choice['cell']}: каталог не подтверждает все указанные варианты кроя")
     if {norm(r["variation"]) for r in selected} != codes or {split_name(r["name"])[0] for r in selected} != models:
         raise ValueError(f"{choice['cell']}: каталог не подтверждает перечисленные модели и вариации")
+    for row in selected:
+        if suit_piece_without_photo(row):
+            raise ValueError(f"{choice['cell']}: костюмные брюки и жилеты остаются без фото: {row['name']}")
+        if choice.get("suit") and row["suit_part"] != "jacket":
+            raise ValueError(f"{choice['cell']}: фото костюма можно привязать только к пиджаку: {row['name']}")
     return selected
 
 
@@ -304,7 +321,7 @@ def write_atomic(path, data):
     stage.replace(path)
 
 
-def publish(index, assets):
+def publish(index, assets, catalog):
     MEDIA.mkdir(parents=True, exist_ok=True)
     fd = os.open(INDEX.parent, os.O_RDONLY)
     try:
@@ -314,8 +331,15 @@ def publish(index, assets):
             for base, layouts in old["products"].items():
                 for mask, keys in layouts.items():
                     for key, asset in keys.items():
-                        if index["products"].get(base, {}).get(mask, {}).get(key) != asset:
-                            raise ValueError("Новая партия меняет уже принятое правило: " + base)
+                        replacement = index["products"].get(base, {}).get(mask, {}).get(key)
+                        if replacement == asset:
+                            continue
+                        if replacement is None:
+                            old_rule = {base: {mask: {key: asset}}}
+                            covered = [r for r in catalog if lookup(old_rule, r["name"])]
+                            if covered and all(suit_piece_without_photo(r) for r in covered):
+                                continue
+                        raise ValueError("Новая партия меняет уже принятое правило: " + base)
             if any(index["suits"].get(k) != v for k, v in old["suits"].items()):
                 raise ValueError("Новая партия меняет уже принятый костюм")
         for asset, pair in assets.items():
@@ -373,7 +397,10 @@ def build(args, files, catalog, audit):
                             heights=sorted({r["height"] for r in rows}), raw=path.stat().st_size,
                             small=len(small), large=len(large)))
     for row in catalog:
-        if lookup(index["products"], row["name"]) != expected.get(row["ms_id"]):
+        found = lookup(index["products"], row["name"])
+        if found and suit_piece_without_photo(row):
+            raise ValueError("Фото попало на костюмные брюки или жилет: " + row["name"])
+        if found != expected.get(row["ms_id"]):
             raise ValueError("Лишняя или пропущенная привязка: " + row["name"])
         if row["suit_part"] == "jacket":
             suit = index["suits"].get(suit_key(row))
@@ -384,7 +411,7 @@ def build(args, files, catalog, audit):
     if args.apply:
         if (args.expect_groups, args.expect_links) != (len(choices), len(expected)):
             raise ValueError("Для записи укажи точные --expect-groups и --expect-links из проверки")
-        publish(index, assets)
+        publish(index, assets, catalog)
     return report
 
 
