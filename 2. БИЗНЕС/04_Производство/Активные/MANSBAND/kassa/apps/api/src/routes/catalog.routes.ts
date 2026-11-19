@@ -10,8 +10,19 @@ import {
 import * as ms from "../clients/ms.js";
 import { getMsRef } from "../services/bootstrap.js";
 import { appendSystemAudit } from "../services/audit.js";
+import { getUserById } from "../services/auth.js";
+import { listSuitFrontConflicts } from "../services/suitSets.js";
 
 export default async function catalogRoutes(app: FastifyInstance) {
+  app.get("/catalog/suit-front-conflicts", { preHandler: [app.requireAdmin] }, async (req, reply) => {
+    reply.header("Cache-Control", "private, no-store");
+    const user = await getUserById(req.user.sub);
+    if (!user || user.role !== "admin" || user.mustChangePassword) {
+      return reply.code(403).send({ message: "Проверка доступна только администраторам" });
+    }
+    return { models: await listSuitFrontConflicts() };
+  });
+
   app.get("/catalog/references", { preHandler: [app.authenticate] }, async () => {
     return listCatalogReferences();
   });

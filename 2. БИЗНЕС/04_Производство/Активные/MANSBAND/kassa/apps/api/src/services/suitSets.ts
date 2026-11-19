@@ -1,8 +1,9 @@
-import { and, gt, isNotNull, sql, type SQL } from "drizzle-orm";
+import { and, eq, gt, isNotNull, sql, type SQL } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { products, stock } from "../db/schema.js";
 import {
   computeCompleteness,
+  findSuitFrontConflicts,
   STORE_TO_WAREHOUSE,
   suitPriceOf,
   effectiveSuitPriceRules,
@@ -110,6 +111,17 @@ async function loadCatalogSuitLines(candidateVariations?: SQL): Promise<SuitStoc
 export interface CatalogSuitModel extends SuitModel {
   /** Цена костюма из матрицы кассы; null — правило не нашлось (см. suitPricing.ts). */
   priceRub: number | null;
+}
+
+export async function listSuitFrontConflicts() {
+  const jackets = await db.select({
+    msId: products.msId, name: products.name, size: products.size,
+    variation: products.variation, fit: products.fit, height: products.height, line: products.suitLine,
+  }).from(products).where(and(eq(products.suitPart, "jacket"), isNotNull(products.variation)));
+  return findSuitFrontConflicts(jackets.map(j => ({
+    ...j, size: (j.size ?? "").trim(), variation: (j.variation ?? "").trim(),
+    fit: (j.fit ?? "").trim(), height: (j.height ?? "").trim(), line: (j.line as SuitLine) ?? "regular",
+  })));
 }
 
 /**

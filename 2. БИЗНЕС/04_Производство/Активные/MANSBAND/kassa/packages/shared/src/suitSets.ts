@@ -51,19 +51,23 @@ export interface SuitStockLine {
 
 const COMPOSITION_ORDER: SuitPart[] = ["jacket", "trousers", "vest"];
 
-function catalogJacketFront(jackets: SuitStockLine[]): NonNullable<SuitModel["jacketFront"]> | null {
-  let front: NonNullable<SuitModel["jacketFront"]> | null = null;
+type JacketFront = NonNullable<SuitModel["jacketFront"]>;
+
+function namedJacketFronts(name: string): JacketFront[] {
+  const fronts = new Set<JacketFront>();
+  for (const word of name.toLowerCase().split(/[^\p{L}\p{N}]+/u)) {
+    const match = /^(одно|двух?)бортн(?:ый|ая|ое|ые|ого|ой|ому|ую|ых|ым|ыми|ом)$/.exec(word);
+    if (match) fronts.add(match[1] === "одно" ? "Однобортный" : "Двубортный");
+  }
+  return [...fronts];
+}
+
+function catalogJacketFront(jackets: SuitStockLine[]): JacketFront | null {
+  let front: JacketFront | null = null;
   for (const jacket of jackets) {
-    let named = false;
-    for (const word of (jacket.name ?? "").toLowerCase().split(/[^\p{L}\p{N}]+/u)) {
-      const match = /^(одно|двух?)бортн(?:ый|ая|ое|ые|ого|ой|ому|ую|ых|ым|ыми|ом)$/.exec(word);
-      if (!match) continue;
-      const value = match[1] === "одно" ? "Однобортный" : "Двубортный";
-      if (front && front !== value) return null;
-      front = value;
-      named = true;
-    }
-    if (!named) return null;
+    const types = namedJacketFronts(jacket.name ?? "");
+    if (types.length !== 1 || (front && types[0] !== front)) return null;
+    front = types[0]!;
   }
   return front;
 }
@@ -73,7 +77,9 @@ function catalogJacketFront(jackets: SuitStockLine[]): NonNullable<SuitModel["ja
  * только у 70% моделей), поэтому для отображения берутся по пиджаку, а склейку
  * держат вариация, крой, ростовка и линия.
  */
-export function suitModelKey(line: SuitStockLine): string {
+type ModelKeyFields = Pick<SuitStockLine, "variation" | "fit" | "height" | "line">;
+
+export function suitModelKey(line: ModelKeyFields): string {
   return suitModelId({
     variation: line.variation,
     color: "",
@@ -82,6 +88,34 @@ export function suitModelKey(line: SuitStockLine): string {
     height: line.height,
     line: line.line,
   });
+}
+
+export interface SuitFrontConflict extends ModelKeyFields {
+  modelId: string;
+  jackets: { msId: string; name: string; size: string; fronts: JacketFront[] }[];
+}
+
+/** По одной строке на карточку пиджака из справочника, независимо от остатков. */
+export function findSuitFrontConflicts(jackets: (ModelKeyFields & { msId: string; name: string; size: string })[]): SuitFrontConflict[] {
+  const groups = new Map<string, SuitFrontConflict>();
+  for (const { variation, fit, height, line, msId, name, size } of jackets) {
+    if (!variation.trim()) continue;
+    const modelId = suitModelKey({ variation, fit, height, line });
+    let group = groups.get(modelId);
+    if (!group) {
+      group = { modelId, variation, fit, height, line, jackets: [] };
+      groups.set(modelId, group);
+    }
+    group.jackets.push({ msId, name, size, fronts: namedJacketFronts(name) });
+  }
+  const conflicts = [...groups.values()].filter(group =>
+    new Set(group.jackets.flatMap(jacket => jacket.fronts)).size > 1
+  );
+  const order = new Intl.Collator("ru", { numeric: true });
+  for (const group of conflicts) {
+    group.jackets.sort((a, b) => order.compare(a.size, b.size) || order.compare(a.name, b.name) || a.msId.localeCompare(b.msId));
+  }
+  return conflicts.sort((a, b) => order.compare(a.modelId, b.modelId));
 }
 
 /** Размеры по возрастанию; нечисловые уходят в конец в алфавитном порядке. */
