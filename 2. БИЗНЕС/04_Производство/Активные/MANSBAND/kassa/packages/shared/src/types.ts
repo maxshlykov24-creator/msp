@@ -63,6 +63,38 @@ export interface WarehouseStockLine {
   stock: number;
 }
 
+export interface PhotoReviewImage {
+  id: string;
+  name: string;
+  url: string;
+}
+
+export interface PhotoReviewCase {
+  id: string;
+  cell: string;
+  code: string;
+  category: string;
+  reason: string;
+  photoIds: string[];
+  /** Вариация, вид изделия, цвет, узор, крой. */
+  variants: string[][];
+}
+
+export interface PhotoReviewComment {
+  id: string;
+  target: string;
+  text: string;
+  author: string;
+  at: string;
+}
+
+export interface PhotoReviewData {
+  cases: PhotoReviewCase[];
+  unpublished: { id: string; cells: string[]; extraAngle: boolean }[];
+  photos: Record<string, PhotoReviewImage>;
+  comments: PhotoReviewComment[];
+}
+
 export interface Product {
   id: string;
   name: string;

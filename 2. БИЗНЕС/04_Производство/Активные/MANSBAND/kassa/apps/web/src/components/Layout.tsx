@@ -44,6 +44,7 @@ export type Route =
   | "products"
   | "suits"
   | "suit-front-review"
+  | "photo-review"
   | "tasks"
   | "history"
   | "roles"
@@ -171,7 +172,7 @@ export function Layout({
       id: "products",
       label: "Товар",
       icon: <Boxes {...ICO} />,
-      active: route === "products" || route === "suits" || route === "suit-front-review",
+      active: route === "products" || route === "suits" || route === "suit-front-review" || route === "photo-review",
       onClick: () => setRoute("products"),
     },
     {

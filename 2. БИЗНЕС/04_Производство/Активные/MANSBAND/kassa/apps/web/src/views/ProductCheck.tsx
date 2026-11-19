@@ -642,9 +642,14 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
 
   return (
     <div className="max-w-6xl mx-auto">
-      <div className="flex items-center gap-2 mb-1">
+      <div className="flex flex-wrap items-center gap-2 mb-1">
         <Boxes className="text-gold" size={22} />
         <h1 className="text-2xl font-extrabold text-white">Поиск товара</h1>
+        {user?.role === "admin" && (
+          <a href="#photo-review" className="ml-auto rounded-lg border border-ink-700 px-3 py-1.5 text-sm text-gold-soft hover:border-gold">
+            Проверка фото
+          </a>
+        )}
       </div>
       {isSuitSection ? (
         <Hint>

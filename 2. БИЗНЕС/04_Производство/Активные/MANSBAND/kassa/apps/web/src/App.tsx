@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { StoreProvider } from "./store";
 import { Layout, SHOW_SHIFT_CLOSE, type Route } from "./components/Layout";
 import type { DealKind } from "./data/types";
@@ -16,6 +16,8 @@ import { TasksMovements } from "./views/TasksMovements";
 import { HistoryScreen, RolesScreen } from "./views/AuditRoles";
 import { MessageTemplates } from "./views/MessageTemplates";
 import { SettingsScreen } from "./views/SettingsScreen";
+
+const PhotoReview = lazy(() => import("./views/PhotoReview"));
 
 function Screens({
   route,
@@ -86,6 +88,8 @@ function Screens({
       return <ProductCheck initialSection="suits" />;
     case "suit-front-review":
       return <SuitFrontReview />;
+    case "photo-review":
+      return <Suspense fallback={<p className="text-mute">Загрузка проверки фото…</p>}><PhotoReview /></Suspense>;
     case "tasks":
       return <TasksMovements />;
     case "history":
@@ -112,6 +116,7 @@ const ROUTES: Route[] = [
   "products",
   "suits",
   "suit-front-review",
+  "photo-review",
   "tasks",
   "history",
   "roles",

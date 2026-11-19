@@ -12,8 +12,10 @@ import { getMsRef } from "../services/bootstrap.js";
 import { appendSystemAudit } from "../services/audit.js";
 import { getUserById } from "../services/auth.js";
 import { listSuitFrontConflicts } from "../services/suitSets.js";
+import photoReviewRoutes from "./photoReview.routes.js";
 
 export default async function catalogRoutes(app: FastifyInstance) {
+  await app.register(photoReviewRoutes);
   app.get("/catalog/suit-front-conflicts", { preHandler: [app.requireAdmin] }, async (req, reply) => {
     reply.header("Cache-Control", "private, no-store");
     const user = await getUserById(req.user.sub);
