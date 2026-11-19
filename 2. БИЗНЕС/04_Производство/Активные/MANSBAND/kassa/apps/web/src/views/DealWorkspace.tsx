@@ -9,6 +9,7 @@ import { useAuth } from "../auth/AuthContext";
 import { FUNNEL_LABEL, KIND_LABEL } from "../lib/labels";
 import { Button, Card, Field, Modal, StageBadge } from "../components/ui";
 import { ProductPicker } from "../components/ProductPicker";
+import { CatalogPhoto } from "../components/CatalogPhoto";
 import { PaymentBlock } from "../components/PaymentBlock";
 import { DealActionsBar } from "../components/DealActionsBar";
 import { ConvertKindForm, type ConvertKindPayload } from "../components/ConvertKindForm";
@@ -776,6 +777,7 @@ export function DealWorkspace({
                   if (!st) return null;
                   return (
                     <div key={it.productId} className="flex items-center gap-2 text-[13px]">
+                      <CatalogPhoto name={it.name} />
                       <span className="text-mute-soft flex-1 min-w-0 truncate">{it.name}</span>
                       <span className="chip bg-ink-700 text-white shrink-0">
                         {st.location || (st.state === "in_transit" ? "В пути" : "—")}

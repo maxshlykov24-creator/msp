@@ -1,3 +1,4 @@
+import { CatalogPhoto } from "./CatalogPhoto";
 import { useEffect, useRef, useState } from "react";
 import { Check, ScanLine } from "lucide-react";
 import type { CartItem } from "../data/types";
@@ -185,6 +186,7 @@ export function ReturnItemsSelector({
               <span className="text-mute text-[12px] tabular-nums w-5 shrink-0 pt-0.5">
                 {index + 1}.
               </span>
+              <CatalogPhoto name={item.name} />
               <button
                 type="button"
                 className="flex-1 min-w-0 text-left"

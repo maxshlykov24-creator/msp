@@ -1,3 +1,4 @@
+import { CatalogPhoto } from "./CatalogPhoto";
 import { useEffect, useMemo, useState } from "react";
 import { ArrowRightLeft, CheckCircle2, Loader2, Plus, ScanLine, Search, Trash2 } from "lucide-react";
 import {
@@ -457,21 +458,20 @@ export function MovementModal({
                   {!searching &&
                     !searchError &&
                     hits.map((p) => (
-                      <button
-                        key={p.id}
-                        type="button"
-                        onClick={() => addProduct(p)}
-                        className="w-full text-left px-3 py-2 rounded-lg hover:bg-ink-800 flex items-center gap-3"
-                      >
-                        <div className="flex-1 min-w-0">
-                          <div className="text-[14px] text-white break-words whitespace-normal leading-snug">{p.name}</div>
-                          <div className="text-[12px] text-mute">
-                            {[p.sku, `доступно ${fmtQty(p.stock)}`].filter(Boolean).join(" · ")}
+                      <div key={p.id} className="flex items-center gap-2 rounded-lg px-3 hover:bg-ink-800">
+                        <CatalogPhoto name={p.name} />
+                        <button type="button" onClick={() => addProduct(p)}
+                          className="flex flex-1 min-w-0 items-center gap-3 text-left py-2">
+                          <div className="flex-1 min-w-0">
+                            <div className="text-[14px] text-white break-words whitespace-normal leading-snug">{p.name}</div>
+                            <div className="text-[12px] text-mute">
+                              {[p.sku, `доступно ${fmtQty(p.stock)}`].filter(Boolean).join(" · ")}
+                            </div>
                           </div>
-                        </div>
-                        <div className="text-gold-soft font-semibold shrink-0">{money(p.price)}</div>
-                        <Plus size={16} className="text-gold shrink-0" />
-                      </button>
+                          <div className="text-gold-soft font-semibold shrink-0">{money(p.price)}</div>
+                          <Plus size={16} className="text-gold shrink-0" />
+                        </button>
+                      </div>
                     ))}
                 </div>
               )}
@@ -485,6 +485,7 @@ export function MovementModal({
               return (
                 <div key={item.productId} className="px-3 py-2.5 space-y-2 bg-ink-900/40">
                   <div className="flex items-start gap-2.5">
+                    <CatalogPhoto name={item.name} />
                     {!allowCatalogPick && (
                       <input
                         type="checkbox"

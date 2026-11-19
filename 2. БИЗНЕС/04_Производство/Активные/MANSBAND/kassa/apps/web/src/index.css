@@ -2,6 +2,52 @@
 @tailwind components;
 @tailwind utilities;
 
+.catalog-photo-thumb {
+  align-self: center;
+  flex: 0 0 44px;
+  width: 44px;
+  height: 50px;
+  border: 1px solid rgb(var(--ink-600));
+  border-radius: 6px;
+  background: #eeeae5;
+  overflow: hidden;
+  cursor: zoom-in;
+}
+.catalog-photo-thumb:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.catalog-photo-thumb img { width: 100%; height: 100%; object-fit: contain; }
+.catalog-photo-hover {
+  position: fixed;
+  z-index: 10000;
+  width: min(216px, calc(100vw - 16px));
+  pointer-events: none;
+  padding: 3px;
+  border-radius: 9px;
+  background: #eceae6;
+  box-shadow: 0 8px 34px #0008;
+}
+.catalog-photo-hover img { display: block; width: 100%; max-height: min(280px, 80vh); object-fit: contain; border-radius: 6px; }
+.catalog-photo-dialog {
+  margin: auto;
+  width: min(92vw, 580px);
+  max-height: 90vh;
+  max-height: 90dvh;
+  overflow: auto;
+  color: rgb(var(--fg));
+  background: rgb(var(--ink-900));
+  border: 1px solid rgb(var(--ink-600));
+  border-radius: 14px;
+  padding: 0;
+}
+.catalog-photo-dialog::backdrop { background: #000b; }
+.catalog-photo-dialog figure { margin: 0; position: relative; }
+.catalog-photo-dialog figure > img { width: 100%; height: min(66vh, 680px); object-fit: contain; background: #e8e6e2; }
+.catalog-photo-dialog figure > button {
+  position: absolute; right: 8px; top: 8px; width: 44px; height: 44px; border-radius: 50%;
+  background: #141414dc; color: white; font-size: 26px; line-height: 1;
+}
+.catalog-photo-dialog figcaption, .catalog-photo-dialog p { padding: 12px 16px; font-size: 14px; overflow-wrap: anywhere; }
+.catalog-photo-dialog figcaption span { display: block; color: rgb(var(--mute-soft)); font-size: 12px; margin-bottom: 2px; }
+
 :root {
   --mobile-nav-height: 0px;
   color-scheme: dark;

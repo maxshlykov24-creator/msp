@@ -9,6 +9,21 @@ const TOKEN_KEY = "kassa_token";
 const REQUEST_TIMEOUT_MS = 45_000;
 /** Проверка сессии — быстро падаем на экран входа. */
 const ME_TIMEOUT_MS = 10_000;
+
+// Native <img> requests cannot attach the SPA's Authorization header.
+// Only same-site requests to the photo directory receive this session cookie.
+let photoSession: string | null | undefined;
+function syncPhotoSession(token: string | null) {
+  if (photoSession === token) return;
+  const secure = location.protocol === "https:" ? "; Secure" : "";
+  try {
+    document.cookie = "kassa_photo_session=" + encodeURIComponent(token ?? "") +
+      "; Path=/catalog-photos/; SameSite=Strict" + secure + (token ? "" : "; Max-Age=0");
+    photoSession = token;
+  } catch {
+    // The ordinary bearer session still works when the browser blocks cookies.
+  }
+}
 /** Логин на Safari/LTE: первый POST иногда «висит» до abort. */
 const LOGIN_TIMEOUT_MS = 45_000;
 /** Список заявок. */
@@ -16,7 +31,9 @@ const DEALS_TIMEOUT_MS = 20_000;
 
 export function getToken(): string | null {
   try {
-    return localStorage.getItem(TOKEN_KEY);
+    const token = localStorage.getItem(TOKEN_KEY);
+    syncPhotoSession(token);
+    return token;
   } catch {
     return null;
   }
@@ -26,6 +43,7 @@ export function setToken(token: string | null) {
   try {
     if (token) localStorage.setItem(TOKEN_KEY, token);
     else localStorage.removeItem(TOKEN_KEY);
+    syncPhotoSession(token);
   } catch {
     // private mode / квота — игнорируем
   }

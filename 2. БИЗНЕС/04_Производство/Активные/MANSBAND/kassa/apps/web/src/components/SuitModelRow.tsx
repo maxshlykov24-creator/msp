@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { CatalogPhoto } from "./CatalogPhoto";
 import { ArrowRightLeft, ChevronDown, ChevronRight, Copy } from "lucide-react";
 import {
   CENTRAL_WAREHOUSE,
@@ -64,6 +65,7 @@ export function SuitModelRow({
   return (
     <div className="card p-0 overflow-hidden">
       <div className="flex items-stretch gap-3 px-4 py-3">
+        {!model.mixed && <CatalogPhoto name={model.title} suit={model} />}
         <button type="button" onClick={onToggle} className="text-mute hover:text-white shrink-0 self-center">
           {open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
         </button>
@@ -102,6 +104,8 @@ export function SuitModelRow({
         <span className="truncate">{metaBits.join(" · ") || "—"}</span>
         {model.priceRub != null && <span className="text-gold-soft font-semibold">{money(model.priceRub)}</span>}
       </div>
+
+      {model.mixed && <CatalogPhoto name={model.title} suit={model} />}
 
       {open && (
         <div className="border-t border-ink-800 overflow-x-auto">

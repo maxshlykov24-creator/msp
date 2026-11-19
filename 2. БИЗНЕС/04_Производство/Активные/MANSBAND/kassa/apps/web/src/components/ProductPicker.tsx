@@ -16,6 +16,7 @@ import {
   Gift,
 } from "lucide-react";
 import type { CartItem, Product } from "../data/types";
+import { CatalogPhoto } from "./CatalogPhoto";
 import { PRODUCTS } from "../data/mock";
 import { STORE_TO_WAREHOUSE, SUIT_PART_LABEL } from "@kassa/shared";
 import type { SuitPart } from "@kassa/shared";
@@ -779,22 +780,22 @@ export function ProductPicker({
             )}
             {!loading &&
               found.map((p) => (
-                <button
-                  key={p.id}
-                  onClick={() => addProduct(p)}
-                  className="w-full text-left px-3 py-2 rounded-lg hover:bg-ink-800 flex items-center gap-3"
-                >
-                  <div className="flex-1">
-                    <div className="text-[14px] text-white break-words whitespace-normal leading-snug">{p.name}</div>
-                    <div className="text-[12px] text-mute">
-                      {allowedMap
-                        ? `из сделки · ещё можно ${fmtQty(remainingQty(p.id) ?? 0)} шт`
-                        : [p.sku, `доступно ${fmtQty(p.stock)}`].filter(Boolean).join(" · ")}
+                <div key={p.id} className="flex items-center gap-2 rounded-lg px-3 hover:bg-ink-800">
+                  <CatalogPhoto name={p.name} />
+                  <button type="button" onClick={() => addProduct(p)}
+                    className="flex flex-1 min-w-0 items-center gap-3 text-left py-2">
+                    <div className="flex-1">
+                      <div className="text-[14px] text-white break-words whitespace-normal leading-snug">{p.name}</div>
+                      <div className="text-[12px] text-mute">
+                        {allowedMap
+                          ? `из сделки · ещё можно ${fmtQty(remainingQty(p.id) ?? 0)} шт`
+                          : [p.sku, `доступно ${fmtQty(p.stock)}`].filter(Boolean).join(" · ")}
+                      </div>
                     </div>
-                  </div>
-                  {!noPrice && <div className="text-gold-soft font-semibold">{money(p.price)}</div>}
-                  <Plus size={16} className="text-gold" />
-                </button>
+                    {!noPrice && <div className="text-gold-soft font-semibold">{money(p.price)}</div>}
+                    <Plus size={16} className="text-gold" />
+                  </button>
+                </div>
               ))}
           </div>
         )}
@@ -822,6 +823,7 @@ export function ProductPicker({
                 return (
                   <div key={groupId} className="px-3 py-2.5 bg-ink-900/50">
                     <div className="flex items-start gap-3">
+                      <CatalogPhoto name={jacketItem.name} />
                       <button
                         type="button"
                         onClick={() => toggleSuitExpanded(groupId)}
@@ -882,7 +884,8 @@ export function ProductPicker({
                           );
                           return (
                             <div key={it.productId} className="text-[12px] text-mute flex justify-between gap-2">
-                              <span className={`break-words ${odd ? "text-amber-200" : ""}`}>{it.name}</span>
+                              <CatalogPhoto name={it.name} />
+                              <span className={`flex-1 break-words ${odd ? "text-amber-200" : ""}`}>{it.name}</span>
                               <span className="shrink-0 text-white">{money(it.price)}</span>
                             </div>
                           );
@@ -920,6 +923,7 @@ export function ProductPicker({
               return (
                 <div key={itemKey(it)} className="px-3 py-2.5 bg-ink-900/50">
                   <div className="flex items-start gap-3">
+                    <CatalogPhoto name={it.name} />
                     <button
                       type="button"
                       onClick={() => openStockModal(it)}

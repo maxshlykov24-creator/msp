@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { CatalogPhoto } from "./CatalogPhoto";
 import { ArrowRight, Check, Package, ScanLine, Undo2 } from "lucide-react";
 import { TASK_QUEUES, taskActionLabel, taskKindLabel, type Product } from "@kassa/shared";
 import { api, USE_MOCK } from "../api/client";
@@ -443,6 +444,7 @@ export function TaskDetail({
                     <span className="text-mute text-[12px] tabular-nums w-5 shrink-0 pt-0.5">
                       {i + 1}.
                     </span>
+                    <CatalogPhoto name={p.name} />
                     <span className="flex-1 min-w-0 text-[14px] text-white break-words">
                       {p.name}
                       {requiresScan && (
@@ -508,9 +510,9 @@ export function TaskDetail({
       {!showScanPositions && positions.length > 0 && (
         <ul className="rounded-lg border border-ink-700 divide-y divide-ink-700 overflow-hidden">
           {positions.map((p, i) => (
-            <li key={i} className="px-3 py-2.5 text-[14px] text-white bg-ink-900/40">
-              {p.name}
-              {p.quantity != null ? ` × ${p.quantity}` : ""}
+            <li key={i} className="flex items-center gap-3 px-3 py-2.5 text-[14px] text-white bg-ink-900/40">
+              <CatalogPhoto name={p.name} />
+              <span>{p.name}{p.quantity != null ? ` × ${p.quantity}` : ""}</span>
             </li>
           ))}
         </ul>

@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
+import { CatalogPhoto } from "../components/CatalogPhoto";
 import {
   Boxes,
   ChevronDown,
@@ -1076,22 +1077,26 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
                       const totalStock = base.rows.reduce((n, r) => n + stockSum(r.product), 0);
                       return (
                         <div key={baseKey}>
-                          <button
-                            type="button"
-                            className="w-full px-4 py-2.5 flex items-center gap-2 text-left hover:bg-ink-800/40"
-                            onClick={() => toggleBase(sec.section, base.baseName)}
-                          >
-                            {baseOpen ? (
-                              <ChevronDown size={15} className="text-mute" />
-                            ) : (
-                              <ChevronRight size={15} className="text-mute" />
-                            )}
-                            <span className="text-white font-medium flex-1 leading-snug">{base.baseName}</span>
-                            <span className={`text-[12px] tabular-nums ${qtyClass(totalStock)}`}>
-                              {fmtQty(totalStock)}
-                            </span>
-                            <span className="chip bg-ink-800 text-mute">{base.rows.length}</span>
-                          </button>
+                          <div className="flex items-center gap-2 px-4 hover:bg-ink-800/40">
+                            <CatalogPhoto name={base.rows[0].product.name}
+                              groupNames={base.rows.map((row) => row.product.name)} />
+                            <button
+                              type="button"
+                              className="min-w-0 flex-1 py-2.5 flex items-center gap-2 text-left"
+                              onClick={() => toggleBase(sec.section, base.baseName)}
+                            >
+                              {baseOpen ? (
+                                <ChevronDown size={15} className="text-mute" />
+                              ) : (
+                                <ChevronRight size={15} className="text-mute" />
+                              )}
+                              <span className="text-white font-medium flex-1 leading-snug">{base.baseName}</span>
+                              <span className={`text-[12px] tabular-nums ${qtyClass(totalStock)}`}>
+                                {fmtQty(totalStock)}
+                              </span>
+                              <span className="chip bg-ink-800 text-mute">{base.rows.length}</span>
+                            </button>
+                          </div>
 
                           {baseOpen && (
                             <div className="overflow-x-auto border-t border-ink-800 bg-ink-950/30">
@@ -1132,18 +1137,23 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
                                           onClick={() => setExpandedId(expanded ? null : product.id)}
                                         >
                                           <td className="px-4 py-3 align-top">
-                                            <div className="text-white font-medium leading-snug">
-                                              {modBits.length ? modBits.join(" · ") : row.modsLabel || "—"}
-                                            </div>
-                                            <div className="text-[12px] text-mute mt-0.5">
-                                              {[skuShown, product.barcode].filter(Boolean).join(" · ") || "—"}
-                                              {others.length > 0 && (
-                                                <span className="text-gold-soft">
-                                                  {" "}
-                                                  · ещё {others.length} склад
-                                                  {others.length === 1 ? "" : others.length < 5 ? "а" : "ов"}
-                                                </span>
-                                              )}
+                                            <div className="flex items-center gap-2">
+                                              <CatalogPhoto name={product.name} />
+                                              <div className="min-w-0">
+                                                <div className="text-white font-medium leading-snug">
+                                                  {modBits.length ? modBits.join(" · ") : row.modsLabel || "—"}
+                                                </div>
+                                                <div className="text-[12px] text-mute mt-0.5">
+                                                  {[skuShown, product.barcode].filter(Boolean).join(" · ") || "—"}
+                                                  {others.length > 0 && (
+                                                    <span className="text-gold-soft">
+                                                      {" "}
+                                                      · ещё {others.length} склад
+                                                      {others.length === 1 ? "" : others.length < 5 ? "а" : "ов"}
+                                                    </span>
+                                                  )}
+                                                </div>
+                                              </div>
                                             </div>
                                           </td>
                                           {MAIN_WAREHOUSES.map((w) => {

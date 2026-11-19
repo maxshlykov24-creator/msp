@@ -178,7 +178,10 @@ function notBareParentSql() {
 function variationFirstOrder(tokens: string[]) {
   const safe = sanitizeToken(tokens[0] ?? "");
   if (!safe) return undefined;
-  return sql`CASE WHEN ${products.variation} ILIKE ${`%${safe}%`} THEN 0 ELSE 1 END`;
+  return sql`CASE
+    WHEN lower(trim(${products.variation})) = lower(${safe}) THEN 0
+    WHEN ${products.variation} ILIKE ${`%${safe}%`} THEN 1
+    ELSE 2 END`;
 }
 
 export async function searchCatalog(
@@ -921,10 +924,7 @@ export async function browseCatalogPaged(query: CatalogBrowseQuery): Promise<Cat
   const pageSize = hall ? Math.max(query.pageSize, 1500) : query.pageSize;
   const offset = (query.page - 1) * pageSize;
   const whereSql = sql.join(conditions, sql` AND `);
-  const variationRank = variationFirstOrder(tokens);
-  const orderSql = variationRank
-    ? sql`${variationRank}, category NULLS LAST, name`
-    : sql`category NULLS LAST, name`;
+  const variationRank = variationFirstOrder(tokens) ?? sql`0`;
 
   // Остаток — отдельным LEFT JOIN на агрегат по stock, а не N запросов на клиенте.
   const result = await db.execute(sql`
@@ -935,7 +935,8 @@ export async function browseCatalogPaged(query: CatalogBrowseQuery): Promise<Cat
       GROUP BY ${stock.productMsId}
     ),
     base AS (
-      SELECT ${products}.*, coalesce(totals.total_qty, 0) AS total_qty
+      SELECT ${products}.*, coalesce(totals.total_qty, 0) AS total_qty,
+             ${variationRank} AS variation_rank
       FROM ${products}
       LEFT JOIN totals ON totals.product_ms_id = ${products.msId}
       WHERE ${whereSql}
@@ -943,7 +944,7 @@ export async function browseCatalogPaged(query: CatalogBrowseQuery): Promise<Cat
     SELECT *, count(*) OVER() AS full_count
     FROM base
     WHERE ${stockCondition}
-    ORDER BY ${orderSql}
+    ORDER BY variation_rank, category NULLS LAST, name
     LIMIT ${pageSize} OFFSET ${offset}
   `);
 
