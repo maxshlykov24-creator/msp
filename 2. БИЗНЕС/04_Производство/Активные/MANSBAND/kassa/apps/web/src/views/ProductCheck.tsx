@@ -992,6 +992,7 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
 
           {SUIT_FAMILIES.filter((fam) => !suitFamily || suitFamily === fam).map((fam) => {
             const list = suitsByFamily[fam];
+            const showJacketFront = list.some((model) => model.jacketFront);
             const familyOpen = Boolean(suitFamily) || openSections.has(fam);
             return (
               <section key={fam} className="card p-0 overflow-hidden">
@@ -1010,6 +1011,7 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
                       <SuitModelRow
                         key={model.modelId}
                         model={model}
+                        showJacketFront={showJacketFront}
                         open={openSuit === model.modelId}
                         onToggle={() => setOpenSuit(openSuit === model.modelId ? null : model.modelId)}
                         warehouse={warehouseFilter}
@@ -1032,32 +1034,36 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
             Костюмы
             <span className="chip bg-ink-700 text-mute">{visibleSuits.length}</span>
           </div>
-          {SUIT_FAMILIES.filter((fam) => suitsByFamily[fam].length > 0).map((fam) => (
-            <section key={fam} className="card p-0 overflow-hidden">
-              <button
-                type="button"
-                className="w-full px-4 py-3 flex items-center gap-2 text-left hover:bg-ink-800/50"
-                onClick={() => toggleSection(fam)}
-              >
-                {openSections.has(fam) ? <ChevronDown size={17} /> : <ChevronRight size={17} />}
-                <span className="text-white font-semibold flex-1">{SUIT_FAMILY_LABEL[fam]}</span>
-                <span className="chip bg-ink-700 text-mute">{suitsByFamily[fam].length}</span>
-              </button>
-              {openSections.has(fam) && (
-                <div className="border-t border-ink-700 p-3 space-y-2 bg-ink-950/20">
-                  {suitsByFamily[fam].map((model) => (
-                    <SuitModelRow
-                      key={model.modelId}
-                      model={model}
-                      open={openSuit === model.modelId}
-                      onToggle={() => setOpenSuit(openSuit === model.modelId ? null : model.modelId)}
-                      warehouse={warehouseFilter}
-                    />
-                  ))}
-                </div>
-              )}
-            </section>
-          ))}
+          {SUIT_FAMILIES.filter((fam) => suitsByFamily[fam].length > 0).map((fam) => {
+            const showJacketFront = suitsByFamily[fam].some((model) => model.jacketFront);
+            return (
+              <section key={fam} className="card p-0 overflow-hidden">
+                <button
+                  type="button"
+                  className="w-full px-4 py-3 flex items-center gap-2 text-left hover:bg-ink-800/50"
+                  onClick={() => toggleSection(fam)}
+                >
+                  {openSections.has(fam) ? <ChevronDown size={17} /> : <ChevronRight size={17} />}
+                  <span className="text-white font-semibold flex-1">{SUIT_FAMILY_LABEL[fam]}</span>
+                  <span className="chip bg-ink-700 text-mute">{suitsByFamily[fam].length}</span>
+                </button>
+                {openSections.has(fam) && (
+                  <div className="border-t border-ink-700 p-3 space-y-2 bg-ink-950/20">
+                    {suitsByFamily[fam].map((model) => (
+                      <SuitModelRow
+                        key={model.modelId}
+                        model={model}
+                        showJacketFront={showJacketFront}
+                        open={openSuit === model.modelId}
+                        onToggle={() => setOpenSuit(openSuit === model.modelId ? null : model.modelId)}
+                        warehouse={warehouseFilter}
+                      />
+                    ))}
+                  </div>
+                )}
+              </section>
+            );
+          })}
         </div>
       )}
 

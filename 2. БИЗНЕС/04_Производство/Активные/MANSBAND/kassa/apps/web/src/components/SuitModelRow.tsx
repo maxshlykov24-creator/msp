@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { CatalogPhoto } from "./CatalogPhoto";
-import { ArrowRightLeft, ChevronDown, ChevronRight, Copy } from "lucide-react";
+import { ArrowRightLeft, Check, ChevronDown, ChevronRight, Copy } from "lucide-react";
 import {
   CENTRAL_WAREHOUSE,
   findWarehouseId,
@@ -33,11 +33,13 @@ export function SuitModelRow({
   open,
   onToggle,
   warehouse,
+  showJacketFront = false,
 }: {
   model: PricedSuitModel;
   open: boolean;
   onToggle: () => void;
   warehouse: string;
+  showJacketFront?: boolean;
 }) {
   const [copied, setCopied] = useState(false);
   const [sizeOpen, setSizeOpen] = useState<string | null>(null);
@@ -66,12 +68,23 @@ export function SuitModelRow({
     <div className="card p-0 overflow-hidden">
       <div className="flex items-stretch gap-3 px-4 py-3">
         {!model.mixed && <CatalogPhoto name={model.title} suit={model} />}
-        <button type="button" onClick={onToggle} className="text-mute hover:text-white shrink-0 self-center">
+        <button type="button" onClick={onToggle} aria-label={open ? "Свернуть размеры" : "Показать размеры"} aria-expanded={open} className="text-mute hover:text-white shrink-0 self-center">
           {open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
         </button>
-        <button type="button" onClick={onToggle} className="flex-1 min-w-0 text-left self-center">
+        <button type="button" onClick={onToggle} aria-expanded={open} className="flex-1 min-w-0 text-left self-center">
           <div className="text-white font-semibold truncate">{model.title}</div>
+          {model.jacketFront && (
+            <span className="lg:hidden block text-[12px] text-mute-soft">{model.jacketFront}</span>
+          )}
         </button>
+        {showJacketFront && (
+          <div className="hidden lg:block w-28 shrink-0 self-center">
+            {model.jacketFront && <>
+              <div className="text-[11px] text-mute">Тип борта</div>
+              <div className="text-[13px] text-white">{model.jacketFront}</div>
+            </>}
+          </div>
+        )}
         <div className="hidden sm:block w-[168px] shrink-0 self-center border-l border-ink-700 pl-3">
           <div className="text-white text-[13px] font-medium truncate" title={model.variation}>
             {model.variation || "—"}
@@ -83,15 +96,14 @@ export function SuitModelRow({
         <button
           type="button"
           onClick={() => void copyVariation()}
-          title="Скопировать код вариации для поиска в МойСкладе"
+          title={copied ? "Скопировано" : "Скопировать код вариации для поиска в МойСкладе"}
           className="text-mute hover:text-gold shrink-0 self-center"
         >
-          <Copy size={15} />
+          {copied ? <Check size={15} className="text-emerald-300" /> : <Copy size={15} />}
         </button>
-        {copied && <span className="text-[11px] text-emerald-300 shrink-0 self-center">скопировано</span>}
-        {model.priceRub != null && (
-          <span className="text-gold-soft font-semibold whitespace-nowrap shrink-0 hidden sm:inline self-center">
-            {money(model.priceRub)}
+        {(model.priceRub != null || showJacketFront) && (
+          <span className="text-gold-soft font-semibold whitespace-nowrap shrink-0 hidden sm:inline self-center lg:w-24 lg:text-right">
+            {model.priceRub != null && money(model.priceRub)}
           </span>
         )}
         <div className="min-w-[3.25rem] text-right shrink-0 self-center">

@@ -40,7 +40,7 @@ export interface SuitStockLine {
   line: SuitLine;
   warehouse: string;
   qty: number;
-  /** Имя товара из МойСклада — нужно только для сопоставления с матрицей цен (поиск по каталогу). */
+  /** Название позиции из МойСклада. */
   name?: string;
   article?: string | null;
   code?: string | null;
@@ -50,6 +50,23 @@ export interface SuitStockLine {
 }
 
 const COMPOSITION_ORDER: SuitPart[] = ["jacket", "trousers", "vest"];
+
+function catalogJacketFront(jackets: SuitStockLine[]): NonNullable<SuitModel["jacketFront"]> | null {
+  let front: NonNullable<SuitModel["jacketFront"]> | null = null;
+  for (const jacket of jackets) {
+    let named = false;
+    for (const word of (jacket.name ?? "").toLowerCase().split(/[^\p{L}\p{N}]+/u)) {
+      const match = /^(одно|двух?)бортн(?:ый|ая|ое|ые|ого|ой|ому|ую|ых|ым|ыми|ом)$/.exec(word);
+      if (!match) continue;
+      const value = match[1] === "одно" ? "Однобортный" : "Двубортный";
+      if (front && front !== value) return null;
+      front = value;
+      named = true;
+    }
+    if (!named) return null;
+  }
+  return front;
+}
 
 /**
  * Ключ модели без цвета и узора: внутри вариации они совпадают не всегда (цвет
@@ -267,6 +284,7 @@ export function buildSuitModel(
     modelId: suitModelKey(sample),
     variation: sample.variation,
     title,
+    ...(keepZeroSizes ? { jacketFront: catalogJacketFront(jackets) } : {}),
     color: jacketSample.color,
     pattern: jacketSample.pattern,
     fit: jacketSample.fit || null,

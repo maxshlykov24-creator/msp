@@ -67,6 +67,26 @@ test("catalogue quantities follow the selected warehouse while known sizes remai
   assert.deepEqual(model.sizes[0].warehouses, []);
 });
 
+test("catalogue suit front uses explicit, consistent jacket names across warehouses and sizes", () => {
+  function front(names) {
+    const jackets = names.map((name, i) => line("jacket", String(48 + 2 * i), i ? 0 : 1, {
+      name, warehouse: i ? "Центральный склад" : "На Бауманской",
+    }));
+    const trousers = line("trousers", "48", 1, { name: "Брюки однобортного костюма" });
+    return computeCompleteness([...jackets, trousers], {
+      tolerance: 0, keepZeroSizes: true, warehouse: "На Бауманской", q: "48",
+    }).models[0].jacketFront;
+  }
+  assert.equal(front(["Пиджак ДВУБОРТНЫЙ с 1 пуговицей", "Пиджак двухбортный"]), "Двубортный");
+  assert.equal(front(["Пиджак однобортный (48)", "Пиджак однобортный (50)"]), "Однобортный");
+  assert.equal(front(["Пиджак от смокинга"]), null);
+  assert.equal(front(["Пиджак псевдодвубортный"]), null);
+  assert.equal(front(["Пиджак однобортный / двубортный"]), null);
+  assert.equal(front(["Пиджак двубортный", "Пиджак однобортный"]), null);
+  assert.equal(front(["Пиджак двубортный", "Пиджак"]), null);
+  assert.equal(front(["Пиджак", "Пиджак двубортный"]), null);
+});
+
 test("suit part and line are read from the product kind name", () => {
   assert.equal(suitPartOf("Пиджак однобортный (48/6, чёрный)"), "jacket");
   assert.equal(suitPartOf("Блейзер смокинг (50/6)"), "jacket");
