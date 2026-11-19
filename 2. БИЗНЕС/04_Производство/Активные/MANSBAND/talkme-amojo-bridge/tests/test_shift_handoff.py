@@ -132,3 +132,42 @@ def test_full_page_without_next_link(crm, monkeypatch):
                               json={"_embedded": {"talks": pages[params["page"] - 1]}})
     monkeypatch.setattr(crm.amo, "get", get)
     assert len(list(h.rows(crm, "talks", {}))) == 251
+
+
+def test_task_new_personal_binding_is_preserved(crm):
+    plan = h.collect(crm, NINA)
+    next(t for t in crm.data["tasks"] if t["id"] == 21)["text"] = "[MB-AUTO:bound]"
+    h.apply_batch(crm, "tasks", [21], plan, ANGELINA, NINA)
+    assert not crm.calls
+
+
+def test_contact_task_rechecks_parent_owner(crm):
+    task = next(t for t in crm.data["tasks"] if t["id"] == 21)
+    task.update(entity_type="contacts", entity_id=12)
+    plan = h.collect(crm, NINA)
+    assert 21 in plan.targets["tasks"]
+    next(c for c in crm.data["contacts"] if c["id"] == 12)["responsible_user_id"] = 99
+    h.apply_batch(crm, "tasks", [21], plan, ANGELINA, NINA)
+    assert not crm.calls
+
+
+@pytest.mark.parametrize("today,expected", [
+    (["TRUE,FALSE"], NINA), (["FALSE,TRUE"], ANGELINA),
+    (["FALSE,FALSE"], None), (["TRUE,TRUE"], None), ([], None),
+    (["TRUE,FALSE", "FALSE,TRUE"], None),
+])
+def test_roster_uses_moscow_date_and_one_checkbox(monkeypatch, today, expected):
+    from datetime import datetime, timezone
+    from app import campaign
+
+    instant = datetime(2026, 11, 19, 21, 1, tzinfo=timezone.utc)
+    lines = ["График", "Дата,День,Нина,Ангелина", "19.11.2026,чт,FALSE,TRUE"]
+    lines.extend(f"20.11.2026,пт,{flags}" for flags in today)
+    response = httpx.Response(200, request=httpx.Request("GET", "https://example.test"),
+                              text="\n".join(lines))
+    monkeypatch.setattr(campaign.httpx, "get", lambda *args, **kwargs: response)
+    if expected is None:
+        with pytest.raises(ValueError, match="shift_"):
+            campaign.duty(instant)
+    else:
+        assert campaign.duty(instant) == expected

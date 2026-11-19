@@ -102,6 +102,10 @@ class Plan:
                 "exceptions": {k: len(v) for k, v in self.held.items() if v}}
 
 
+def personal_task(task):
+    return "[MB-AUTO:" in (task.get("text") or "") and task["task_type_id"] in (3946574, 3946594)
+
+
 def collect(client, outgoing):
     plan = Plan()
     portfolio = open_portfolio(client)
@@ -156,7 +160,7 @@ def collect(client, outgoing):
                 plan.held["other_owner_" + kind].add(entity_id)
                 continue
             # A shared customer may also have a live deal outside this team's portfolio.
-            if (anchors & plan.held["migration_leads"] or
+            if ((anchors | refs) & plan.held["migration_leads"] or
                     any(r not in extra_leads or migration_blocked(extra_leads[r]) or extra_leads[r]["status_id"] not in CLOSED
                         for r in refs - portfolio.keys())):
                 plan.held["shared_or_migrating_" + kind].add(entity_id)
@@ -168,7 +172,7 @@ def collect(client, outgoing):
         if task["is_completed"] or task["responsible_user_id"] != outgoing:
             continue
         tid, parent, eid = task["id"], task.get("entity_type"), task.get("entity_id")
-        if "[MB-AUTO:" in (task.get("text") or "") and task["task_type_id"] in (3946574, 3946594):
+        if personal_task(task):
             plan.held["personal_or_courier_tasks"].add(tid)
             continue
         if parent == "leads":
@@ -199,9 +203,15 @@ def apply_batch(client, kind, group, plan, current, outgoing):
     related = kind in ("contacts", "companies")
     params = {"with": "leads"} if related else {}
     entities = guards if kind == "leads" else lookup(client, kind, group, **params)
-    if related:
-        linked = {r["id"] for item in entities.values() for r in item["_embedded"]["leads"]}
-        guards.update(lookup(client, "leads", linked - guards.keys()))
+    task_cards = {}
+    if kind == "tasks":
+        for parent in ("contacts", "companies"):
+            parent_ids = {row["entity_id"] for row in entities.values() if row.get("entity_type") == parent}
+            task_cards.update({(parent, i): card for i, card in
+                               lookup(client, parent, parent_ids, **{"with": "leads"}).items()})
+    cards = list(entities.values()) if related else list(task_cards.values())
+    linked = {r["id"] for card in cards for r in card["_embedded"]["leads"]}
+    guards.update(lookup(client, "leads", linked - guards.keys()))
     updates = []
     for eid in group:
         item = entities.get(eid)
@@ -212,15 +222,21 @@ def apply_batch(client, kind, group, plan, current, outgoing):
                or (guards[ref]["status_id"] in CLOSED and ref not in plan.closed_work)
                for ref in targets[eid]):
             continue
-        if related:
-            fresh_links = [r["id"] for r in item["_embedded"]["leads"]]
+        card = item if related else None
+        if kind == "tasks":
+            parent = (item.get("entity_type"), item.get("entity_id"))
+            if item["is_completed"] or personal_task(item) or parent != plan.task_parents[eid]:
+                continue
+            if parent[0] in ("contacts", "companies"):
+                card = task_cards.get(parent)
+                if not card or card["responsible_user_id"] not in MANAGERS:
+                    continue
+        if card:
+            fresh_links = [r["id"] for r in card["_embedded"]["leads"]]
             if any(ref not in guards or migration_blocked(guards[ref])
                    or (guards[ref]["status_id"] not in CLOSED and not in_pool(guards[ref]))
                    for ref in fresh_links):
                 continue
-        if kind == "tasks" and (item["is_completed"] or
-                (item.get("entity_type"), item.get("entity_id")) != plan.task_parents[eid]):
-            continue
         updates.append({"id": eid, "responsible_user_id": current})
     if not updates:
         return
