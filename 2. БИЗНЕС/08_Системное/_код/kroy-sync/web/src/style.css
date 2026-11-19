@@ -223,3 +223,11 @@ label.check{flex-direction:row;align-items:center;gap:8px;margin:0 0 16px}
 @media(prefers-reduced-motion:reduce){.theme-pill:before,.theme-pill button,.theme-pill button svg{transition:none}}
 
 .stock-edit-stack,.stock-edit-line{display:grid;gap:14px}.stock-edit-line{border-block-end:1px solid var(--line);padding-block:10px}.catalog-header-actions{flex-wrap:wrap}
+
+.help-heading{display:flex;align-items:center;gap:6px;min-width:0}
+button.help-trigger,.cutting button.help-trigger{display:inline-grid;place-items:center;flex:none;width:26px;height:26px;min-height:26px;padding:0;border:0;border-radius:50%;color:var(--muted);background:transparent}
+button.help-trigger:hover,button.help-trigger:focus-visible,button.help-trigger[aria-expanded=true]{color:var(--accent);background:var(--accent-soft)}
+.help-popup{z-index:10000;box-sizing:border-box;overflow:auto;padding:11px 14px;border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--text);box-shadow:0 5px 20px #180e191c;font-size:12px;line-height:1.5;overflow-wrap:anywhere}
+.help-popup ul{margin:0;padding-left:16px}.help-popup li+li{margin-top:5px}
+.panel.workshop-summary{padding:18px 20px;margin-bottom:0}.workshop-summary h2{margin:0;font-size:18px}.workshop-summary dl{display:flex;flex-wrap:wrap;gap:10px 24px;margin:14px 0;padding-bottom:12px;border-bottom:1px solid var(--border)}.workshop-summary dt{font-size:11px;color:var(--muted)}.workshop-summary dd{margin:3px 0 0;font-size:14px;font-variant-numeric:tabular-nums}
+@media print{.help-trigger,.help-popup{display:none!important}}

@@ -142,3 +142,17 @@
 .cutting .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 .cut-progress{width:128px;min-width:96px;max-width:160px}.cut-progress-count{display:flex;align-items:baseline;gap:6px;white-space:nowrap;line-height:1.4}.cut-progress-count strong{font-size:13px;font-weight:600}.cut-progress-count>span{font-size:11px;color:var(--muted);font-weight:400}.cutting .cut-progress progress{width:100%;margin-top:8px}
 .cut-breakdown a{color:var(--accent);font-weight:500;text-underline-offset:3px}.cut-breakdown small>span{overflow-wrap:anywhere}
+
+@media screen{
+ .cut-document{--cut-padding:clamp(16px,2vw,22px);--cut-gap:16px;gap:16px}
+ .cutting .cut-hero{padding:var(--cut-padding)}
+ .cut-hero-heading>div,.cut-document-meta>div,.cut-totals>div{gap:4px}
+ .cut-hero-heading h2{font-size:23px}.cut-hero .cut-status{padding:5px 10px;font-size:12px}
+ .cut-document-meta{margin-top:16px;padding-block:14px;gap:12px}
+ .cut-hero-footer{padding-top:12px;gap:10px}.cut-document .cut-section-heading{margin-bottom:14px}
+ .cut-totals strong{font-size:21px}
+}
+@media screen and (max-width:600px){
+ .cut-document-meta{grid-template-columns:repeat(auto-fit,minmax(125px,1fr))}
+ .cut-hero-heading{flex-direction:row;flex-wrap:wrap;gap:8px}
+}

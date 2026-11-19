@@ -104,6 +104,32 @@ export function useAnchoredPopup(
   return position;
 }
 
+export function HelpTip({label,children}:{label:string;children:React.ReactNode}){
+  const trigger=useRef<HTMLButtonElement>(null),popup=useRef<HTMLDivElement>(null),id=useId();
+  const [open,setOpen]=useState(false),pinned=useRef(false);
+  const timer=useRef<ReturnType<typeof setTimeout>|undefined>(undefined);
+  function cancelTimer(){clearTimeout(timer.current)}
+  function close(){cancelTimer();pinned.current=false;setOpen(false)}
+  function show(){cancelTimer();setOpen(true)}
+  function leave(){if(!pinned.current)timer.current=setTimeout(close,180)}
+  const position=useAnchoredPopup(open,trigger,popup,{width:300,height:180},close);
+  useEffect(()=>()=>clearTimeout(timer.current),[]);
+  useEffect(()=>{
+    if(!open)return;
+    function escape(event:KeyboardEvent){if(event.key==='Escape'){event.stopImmediatePropagation();close()}}
+    document.addEventListener('keydown',escape,true);
+    return ()=>document.removeEventListener('keydown',escape,true);
+  },[open]);
+  return <><button ref={trigger} type="button" className="help-trigger" aria-label={label}
+    aria-expanded={open} aria-describedby={open?id:undefined}
+    onPointerEnter={e=>{if(e.pointerType==='mouse')show()}} onPointerLeave={leave}
+    onFocus={e=>{if(e.currentTarget.matches(':focus-visible'))show()}} onBlur={close}
+    onClick={()=>{if(pinned.current)close();else{pinned.current=true;show()}}}>
+    <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true"><circle cx="10" cy="10" r="7.5"/><path d="M10 9v5m0-8v1"/></svg>
+  </button>{open&&createPortal(<div ref={popup} id={id} role="tooltip" className="help-popup" style={position}
+    onPointerEnter={cancelTimer} onPointerLeave={leave}>{children}</div>,document.body)}</>
+}
+
 export function isLastPopupTab(event: React.KeyboardEvent, popup: HTMLElement) {
   if (event.key !== 'Tab') return false;
   const stops = Array.from(popup.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled)'))
