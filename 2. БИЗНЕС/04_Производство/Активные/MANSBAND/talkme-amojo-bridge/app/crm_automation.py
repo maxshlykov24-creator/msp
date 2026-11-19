@@ -280,7 +280,7 @@ def execute_task(db: Session, job: TaskExecution, client, *, enabled_rules: froz
     migration = db.get(MigrationEntry, job.lead_id)
     if migration and migration.state not in ("preview", "verified", "rolled_back"):
         return "migration_guard"
-    if is_test(lead) or not current(lead):
+    if is_test(lead) or lead.get("is_deleted") or not current(lead):
         db.execute(update(TaskExecution).where(TaskExecution.id == job.id,
             TaskExecution.state == "planned").values(state="cancelled", reason="conditions_changed"))
         db.commit()
@@ -323,16 +323,30 @@ def reconcile_task(db: Session, job: TaskExecution, tasks: list[dict], *, comple
     return job.state
 
 
+def observe_excluded_task(db: Session, job: TaskExecution, client) -> str:
+    """Read-only even if the lead is untagged during the check."""
+    actual = client.get(f"/api/v4/tasks/{job.task_id}")
+    if (actual.get("id") == job.task_id and actual.get("entity_id") == job.lead_id
+            and actual.get("entity_type") == "leads" and actual.get("is_completed") is True
+            and task_marker(job.rule_id, job.lead_id, job.occurrence) in actual.get("text", "")):
+        job.state, job.reason = "completed", "completed_on_excluded_lead"
+        db.commit()
+    return job.state
+
+
 def complete_owned_task(db: Session, job: TaskExecution, client, reason: str, *, preview: bool = True) -> str:
     if preview or not job.task_id or job.state != "created":
         return "preview" if preview else job.state
     migration = db.get(MigrationEntry, job.lead_id)
     if migration and migration.state not in ("preview", "verified", "rolled_back"):
         return "migration_guard"
-    if migration_blocked(client.get(f"/api/v4/leads/{job.lead_id}")):
+    lead = client.get(f"/api/v4/leads/{job.lead_id}")
+    if migration_blocked(lead):
         return "migration_guard"
+    if is_test(lead) or lead.get("is_deleted"):
+        return observe_excluded_task(db, job, client)
     actual = client.get(f"/api/v4/tasks/{job.task_id}")
-    if actual.get("entity_id") != job.lead_id or actual.get("entity_type") != "leads":
+    if actual.get("id") != job.task_id or actual.get("entity_id") != job.lead_id or actual.get("entity_type") != "leads":
         return "ownership_conflict"
     if task_marker(job.rule_id, job.lead_id, job.occurrence) not in actual.get("text", ""):
         return "ownership_conflict"
@@ -373,7 +387,7 @@ def revise_task(db: Session, job: TaskExecution, client, *, due: datetime,
     lead = client.get(f"/api/v4/leads/{job.lead_id}")
     if migration_blocked(lead):
         return "migration_guard"
-    if is_test(lead) or not current(lead):
+    if is_test(lead) or lead.get("is_deleted") or not current(lead):
         return "conditions_changed"
     desired = {**job.payload, "complete_till": int(stamp(due).timestamp()),
                "responsible_user_id": responsible}

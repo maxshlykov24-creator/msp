@@ -551,8 +551,13 @@ def visit_tasks(db, c, now, live_from):
     # Only the server's own tasks are revised on a changed date/stage.
     for task in db.scalars(select(a.TaskExecution).where(a.TaskExecution.rule_id == VISIT_TASK,
             a.TaskExecution.state == "created").order_by(a.TaskExecution.updated_at).limit(25)):
+        task.updated_at = now
+        db.commit()
         lead = c.get(f"/api/v4/leads/{task.lead_id}")
-        if migration_blocked(lead) or a.is_test(lead) or binding_issue(lead, c.kassa_state(task.lead_id)):
+        if a.is_test(lead) or lead.get("is_deleted"):
+            a.observe_excluded_task(db, task, c)
+            continue
+        if migration_blocked(lead) or binding_issue(lead, c.kassa_state(task.lead_id)):
             continue
         target = date.fromisoformat(task.occurrence.removeprefix("visit:"))
         actual = c.get(f"/api/v4/tasks/{task.task_id}")
@@ -716,6 +721,20 @@ def shop_control_needed(rule_id, snapshot):
                for task in snapshot.get("tasks") or [])
 
 
+def execution_hold(rule_id, snapshot):
+    """A pre-cutover cash-desk obligation stays with its original executor."""
+    if rule_id not in ("promise", "courier") or not snapshot.get("bindings"):
+        return None
+    if snapshot.get("execution_owners", {}).get(rule_id) != "amocrm":
+        return "execution_owner_not_switched"
+    kind = "promise_follow" if rule_id == "promise" else "call_courier"
+    if not isinstance(snapshot.get("tasks"), list):
+        return "invalid_kassa_snapshot"
+    if any(t.get("kind") == kind and t.get("status") == "pending" for t in snapshot["tasks"]):
+        return f"existing_kassa_{rule_id}_requires_reconciliation"
+    return None
+
+
 def promise_details(snapshot, lead, users):
     details = snapshot.get("promise") or {}
     author = (details.get("author") or "").strip()
@@ -764,12 +783,17 @@ def dispatch(db, c, catalog, ids, *, cutover_at, pipelines=None):
             continue
         lead = c.get(f"/api/v4/leads/{job.lead_id}")
         if migration_blocked(lead): continue
+        if a.is_test(lead) or lead.get("is_deleted"):
+            if job.state == "created":
+                a.observe_excluded_task(db, job, c)
+            else:
+                job.state, job.reason = "cancelled", "test_or_deleted"
+                db.commit()
+            continue
         snapshot = (c.kassa_state(job.lead_id, include_promise=True) if rule.id == "promise"
                     else c.kassa_state(job.lead_id))
         problem = binding_issue(lead, snapshot, required=rule.id in SHOP_TASK_KINDS)
-        if not problem and rule.id in ("promise","courier") and snapshot.get("bindings"):
-            if snapshot.get("execution_owners",{}).get(rule.id) != "amocrm":
-                problem = "execution_owner_not_switched"
+        problem = problem or execution_hold(rule.id, snapshot)
         if problem:
             job.reason = problem
             db.commit()
@@ -798,14 +822,10 @@ def dispatch(db, c, catalog, ids, *, cutover_at, pipelines=None):
             job.reason = "no_pending_kassa_work"
             db.commit()
             continue
-        current = lambda value: applicable(rule, value, catalog)
+        current = lambda value: value.get("pipeline_id") == event.after["pipeline_id"] and applicable(rule, value, catalog)
         responsible = int(lead.get("responsible_user_id") or 0)
         task_text = None
         if rule.id == "promise" and snapshot.get("bindings"):
-            if any(t["kind"] == "promise_follow" and t["status"] == "pending" for t in snapshot["tasks"]):
-                job.reason = "existing_kassa_promise_requires_reconciliation"
-                db.commit()
-                continue
             try:
                 task_text, due, responsible = promise_details(snapshot, lead, c.settings.promise_users)
             except ValueError as exc:
@@ -815,14 +835,13 @@ def dispatch(db, c, catalog, ids, *, cutover_at, pipelines=None):
         result = a.revise_task(db, job, c, due=due, responsible=responsible,
                               available_at=available, current=current, preview=False, task_text=task_text)
         if result == "replanned":
-            if task_text is not None:
-                fresh = c.kassa_state(job.lead_id, include_promise=True)
-                if (binding_issue(lead, fresh, required=True)
-                        or fresh.get("bindings") != snapshot["bindings"]
-                        or fresh.get("promise") != snapshot["promise"]
-                        or fresh.get("execution_owners", {}).get("promise") != "amocrm"
-                        or any(t["kind"] == "promise_follow" and t["status"] == "pending" for t in fresh["tasks"])):
-                    job.reason = "kassa_promise_changed"
+            if rule.id in ("promise", "courier"):
+                fresh = (c.kassa_state(job.lead_id, include_promise=True) if rule.id == "promise"
+                         else c.kassa_state(job.lead_id))
+                if (binding_issue(lead, fresh) or execution_hold(rule.id, fresh)
+                        or fresh["bindings"] != snapshot["bindings"]
+                        or (rule.id == "promise" and fresh.get("promise") != snapshot.get("promise"))):
+                    job.reason = f"kassa_{rule.id}_changed"
                     db.commit()
                     continue
             if rule.id in SHOP_TASK_KINDS:

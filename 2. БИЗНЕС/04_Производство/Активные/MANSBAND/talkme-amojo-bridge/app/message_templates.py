@@ -804,6 +804,16 @@ def reconcile(db):
         apply_confirmed_copy(db, j)
 
 
+def refresh_message_body(db, job, lead, rule, started):
+    body = render(lead, rule)
+    if body == job.rendered:
+        return
+    if started:
+        raise ValueError("Данные сообщения изменились после попытки отправки")
+    job.rendered = body
+    db.commit()
+
+
 def send(db,j,c,stamp):
     if j.state not in ("ready", "blocked"): return
     from app.reservation_reminders import MSK, ReminderSettings, REJECTED
@@ -850,6 +860,7 @@ def send(db,j,c,stamp):
             db.commit()
         if not j.rendered.strip():
             raise ValueError("Пустой текст сообщения: требуется проверка шаблона")
+        refresh_message_body(db, j, lead, r, started)
         if apply_confirmed_copy(db, j): return
         channels={x["channelId"]:x for x in c.wz.get("/channels").json()}
         for pos,route in enumerate(j.plan):
@@ -872,8 +883,12 @@ def send(db,j,c,stamp):
                 db.refresh(doc)
                 if not doc.active["enabled"] or not matches(fresh,r) or not matches(fresh,Rule(**doc.active)):
                     j.state,j.reason="cancelled","conditions_changed_before_post";db.commit();return
-                _,freshkey=make_plan(db,c,fresh,r,routing)
+                fresh_plan,freshkey=make_plan(db,c,fresh,r,routing)
                 if freshkey!=key: raise ValueError("Получатель изменился перед отправкой")
+                if not any(all(candidate.get(k) == route.get(k) for k in ("transport", "channelId", "recipient"))
+                           for candidate in fresh_plan):
+                    raise ValueError("Канал или адрес получателя изменился перед отправкой")
+                refresh_message_body(db, j, fresh, r, started)
                 if r.trigger.type=="date" and date_due(fresh,r)!=due: raise ValueError("Дата изменилась")
                 current=now()
                 if r.late_policy=="skip" and current>due+timedelta(minutes=5) and not started:raise ValueError("Окно первой отправки прошло")
