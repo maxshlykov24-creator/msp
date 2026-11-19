@@ -18,7 +18,9 @@ def parameters(raw):
     horizon = int(raw.get('horizon', 30))
     require(start <= end < today and (end-start).days < 90, 'Период: до 90 полных дней, без сегодняшнего дня', 422)
     require(1 <= horizon <= 365 and target >= today, 'Проверь горизонт и дату покрытия', 422)
-    return dict(start=str(start), end=str(end), horizon=horizon, target_date=str(target), location=raw['location'], include_uncertain=sorted(set(raw.get('include_uncertain', []))), include_fbo=raw.get('include_fbo') is True)
+    imports=raw.get('report_ids',{})
+    require(isinstance(imports,dict) and set(imports)<={'wb','ozon'} and all(isinstance(v,str) for v in imports.values()),'Проверь выбранные отчёты',422)
+    return dict(**({'report_ids':imports} if imports else {}),start=str(start), end=str(end), horizon=horizon, target_date=str(target), location=raw['location'], include_uncertain=sorted(set(raw.get('include_uncertain', []))), include_fbo=raw.get('include_fbo') is True)
 
 
 def calculate(s, raw):
@@ -71,6 +73,12 @@ def calculate(s, raw):
     mappings = {(e.data.get('platform'), e.data.get('item_id')): e.data for e in s.scalars(select(Entity).where(Entity.kind == 'mapping'))}
     status = s.get(Entity, 'cutting-sales-status')
     source_status = status.data.get('platforms', {}) if status else {}
+    reports={}
+    for channel,rid in p.get('report_ids',{}).items():
+        report=s.get(Entity,rid)
+        require(report and report.kind=='cut_report' and report.data['platform']==channel and all(report.data[k]==p[k] for k in ('start','end')),'Период файла отличается. Загрузи отчёт за выбранный период',422)
+        reports[channel]=report.data
+        versions.append([rid,report.version])
     rows = []
     for iid in ids:
         item = s.get(Item, iid)
@@ -78,6 +86,11 @@ def calculate(s, raw):
         b = s.scalar(select(Balance).where(Balance.item_id == iid, Balance.location == p['location']))
         platforms = {}
         for platform in ('wb', 'ozon'):
+            if platform in reports and iid in reports[platform]['totals']:
+                file=reports[platform]
+                values=file['totals'][iid]
+                platforms[platform]=dict(known=True,**values,at=file['at'],net=values['sales']-values['returns'],reason=None,source='Excel · '+file['file'],listed=True,catalog_matches=[])
+                continue
             candidates = [w for w in windows if w.data.get('platform') == platform and w.data['start'] <= p['start'] and w.data['end'] >= p['end'] and w.data.get('complete') and w.data.get('verified') and iid in w.data.get('covered_items', [])]
             w = max(candidates, key=lambda w: w.data['at'], default=None)
             sales = returns = 0

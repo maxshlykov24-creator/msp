@@ -66,7 +66,10 @@ def checked_day(raw):
 
 
 def secret():
-    return (env_opt("FF_SECRET") or env_opt("FF_WEB_TOKEN") or "ff-sync").encode()
+    value = env_opt("FF_SECRET") or env_opt("FF_WEB_TOKEN")
+    if not value:
+        raise HTTPException(status_code=503, detail="Ключ сессии не настроен")
+    return value.encode()
 
 
 def col(row, name, default=""):
@@ -106,7 +109,7 @@ def users():
             continue
         login, password = part.split(":", 1)
         login = login.strip()
-        if login:
+        if login and password.strip():
             out[login.lower()] = password.strip()
     return out
 
@@ -126,14 +129,14 @@ def unsign(token):
         return None
     if not hmac.compare_digest(mac, hmac.new(secret(), ("%s|%s" % (login, until)).encode(), hashlib.sha256).hexdigest()[:32]):
         return None
-    if int(until) < int(time.time()):
+    if not until.isascii() or not until.isdecimal() or len(until) > 12 or int(until) < int(time.time()):
         return None
     return login
 
 
 def who(session):
     login = unsign(session)
-    if not login:
+    if not login or login not in users():
         raise HTTPException(status_code=401, detail="нужен вход")
     return login
 
@@ -158,10 +161,10 @@ def login(resp: Response, data: dict = Body(...)):
     password = str(data.get("password") or "")
     if not table:
         raise HTTPException(status_code=500, detail="не заданы пользователи")
-    if name not in table or not hmac.compare_digest(table[name], password):
+    if name not in table or not hmac.compare_digest(table[name].encode(), password.encode()):
         raise HTTPException(status_code=401, detail="неверный логин или пароль")
     token = sign(name, int(time.time()) + 30 * DAY)
-    resp.set_cookie("ff_session", token, max_age=30 * DAY, httponly=True, samesite="lax")
+    resp.set_cookie("ff_session", token, max_age=30 * DAY, httponly=True, secure=True, samesite="lax")
     return {"ok": True, "login": name}
 
 
@@ -752,7 +755,14 @@ def export(client_id: int = 0, q: str = "", marked: str = "", date_to: str = "",
 
 
 def require_warehouse_shipments(ids):
-    rows = get_shipments_by_ids(ids)
+    if not isinstance(ids, list) or any(type(i) is not int or i <= 0 for i in ids):
+        raise HTTPException(status_code=400, detail="Некорректный выбор отправлений. Обнови список.")
+    try:
+        rows = get_shipments_by_ids(ids)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    if len(rows) != len(set(ids)):
+        raise HTTPException(status_code=400, detail="Часть выбранных заказов уже недоступна. Обнови список.")
     if any(r['kind'] != 'fbs' for r in rows):
         raise HTTPException(status_code=400, detail="Покупательские FBO-заказы обрабатывает маркетплейс. Складские действия недоступны.")
 
@@ -883,15 +893,9 @@ def assembly(
         client_id=client_id or None, marketplace=mp, kind=kind, article=article, query=q, since=since, until=until
     )
     counts, total = assembly_counts(**filters)
-    fallback = False
-    if total == 0:
-        filters["since"] = ""
-        filters["until"] = ""
-        counts, total = assembly_counts(keep_floor=False, **filters)
-        fallback = True
     # без потолка строк: галка в шапке берёт всю вкладку с текущим фильтром,
     # а не первую сотню. Счётчик вкладки и таблица должны совпадать.
-    rows = list_assembly(group=group, keep_floor=not fallback, **filters)
+    rows = list_assembly(group=group, **filters)
     from db import shipment_items
     out = []
     qty = 0.0
@@ -932,7 +936,7 @@ def assembly(
     supplies = []
     ext_ids = {r["supply"] for r in out if r["supply"]}
     if group != "new":
-        ext_ids.update(list_assembly_supply_exts(group=group, keep_floor=not fallback, **filters))
+        ext_ids.update(list_assembly_supply_exts(group=group, **filters))
     for s in find_wb_supplies(ext_ids):
         members = list_supply_shipments(s["cabinet_id"], s["ext_id"])
         supplies.append(
@@ -960,7 +964,7 @@ def assembly(
             for code, label in statuses.GROUPS
         ],
         "totals": {"positions": len(out), "qty": round(qty, 3), "all": total},
-        "fallback": fallback,
+        "fallback": False,
     }
 
 
@@ -1532,6 +1536,7 @@ def shipments_marks(data: dict = Body(...), ff_session: str = Cookie(default="")
     ids = data.get("ids") or []
     if not ids:
         raise HTTPException(status_code=400, detail="не выбраны отправления")
+    require_warehouse_shipments(ids)
     name, raw = build_marks(ids)
     return xlsx_file(name, raw)
 
@@ -1545,6 +1550,7 @@ def shipments_report(data: dict = Body(...), ff_session: str = Cookie(default=""
     ids = data.get("ids") or []
     if not ids:
         raise HTTPException(status_code=400, detail="не выбраны отправления")
+    require_warehouse_shipments(ids)
     name, raw = build_ships(ids)
     return xlsx_file(name, raw)
 

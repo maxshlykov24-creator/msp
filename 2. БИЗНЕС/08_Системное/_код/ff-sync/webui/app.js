@@ -2359,7 +2359,7 @@ function kizRender() {
   const matched = need > 0 && have === need;
   $("kizCount").textContent = need
     ? "Нужно кодов: " + need + " · внесено: " + have + (matched ? ". Нажми «Отправить»" : "")
-    : kizState.canSubmit === false ? "КиЗ не требуется" : "Внесено кодов: " + have;
+    : kizState.canSubmit === false ? "Ввод КиЗ недоступен" : "Внесено кодов: " + have;
   $("kizCount").classList.toggle("is-ok", matched);
   $("kizList").innerHTML = have
     ? kizState.codes.map((code, i) => {
@@ -2528,7 +2528,7 @@ async function openKizFromPick() {
     say($("aMsg"), "КиЗ вносится по заказам FBS.", "bad");
     return;
   }
-  await openKizQueue(ids);
+  await openKizQueue(ids, { manual: true });
 }
 
 let kizLoad = 0;
@@ -2557,17 +2557,13 @@ async function loadKizStep() {
   try {
     const res = await api("/api/assembly/" + id + "/kiz");
     if (mine !== kizLoad) return;
-    if (res.marketplace === "ozon" && res.skip_scan && !(kizState.manual && res.can_submit)) {
-      kizState.skippedCount += 1;
+    if (!kizState.manual && res.marketplace === "ozon" && res.skip_scan === true && res.need === 0 && !res.state_blocked) {
       if (kizState.index < kizState.ids.length - 1) {
         kizState.index += 1;
         return await loadKizStep();
       }
       $("kizModal").classList.remove("on");
       await loadAsm();
-      if (kizState.skippedCount === total) {
-        say($("aMsg"), total === 1 ? "Для этого заказа КиЗ не требуется." : "Для выбранных заказов КиЗ не требуется.");
-      }
       return;
     }
     kizState.canSubmit = res.can_submit !== false;
@@ -2581,9 +2577,11 @@ async function loadKizStep() {
     const mp = res.marketplace === "wb" ? "WB" : "Ozon";
     const title = kizState.products.length > 1 ? kizState.products.map((p) => `${p.article || p.name}: ${p.quantity} шт`).join("; ") : res.article || res.name || "";
     $("kizSub").textContent = mp + " " + res.ext_id + " · " + title + " · " + res.qty + " шт";
+    if (res.state_blocked) kizState.refreshOnClose = true;
     say($("kizMsg"), res.note || "");
     kizRender();
-    $("kizInput").focus();
+    if (kizState.canSubmit) $("kizInput").focus();
+    else $(total > 1 ? "kizSkip" : "kizClose").focus();
   } catch (e) {
     if (mine !== kizLoad) return;
     $("kizSub").textContent = identity;
@@ -2613,14 +2611,21 @@ async function openKizQueue(ids, opts) {
     }
     await loadAsm();
   }
-  kizState = { ids, index: 0, skippedCount: 0, id: 0, need: 0, codes: [], products: [], assignments: {}, manual: !!(opts && opts.manual) };
+  kizState = { ids, index: 0, id: 0, need: 0, codes: [], products: [], assignments: {}, manual: !!(opts && opts.manual) };
   $("kizModal").classList.add("on");
   await loadKizStep();
 }
 
 $("aKiz").onclick = openKizFromPick;
-$("kizClose").onclick = () => { if (!kizBusy) $("kizModal").classList.remove("on"); };
-$("kizModal").onclick = (e) => { if (!kizBusy && e.target === $("kizModal")) $("kizModal").classList.remove("on"); };
+function closeKiz() {
+  if (kizBusy) return;
+  ++kizLoad;
+  kizResetScan();
+  $("kizModal").classList.remove("on");
+  if (kizState.refreshOnClose) loadAsm().catch((e) => say($("aMsg"), e.message, "bad"));
+}
+$("kizClose").onclick = closeKiz;
+$("kizModal").onclick = (e) => { if (e.target === $("kizModal")) closeKiz(); };
 $("kizRemoveRemote").onclick = async () => {
   if (kizBusy || !confirm("Удалить сохранённые КиЗ этого отправления из Ozon? После удаления можно отсканировать правильные коды.")) return;
   kizBusy = true;
@@ -2707,6 +2712,8 @@ $("kizSkip").onclick = async () => {
     await loadKizStep();
     return;
   }
+  ++kizLoad;
+  kizResetScan();
   $("kizModal").classList.remove("on");
   await loadAsm();
 };
@@ -2740,7 +2747,7 @@ $("kizSend").onclick = async () => {
     const notes = (res.notes || []).join(" ");
     const more = kizState.index < kizState.ids.length - 1;
     if (more) {
-      say($("kizMsg"), "Коды приняты." + (notes ? " " + notes : "") + " Следующее задание.", "ok");
+      say($("kizMsg"), "Коды отправлены." + (notes ? " " + notes : "") + " Следующее задание.", "ok");
       kizState.index += 1;
       await loadKizStep();
       return;

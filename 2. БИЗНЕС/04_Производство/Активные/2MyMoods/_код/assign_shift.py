@@ -1,12 +1,5 @@
 #!/usr/bin/env python3
-"""Смена по графику Кристины и Тани.
-
-Утром переносит открытые задачи с той, кто сегодня не работает, на ту, кто работает.
-Закрытые задачи не трогает. Сделку переносит только если на ней висит такая задача,
-или если новая заявка и новое сообщение пришли не на того.
-
-По умолчанию показывает план. Запись в amo только с --apply.
-"""
+"""Передача общей очереди продаж по листу «График». CLI без --apply только читает."""
 
 from __future__ import annotations
 
@@ -15,7 +8,7 @@ import socket
 import time
 import urllib.parse
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -55,159 +48,292 @@ def stamp_path() -> Path:
     return runtime_dir() / "shift_stamp.txt"
 
 
-def open_tasks(amo: lib.Amo, user_id: int) -> list[dict]:
-    items: list[dict] = []
+BATCH = 50
+POLL_SECONDS = 60
+RECONCILE_SECONDS = 15 * 60
+_next_reconcile = 0.0
+_horizon_day = None
+
+
+def shift_day():
+    return (datetime.now(TZ) - timedelta(hours=MORNING_HOUR)).date()
+
+
+def roster(force=False):
+    return shift_roster.duty(shift_day(), force=force)
+
+
+def records(amo, kind, query):
+    seen = set()
     page = 1
-    while page <= 20:
-        st, body = amo.req(
-            "GET",
-            f"/api/v4/tasks?filter[responsible_user_id]={user_id}&filter[is_completed]=0&limit=250&page={page}",
-        )
-        if st == 204 or not (200 <= st < 300):
-            break
-        chunk = (body.get("_embedded") or {}).get("tasks") or []
-        items.extend(task for task in chunk if not task.get("is_completed"))
-        if len(chunk) < 250:
-            break
+    while True:
+        code, body = amo.req("GET", f"/api/v4/{kind}?{query}&limit=250&page={page}")
+        if code == 204:
+            return
+        rows = (body.get("_embedded") or {}).get(kind) if isinstance(body, dict) else None
+        if code != 200 or not isinstance(rows, list):
+            raise RuntimeError(f"{kind}, страница {page}: HTTP {code}, неполная выборка")
+        for row in rows:
+            key = row["talk_id" if kind == "talks" else "id"]
+            if key in seen:
+                raise RuntimeError(f"{kind}: данные изменились при постраничном чтении")
+            seen.add(key)
+            yield row
+        if not (body.get("_links") or {}).get("next") and len(rows) < 250:
+            return
+        if not rows:
+            raise RuntimeError(f"{kind}: пустая промежуточная страница")
         page += 1
-    return items
 
 
-def _patch_task(amo: lib.Amo, task_id: int, user_id: int) -> int:
-    st, _ = amo.req("PATCH", f"/api/v4/tasks/{task_id}", {"responsible_user_id": user_id})
-    return st
+def batches(ids):
+    ordered = sorted(set(ids))
+    for pos in range(0, len(ordered), BATCH):
+        yield ordered[pos:pos + BATCH]
 
 
-def _patch_lead(amo: lib.Amo, lead_id: int, user_id: int) -> int:
-    st, _ = amo.req("PATCH", f"/api/v4/leads/{lead_id}", {"responsible_user_id": user_id})
-    return st
+def id_filter(field, ids):
+    return "&".join(f"filter[{field}][{i}]={value}" for i, value in enumerate(ids))
 
 
-def move_tasks_on_lead(amo: lib.Amo, lead_id: int, off_id: int, on_id: int, apply: bool) -> int:
-    st, body = amo.req(
-        "GET",
-        f"/api/v4/tasks?filter[entity_id]={lead_id}&filter[is_completed]=0&limit=50",
-    )
-    if not (200 <= st < 300):
-        return 0
-    n = 0
-    for task in (body.get("_embedded") or {}).get("tasks") or []:
-        if task.get("is_completed") or task.get("responsible_user_id") != off_id:
-            continue
-        n += 1
-        if apply:
-            code = _patch_task(amo, task["id"], on_id)
-            print(f"  task {task['id']} [{code}] -> {on_id}", flush=True)
-    return n
+def by_ids(amo, kind, ids, *, unavailable=None, include=None):
+    for group in batches(ids):
+        query = id_filter("id", group) + (f"&with={include}" if include else "")
+        rows = list(records(amo, kind, query))
+        received = {row["id"] for row in rows}
+        if not received.issubset(group):
+            raise RuntimeError(f"{kind}: ответ содержит посторонние ID")
+        for missing in set(group) - received:
+            code, row = amo.req("GET", f"/api/v4/{kind}/{missing}" + (f"?with={include}" if include else ""))
+            if code == 200 and isinstance(row, dict) and row.get("id") == missing:
+                rows.append(row)
+            elif unavailable is not None and code in (204, 404):
+                unavailable.add(missing)
+            else:
+                raise RuntimeError(f"{kind}: карточка по ID не подтверждена, HTTP {code}")
+        yield from rows
+
+
+def active_sale(row):
+    return row["pipeline_id"] in SALES and row["status_id"] not in CLOSED
+
+
+def sales(amo, on_id, off_id):
+    for pipeline in sorted(SALES):
+        code, body = amo.req("GET", f"/api/v4/leads/pipelines/{pipeline}")
+        if code != 200:
+            raise RuntimeError(f"Этапы воронки: HTTP {code}")
+        statuses = [s["id"] for s in body["_embedded"]["statuses"]
+                    if s["id"] not in CLOSED and s.get("type") == 0]
+        if not statuses:
+            raise RuntimeError("Не найдены рабочие этапы продаж")
+        filters = [id_filter("responsible_user_id", [on_id, off_id]), "with=contacts"]
+        for i, status in enumerate(statuses):
+            filters.extend([f"filter[statuses][{i}][pipeline_id]={pipeline}",
+                            f"filter[statuses][{i}][status_id]={status}"])
+        for row in records(amo, "leads", "&".join(filters)):
+            if (row["pipeline_id"] != pipeline or row["status_id"] not in statuses
+                    or row["responsible_user_id"] not in (on_id, off_id)):
+                raise RuntimeError("Ответ amoCRM не соответствует фильтрам продаж")
+            yield row
+
+
+def safe_relations(amo, rows, on_id, off_id, known_sales=()):
+    """Контакт или компания могут одновременно обслуживаться другим отделом."""
+    refs = {r["id"]: {lead["id"] for lead in r["_embedded"]["leads"]} for r in rows}
+    remaining = {lid for lids in refs.values() for lid in lids} - set(known_sales)
+    missing = set()
+    outside = {lead["id"] for lead in by_ids(amo, "leads", remaining, unavailable=missing)
+               if lead["status_id"] not in CLOSED and
+               (lead["pipeline_id"] not in SALES or lead["responsible_user_id"] not in (on_id, off_id))}
+    return {eid for eid, lids in refs.items() if lids & (outside | missing)}
+
+
+def plan(amo, on_id, off_id):
+    leads = list(sales(amo, on_id, off_id))
+    changes = {"contacts": set(), "companies": set(), "tasks": set(), "leads": set()}
+    linked = {"contacts": set(), "companies": set()}
+    tasks = list(records(amo, "tasks", id_filter("responsible_user_id", [on_id, off_id]) + "&filter[is_completed]=0"))
+    active_ids = {lead["id"] for lead in leads}
+    closed_ids = {t["entity_id"] for t in tasks if t.get("entity_type") == "leads" and t.get("entity_id")} - active_ids
+    missing_parents = set()
+    for lead in by_ids(amo, "leads", closed_ids, unavailable=missing_parents, include="contacts"):
+        if (lead["pipeline_id"] in SALES and lead["status_id"] in CLOSED
+                and lead["responsible_user_id"] in (on_id, off_id)):
+            leads.append(lead)
+    for task in tasks:
+        if task["is_completed"] or task["responsible_user_id"] not in (on_id, off_id):
+            raise RuntimeError("Ответ amoCRM не соответствует фильтру задач")
+        if task["responsible_user_id"] == off_id:
+            changes["tasks"].add(task["id"])
+        if task.get("entity_type") in linked and task.get("entity_id"):
+            linked[task["entity_type"]].add(task["entity_id"])
+    for lead in leads:
+        if lead["id"] in active_ids and lead["responsible_user_id"] == off_id:
+            changes["leads"].add(lead["id"])
+        for kind in linked:
+            linked[kind].update(x["id"] for x in lead["_embedded"][kind])
+
+    talk_contacts = set()
+    talk_count = 0
+    for group in batches(row["id"] for row in leads):
+        query = "filter[only_in_work]=1&filter[entity_type]=lead&" + id_filter("entity_id", group)
+        for talk in records(amo, "talks", query):
+            if talk["entity_id"] not in group or talk["entity_type"] != "lead":
+                raise RuntimeError("Ответ amoCRM не соответствует фильтру бесед")
+            if talk["is_in_work"]:
+                talk_contacts.add(talk["contact_id"])
+                talk_count += 1
+    linked["contacts"].update(talk_contacts)
+    other_chat_owners = set()
+    shared = {}
+    known_sales = {lead["id"] for lead in leads}
+    unavailable = {kind: set() for kind in linked}
+    for kind, ids in linked.items():
+        rows = list(by_ids(amo, kind, ids, unavailable=unavailable[kind], include="leads"))
+        candidates = [row for row in rows if row["responsible_user_id"] == off_id]
+        shared[kind] = safe_relations(amo, candidates, on_id, off_id, known_sales)
+        for row in rows:
+            owner = row["responsible_user_id"]
+            if owner == off_id and row["id"] not in shared[kind]:
+                changes[kind].add(row["id"])
+            elif kind == "contacts" and row["id"] in talk_contacts and owner not in (on_id, off_id):
+                other_chat_owners.add(row["id"])
+
+    print(f"Открытые продажи {len(active_ids)}, закрытые с открытой задачей {len(leads) - len(active_ids)}, "
+          f"беседы в этих карточках {talk_count}, "
+          f"контакты бесед у других сотрудников {len(other_chat_owners)}, "
+          f"недоступные контакты {len(unavailable['contacts'])} "
+          f"(в беседах {len(unavailable['contacts'] & talk_contacts)}), "
+          f"недоступные компании {len(unavailable['companies'])}", flush=True)
+    for reason, ids in {**{"shared_" + k: v for k, v in shared.items()},
+                        **{"unavailable_" + k: v for k, v in unavailable.items()},
+                        "other_chat_owners": other_chat_owners}.items():
+        if ids:
+            print(f"{reason} ({len(ids)}): {sorted(ids)}", flush=True)
+    return changes
+
+
+def apply_group(amo, kind, ids, on_id, off_id):
+    related = kind in ("contacts", "companies")
+    rows = list(by_ids(amo, kind, ids, include="leads" if related else None))
+    shared = safe_relations(amo, rows, on_id, off_id) if related else set()
+    update = [{"id": r["id"], "responsible_user_id": on_id} for r in rows
+              if r["responsible_user_id"] == off_id and r["id"] not in shared
+              and (kind != "leads" or active_sale(r))
+              and (kind != "tasks" or not r["is_completed"])]
+    if not update:
+        return
+    if roster(force=True)[0] != on_id:
+        raise RuntimeError("График изменился во время передачи")
+    expected = {r["id"] for r in update}
+    print(f"Передача {kind} {off_id} -> {on_id}, ID: {sorted(expected)}", flush=True)
+    code, body = amo.req("PATCH", f"/api/v4/{kind}", update)
+    if code != 200:
+        raise RuntimeError(f"Передача {kind}: HTTP {code}")
+    acknowledged = body.get("_embedded", {}).get(kind, []) if isinstance(body, dict) else []
+    if {r["id"] for r in acknowledged} != expected:
+        raise RuntimeError(f"amoCRM не подтвердила весь пакет {kind}")
+    if any(r["responsible_user_id"] != on_id for r in by_ids(amo, kind, expected)):
+        raise RuntimeError(f"{kind}: владелец после записи не подтверждён")
 
 
 def nudge_lead(amo: lib.Amo, lead: dict) -> int | None:
-    """Если сделка продаж на той, кто сегодня не работает, отдаёт дежурной."""
-    on_id, _why = shift_roster.duty()
+    on_id, _ = roster()
     off_id = shift_roster.other(on_id)
-    if not on_id or not off_id:
+    if not off_id or not active_sale(lead) or lead["responsible_user_id"] != off_id:
         return None
-    if lead.get("pipeline_id") not in SALES:
+    # Вебхук мог прийти до ручной смены владельца или закрытия.
+    lead_id = lead["id"]
+    try:
+        apply_group(amo, "leads", [lead_id], on_id, off_id)
+        current, = by_ids(amo, "leads", [lead_id])
+        if not active_sale(current) or current["responsible_user_id"] != on_id:
+            return None
+    except RuntimeError as exc:
+        print(f"Передачу сделки {lead_id} проверит очередная сверка: {exc}", flush=True)
         return None
-    if lead.get("status_id") in CLOSED:
-        return None
-    if lead.get("responsible_user_id") != off_id:
-        return None
-    code = _patch_lead(amo, lead["id"], on_id)
-    print(f"  lead {lead['id']} [{code}] {off_id} -> {on_id}", flush=True)
-    if 200 <= code < 300:
-        move_tasks_on_lead(amo, lead["id"], off_id, on_id, apply=True)
-        return on_id
-    return None
+    try:
+        query = f"filter[entity_type]=leads&filter[entity_id]={lead_id}&filter[is_completed]=0"
+        tasks = [r["id"] for r in records(amo, "tasks", query)
+                 if r["entity_type"] == "leads" and r["entity_id"] == lead_id
+                 and r["responsible_user_id"] == off_id and not r["is_completed"]]
+        for group in batches(tasks):
+            apply_group(amo, "tasks", group, on_id, off_id)
+    except RuntimeError as exc:
+        print(f"Задачи сделки {lead_id} повторно проверит сверка: {exc}", flush=True)
+    return on_id
 
 
 def run(apply: bool, pretend: int | None = None) -> str:
-    if pretend:
-        on_id = pretend
-        name = "Кристина" if on_id == lib.USER_KRISTINA else "Таня" if on_id == lib.USER_TANYA else str(on_id)
-        why = f"просмотр, как будто работает {name}"
-    else:
-        on_id, why = shift_roster.duty()
-    print(f"График: {why}", flush=True)
+    if pretend is not None and (apply or not shift_roster.other(pretend)):
+        raise ValueError("Подмена смены разрешена только для просмотра одного из двух менеджеров")
+    on_id, why = (pretend, "предпросмотр") if pretend else roster(force=True)
     off_id = shift_roster.other(on_id)
-    if not on_id or not off_id:
-        print("Сегодня никого не переключаю", flush=True)
+    print(f"График: {why}", flush=True)
+    if not off_id:
         return "skip"
     amo = amo_client()
-    tasks = open_tasks(amo, off_id)
-    lead_ids: set[int] = set()
-    print(f"Открытых задач у {off_id}: {len(tasks)}", flush=True)
-    for task in tasks:
-        text = (task.get("text") or "").replace("\n", " ")[:80]
-        print(f"  задача {task['id']} {text}", flush=True)
-        if apply:
-            code = _patch_task(amo, task["id"], on_id)
-            print(f"    -> {on_id} [{code}]", flush=True)
-        if task.get("entity_type") == "leads" and task.get("entity_id"):
-            lead_ids.add(int(task["entity_id"]))
-    moved_leads = 0
-    for lead_id in sorted(lead_ids):
-        st, lead = amo.req("GET", f"/api/v4/leads/{lead_id}")
-        if not (200 <= st < 300) or not isinstance(lead, dict):
-            continue
-        if lead.get("pipeline_id") not in SALES or lead.get("status_id") in CLOSED:
-            continue
-        if lead.get("responsible_user_id") != off_id:
-            continue
-        moved_leads += 1
-        print(f"  сделка {lead_id} вместе с задачей", flush=True)
-        if apply:
-            code = _patch_lead(amo, lead_id, on_id)
-            print(f"    -> {on_id} [{code}]", flush=True)
-    print(
-        f"{'Перенесено' if apply else 'План'}: задач {len(tasks)}, сделок рядом с ними {moved_leads}",
-        flush=True,
-    )
+    status, account = amo.req("GET", "/api/v4/account")
+    if status != 200 or account.get("subdomain") != "2my":
+        raise RuntimeError("Аккаунт 2MY не подтверждён")
+    status, user = amo.req("GET", f"/api/v4/users/{on_id}")
+    if status != 200 or user.get("rights", {}).get("is_active") is not True:
+        raise RuntimeError("Дежурный пользователь amoCRM не подтверждён")
+    changes = plan(amo, on_id, off_id)
+    print("К передаче:", {kind: len(ids) for kind, ids in changes.items()}, flush=True)
+    if apply and any(changes.values()):
+        for kind, ids in changes.items():
+            for group in batches(ids):
+                apply_group(amo, kind, group, on_id, off_id)
+        remaining = plan(amo, on_id, off_id)
+        print("Остаток:", {kind: len(ids) for kind, ids in remaining.items()}, flush=True)
+        if any(remaining.values()):
+            raise RuntimeError("Повторное чтение обнаружило непереданные карточки")
+    if apply and roster(force=True)[0] != on_id:
+        raise RuntimeError("К концу проверки график изменился")
     return "ok"
 
 
 def maybe_morning() -> float:
-    """После 7:00 по Москве. Повтор, если галочку сменили."""
-    now = datetime.now(TZ)
-    if now.hour < MORNING_HOUR:
-        nxt = now.replace(hour=MORNING_HOUR, minute=0, second=5, microsecond=0)
-        return nxt.timestamp()
-    try:
-        added = shift_roster.ensure_horizon()
-        if added:
-            print(f"График продлён на {added} дн.", flush=True)
-    except Exception as exc:
-        print(f"График не продлился: {exc}", flush=True)
-    on_id, why = shift_roster.duty()
-    if not on_id:
-        mark = f"{now.date().isoformat()} skip {why}"
-        path = stamp_path()
-        if not path.is_file() or path.read_text(encoding="utf-8").strip() != mark:
-            print(f"Утро: {why}", flush=True)
-            path.write_text(mark, encoding="utf-8")
-        return time.time() + 900
-    stamp = f"{now.date().isoformat()} {on_id}"
+    global _next_reconcile, _horizon_day
+    day = shift_day()
+    if _horizon_day != day:
+        try:
+            shift_roster.ensure_horizon()
+            _horizon_day = day
+        except Exception as exc:
+            print(f"График не продлился: {type(exc).__name__}", flush=True)
+    on_id, why = roster()
+    stamp = f"{day.isoformat()} {on_id}" if on_id else f"{day.isoformat()} skip {why}"
     path = stamp_path()
-    if path.is_file() and path.read_text(encoding="utf-8").strip() == stamp:
-        return time.time() + 1800
-    print(f"Утро, смена {why}", flush=True)
-    result = run(apply=True)
-    if result == "ok":
-        path.write_text(stamp, encoding="utf-8")
-    return time.time() + 1800
+    previous = path.read_text(encoding="utf-8").strip() if path.is_file() else ""
+    if not on_id:
+        if stamp != previous:
+            print(f"Передача пропущена: {why}", flush=True)
+            path.write_text(stamp, encoding="utf-8")
+        _next_reconcile = 0
+    elif stamp != previous or time.monotonic() >= _next_reconcile:
+        try:
+            if run(apply=True) == "ok" and day == shift_day() and roster()[0] == on_id:
+                path.write_text(stamp, encoding="utf-8")
+                _next_reconcile = time.monotonic() + RECONCILE_SECONDS
+        except Exception as exc:
+            print(f"Передача не подтверждена, будет повтор: {exc}", flush=True)
+    return time.time() + POLL_SECONDS
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--apply", action="store_true")
-    parser.add_argument("--publish", action="store_true", help="Собрать пустой лист с галочками")
-    parser.add_argument("--preview", type=int, default=0, help="Чей id считать дежурным, без записи")
+    action = parser.add_mutually_exclusive_group()
+    action.add_argument("--apply", action="store_true")
+    action.add_argument("--publish", action="store_true", help="Собрать пустой лист с галочками")
+    action.add_argument("--preview", type=int, choices=[lib.USER_KRISTINA, lib.USER_TANYA])
     args = parser.parse_args()
     if args.publish:
-        n = shift_roster.publish()
-        print(f"Лист готов, дней {n}")
-        return
-    run(apply=args.apply, pretend=args.preview or None)
+        print(f"Лист готов, дней {shift_roster.publish()}")
+    else:
+        run(apply=args.apply, pretend=args.preview)
 
 
 if __name__ == "__main__":

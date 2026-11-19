@@ -1384,7 +1384,7 @@ def list_open_shipments(cabinet_id, kind="", groups=("ready", "shipped")):
     if kind:
         sql += " AND kind = ?"
         args.append(kind)
-    sql += " AND %s IN (%s)" % (EFF_GROUP, ",".join("?" * len(groups)))
+    sql += " AND COALESCE(assembly_excluded,0)=0 AND %s IN (%s)" % (EFF_GROUP, ",".join("?" * len(groups)))
     args.extend(groups)
     rows = conn.execute(sql + " ORDER BY id", args).fetchall()
     conn.close()
@@ -1890,7 +1890,7 @@ def shipped_by_day(client_id, day_from, day_to):
     conn = connect()
     rows = conn.execute(
         "SELECT * FROM shipments "
-        "WHERE shipments.client_id = ? AND shipments.status_group IN ('shipped','pickup','delivered') "
+        "WHERE shipments.client_id = ? AND shipments.kind='fbs' AND COALESCE(shipments.assembly_excluded,0)=0 AND shipments.status_group IN ('shipped','pickup','delivered') "
         "AND COALESCE(shipments.work_state,'') <> 'replaced' "
         "AND substr(shipments.shipped_at,1,10) >= ? AND substr(shipments.shipped_at,1,10) <= ? "
         "ORDER BY shipments.article, shipments.shipped_at",
@@ -1926,7 +1926,7 @@ def list_shipments(client_id=None, marketplace="", kind="", marked=None, day_fro
     args = []
     # отменённые храним ради вкладки «Отменены» в Сборке, но в отгрузки и выгрузку
     # кодов маркировки они попадать не должны
-    sql += " AND COALESCE(shipments.status_group, '') <> 'cancelled'"
+    sql += " AND COALESCE(shipments.assembly_excluded,0)=0 AND COALESCE(shipments.status_group, '') <> 'cancelled'"
     if client_id:
         sql += " AND shipments.client_id = ?"
         args.append(int(client_id))
@@ -2165,7 +2165,7 @@ def overview_stats(client_id=None, day_from="", day_to=""):
     if client_id:
         where += " AND client_id = ?"
         args.append(int(client_id))
-    ship_where = where + _day_filter("shipped_at", day_from, day_to, args)
+    ship_where = where + " AND COALESCE(assembly_excluded,0)=0" + _day_filter("shipped_at", day_from, day_to, args)
     tot = conn.execute(
         "SELECT count(*) n, coalesce(sum(qty),0) qty, coalesce(sum(marks_count),0) marks, "
         "sum(CASE WHEN marks_count = 0 THEN 1 ELSE 0 END) without "

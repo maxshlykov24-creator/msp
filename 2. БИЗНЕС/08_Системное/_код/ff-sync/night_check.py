@@ -80,6 +80,11 @@ def check_wb(cab, live=False, status_cache=None):
     return len(rows), fixed + fresh_saved
 
 
+def clear_ozon_work(row, group):
+    # Отметку «готово к отгрузке» снимает склад или конечный статус площадки.
+    return group in DONE and not (group == statuses_mod.SHIPPED and row["work_state"] == statuses_mod.READY)
+
+
 def check_ozon_live(cab, status_cache=None):
     """Сверка заказов, которые склад ещё держит в работе. Список FBS не трогаем.
 
@@ -93,6 +98,7 @@ def check_ozon_live(cab, status_cache=None):
         return 0, 0
     headers = ozon_headers(cab["client_id_ext"], cab["token"])
     fixed = 0
+    incomplete = []
     for row in rows:
         result = (status_cache or {}).get(str(row["ext_id"]))
         if result is None:
@@ -106,25 +112,29 @@ def check_ozon_live(cab, status_cache=None):
             if r.status_code == 429:
                 raise RuntimeError("Ozon: точечная проверка, HTTP 429")
             if r.status_code != 200:
+                incomplete.append("HTTP %s" % r.status_code)
                 continue
             result = (r.json() or {}).get("result") or {}
         raw = result.get("status") or ""
         if result.get("posting_number") != row["ext_id"] or raw not in statuses_mod.OZON:
+            incomplete.append("номер или статус не подтверждён")
             continue
         qr_updated = set_shipment_scanit(row['id'], result.get('scanit'))
         status = statuses_mod.ru(raw)
         group = statuses_mod.ozon_group(raw)
         track = result.get("tracking_number") or row["track"] or ""
-        if not _changed(row, status, group) and not (group in DONE and (row["work_state"] or "")):
+        if not _changed(row, status, group) and not (clear_ozon_work(row, group) and row["work_state"]):
             if not (group == statuses_mod.READY and (row["work_state"] or "") == statuses_mod.ASSEMBLING):
                 fixed += qr_updated
                 continue
-        set_shipment_status(row["id"], status, group, clear_work=group in DONE, track=track)
+        set_shipment_status(row["id"], status, group, clear_work=clear_ozon_work(row, group), track=track)
         if group == statuses_mod.READY and (row["work_state"] or "") == statuses_mod.ASSEMBLING:
             from db import set_work_state
 
             set_work_state([row["id"]], statuses_mod.READY)
         fixed += 1
+    if incomplete:
+        raise RuntimeError("Ozon: не сверено %s отправлений (%s)" % (len(incomplete), ", ".join(sorted(set(incomplete)))))
     return len(rows), fixed
 
 
@@ -175,7 +185,7 @@ def check_ozon(cab, live=False, status_cache=None):
         stale = (
             _changed(row, status, group)
             or track != (row["track"] or "")
-            or (group in DONE and (row["work_state"] or ""))
+            or (clear_ozon_work(row, group) and row["work_state"])
         )
         try:
             composition_changed = not same_ozon(row, post)
@@ -187,7 +197,7 @@ def check_ozon(cab, live=False, status_cache=None):
         if not stale:
             fixed += int(composition_changed)
             continue
-        set_shipment_status(row["id"], status, group, clear_work=group in DONE, track=track)
+        set_shipment_status(row["id"], status, group, clear_work=clear_ozon_work(row, group), track=track)
         fixed += 1
     if incomplete:
         raise RuntimeError("Ozon: часть рабочих отправлений не удалось сверить")

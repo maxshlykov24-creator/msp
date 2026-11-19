@@ -127,7 +127,10 @@ def setup(tmp_path):
         return execute(engine, actor, op or str(uuid4()), command, payload, 'Контрольный пример')
     for item_id, qty in [('cloth', '100.5'), ('s', 10), ('m', 0)]:
         cmd('stock.adjust', {'item_id': item_id, 'location': 'own', 'version': 0, 'physical': qty})
-    return engine, user, cmd
+    try:
+        yield engine, user, cmd
+    finally:
+        engine.dispose()
 
 
 def balance(engine, item='s', loc='own'):

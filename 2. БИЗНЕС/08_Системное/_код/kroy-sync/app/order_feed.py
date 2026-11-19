@@ -164,7 +164,7 @@ def order_scope(platform='',scheme='',query='',start='',end='',attention=False):
     return filters
 
 
-def list_orders(s,platform='',scheme='',status='',query='',start='',end='',page=1,per_page=50,attention=False):
+def list_orders(s,platform='',scheme='',status='',query='',start='',end='',page=1,per_page=50,attention=False,compact=False):
     filters=order_scope(platform,scheme,query,start,end,attention)
     grouped=shown_status()
     counts={row[0] or 'unknown':row[1] for row in s.execute(select(grouped,func.count()).where(*filters).group_by(grouped))}
@@ -175,8 +175,22 @@ def list_orders(s,platform='',scheme='',status='',query='',start='',end='',page=
     q=select(Entity).where(*filters)
     total=s.scalar(select(func.count()).select_from(q.subquery()))
     result=[]
-    for e in s.scalars(q.order_by(Entity.data['created_at'].as_string().desc(),Entity.id).offset((page-1)*per_page).limit(per_page)):
-        result.append(public_order(s,e))
+    page_rows=list(s.scalars(q.order_by(Entity.data['created_at'].as_string().desc(),Entity.id).offset((page-1)*per_page).limit(per_page)))
+    returned=set()
+    if compact:
+        for market,kind,ref,field in [('ozon','market_return','posting_number','external_id'),('wb','market_sale','order_ref','source_ref')]:
+            keys={r.data.get(field) for r in page_rows if r.data['platform']==market and r.data.get(field)}
+            if not keys: continue
+            ref_col=Entity.data[ref].as_string()
+            lookup=select(Entity.data['account'].as_string(),ref_col).where(Entity.kind==kind,ref_col.in_(keys))
+            if market=='wb':lookup=lookup.where(Entity.data['kind'].as_string()=='return')
+            returned.update((market,account,value) for account,value in s.execute(lookup))
+    for e in page_rows:
+        if compact:
+            d=e.data
+            result.append({k:d.get(k) for k in ('platform','scheme','external_id','order_number','status','created_at','lines','shipment_due','accounting_state','raw_status')} | {'id':e.id,'display_status':display_status(d),'has_returns':(d['platform'],d['account'],d.get('source_ref') if d['platform']=='wb' else d['external_id']) in returned})
+        else:
+            result.append(public_order(s,e))
     return dict(rows=result,total=total,page=page,per_page=per_page,counts=counts)
 
 
@@ -185,5 +199,9 @@ def public_order(s,e):
     returns=[{'id':r.id,**r.data} for r in s.scalars(select(Entity).where(Entity.kind=='market_return',Entity.data['account'].as_string()==d['account'],Entity.data['posting_number'].as_string()==d['external_id']))]
     if d['platform']=='wb':
         returns=[{'id':r.id,**r.data,'status_label':'Возврат зарегистрирован ВБ','changed_at':r.data.get('order_at')} for r in s.scalars(select(Entity).where(Entity.kind=='market_sale',Entity.data['account'].as_string()==d['account'],Entity.data['order_ref'].as_string()==d['source_ref'],Entity.data['kind'].as_string()=='return'))]
-    group='new' if d.get('platform')=='ozon' and d.get('raw_status')=='awaiting_packaging' else 'shipping' if d.get('platform')=='ozon' and d.get('raw_status') in ('arbitration','client_arbitration') else d['status']
+    group=display_status(d)
     return {'id':e.id,'version':e.version,**d,'display_status':group,'returns':returns,'ledger':{'id':ledger.id,'version':ledger.version,**ledger.data} if ledger else None}
+
+
+def display_status(d):
+    return 'new' if d.get('platform')=='ozon' and d.get('raw_status')=='awaiting_packaging' else 'shipping' if d.get('platform')=='ozon' and d.get('raw_status') in ('arbitration','client_arbitration') else d['status']

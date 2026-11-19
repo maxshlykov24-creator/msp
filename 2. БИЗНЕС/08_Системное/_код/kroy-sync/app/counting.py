@@ -72,7 +72,9 @@ def count_command(s, doc, command, p):
     require(type(p.get('version')) is int, 'Нужна версия документа', 422)
     e = entity(s, p['id'], 'count', p['version'])
     d = copy.deepcopy(e.data)
-    require(d['status'] == 'draft', 'Пересчёт уже проведён')
+    editable = d['status'] == 'draft'
+    sealed = d['status'] == 'counted'
+    require(editable or sealed and command in ('count.post', 'count.resume', 'count.refresh'), 'Документ закрыт для редактирования')
     if command == 'count.scan':
         scan(s, d, p.get('barcode'))
     elif command == 'count.set':
@@ -104,14 +106,31 @@ def count_command(s, doc, command, p):
                 updated = snapshot(s, item_id, d['location'])
                 row.update(version=updated['version'], expected=updated['expected'])
         d['saved_at'] = now().isoformat()
+    elif command == 'count.finish':
+        require(d.get('mode') == 'scanned' and d['items'], 'Сначала отсканируй товар', 422)
+        require(not any(not r.get('resolved') for r in d['unknown']), 'Разбери неизвестные коды')
+        comment = p.get('comment', d.get('comment', ''))
+        require(isinstance(comment,str) and len(comment)<=4000, 'Комментарий до 4000 символов', 422)
+        d.update(status='counted', counted_at=now().isoformat(), comment=comment.strip())
+    elif command == 'count.resume':
+        require(sealed, 'Сканирование уже открыто')
+        d['status'] = 'draft'
     elif command == 'count.post':
         require(d['items'], 'Нет посчитанных позиций', 422)
         require(not any(not r.get('resolved') for r in d['unknown']), 'Есть неразобранные коды. Нужна сверка')
         scanned = d.get('mode') == 'scanned'
+        action = p.get('action', 'replace')
+        require(action in ('replace', 'receive') and (action == 'replace' or scanned and sealed), 'Сначала заверши сканирование', 422)
         if not scanned: require(p.get('confirm_zeroes') is True, 'Подтверди нули для несканированных позиций', 422)
         for item_id, row in d['items'].items():
             b = get_balance(s, item_id, d['location'])
             require(b.version == row['version'], 'После начала пересчёта были движения или резервы. Нужна сверка')
+            if action == 'receive':
+                require(b.known, 'Для прихода сначала нужен начальный остаток: ' + get_item(s, item_id).name)
+                added = Decimal(row['count'])
+                row.update(expected=str(b.free+b.reserved), difference=str(added), after=str(b.free+b.reserved+added))
+                if added: move(s, doc, item_id, d['location'], {'free': added})
+                continue
             restricted = b.reserved if scanned else b.reserved + b.frozen + b.damaged
             target = Decimal(row['count']) - restricted
             require(target >= 0, 'Посчитанное количество меньше резерва: ' + get_item(s, item_id).name)
@@ -119,6 +138,6 @@ def count_command(s, doc, command, p):
             row['difference'] = str(Decimal(row['count']) - Decimal(row['expected'])) if row['expected'] is not None else None
             b.known = True
             move(s, doc, item_id, d['location'], {'free': target - b.free})
-        d.update(status='posted', posted_at=now().isoformat())
+        d.update(status='posted', post_action=action, posted_at=now().isoformat())
     save(e, d)
     return {'id': e.id, 'version': e.version}

@@ -24,7 +24,7 @@ from db import (
     upsert_shipment,
 )
 from net import OZON_BASE, WB_BASE, ozon_headers, req, wb_headers, wb_read
-from orders_pull import WB_FBS_WAREHOUSES, filter_wb_fbs, moment_of, ozon_list, pull_wb_fbo, pull_wb_fbs, since_days
+from orders_pull import WB_FBS_WAREHOUSES, filter_wb_fbs, ozon_fbs_served, moment_of, ozon_list, pull_wb_fbo, pull_wb_fbs, since_days
 
 MSK = timezone(timedelta(hours=3))
 MARK_KEYS = {
@@ -531,6 +531,10 @@ def handle_ozon(client, cab, kind, postings, headers, status_cache=None):
         if not ext_id:
             continue
         row = known.get(ext_id)
+        # После разделения заказа refresh_ozon передаёт только номер.
+        # В этом случае склад проверяется по detail ниже.
+        if post.get("delivery_method") and not ozon_fbs_served(client, kind, post):
+            continue
         # FBO list уже содержит состав. GET по каждому отправлению на больших кабинетах занимает минуты.
         detail = post
         fetched = False
@@ -539,10 +543,12 @@ def handle_ozon(client, cab, kind, postings, headers, status_cache=None):
             if got:
                 detail = as_dict(got)
                 fetched = True
-        elif row is not None and same_ozon(row, post):
+        elif row is not None and same_ozon(row, post) and ozon_fbs_served(client, kind, post):
             # ни статус, ни трек не менялись — строку не перезаписываем
             if status_cache is not None:
                 status_cache[ext_id] = {k: post.get(k) for k in ('posting_number', 'status', 'tracking_number', 'scanit')}
+            continue
+        if not ozon_fbs_served(client, kind, detail):
             continue
         items = ozon_items(client, cab, detail.get('products') or post.get('products'))
         if str(detail.get('posting_number') or '') != ext_id:

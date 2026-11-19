@@ -18,10 +18,10 @@ COMMAND_RIGHT = {
     'task.reserve_materials': 'cut_plan', 'material.receive': 'adjust', 'task.save': 'cut_plan', 'task.issue': 'cut_plan', 'item.create': 'catalog', 'item.update': 'catalog', 'user.create': 'settings', 'user.update': 'settings', 'norm.set': 'settings', 'telegram.link': 'settings', 'stock.adjust': 'adjust', 'freeze.create': 'freeze',
     'freeze.release': 'freeze', 'freeze.extend': 'freeze', 'freeze.configure': 'settings', 'task.create': 'cut_plan',
     'task.reverse_fact': 'adjust', 'order.reserve': 'orders', 'fbo.reserve': 'orders', 'fbo.resolve': 'adjust', 'task.approve': 'cut_plan', 'task.revise': 'cut_plan', 'task.confirm': 'cut', 'task.cancel': 'cut_plan',
-    'count.create': 'count', 'count.scan': 'count', 'count.set': 'count', 'count.resolve': 'count', 'count.post': 'adjust', 'count.save': 'count', 'count.refresh': 'count',
+    'count.finish': 'count', 'count.resume': 'count', 'stock.batch': 'adjust', 'cut.report': 'cut_plan', 'count.create': 'count', 'count.scan': 'count', 'count.set': 'count', 'count.resolve': 'count', 'count.post': 'adjust', 'count.save': 'count', 'count.refresh': 'count',
     'order.create': 'orders', 'order.ship': 'orders', 'order.cancel': 'orders',
     'return.receive': 'orders', 'fbo.create': 'orders', 'fbo.dispatch': 'orders',
-    'fbo.accept': 'orders', 'finance.record': 'finance',
+    'fbo.accept': 'orders', 'finance.record': 'finance', 'workshop.record':'finance', 'workshop.close':'finance',
 }
 BUCKETS = ('free', 'frozen', 'reserved', 'damaged')
 
@@ -181,14 +181,23 @@ def dispatch(s, doc, command, p):
         codes = p.get('barcodes', [])
         require(isinstance(codes, list) and all(isinstance(c, str) and c.strip() for c in codes), 'Штрихкоды должны быть строками', 422)
         require(len(codes) == len(set(codes)), 'Повтор штрихкода', 422)
-        for other in s.scalars(select(Item)):
-            require(not set(codes).intersection(other.barcodes), 'Штрихкод уже привязан к другой позиции')
+        from .product_identity import barcode_matches
+        require(all(c == c.strip() and len(c) <= 300 and not barcode_matches(s,c) for c in codes), 'Проверь штрихкод: код уже занят или некорректен', 422)
+        if p['kind'] == 'garment' and p.get('color') and p.get('size'):
+            dup=s.scalar(select(Item.id).where(Item.kind=='garment',Item.model==p['model'],Item.color==p['color'],Item.size==p['size']))
+            require(dup is None, 'Такая модель, цвет и размер уже есть в товарах')
         photo = p.get('photo', '')
         require(not photo or photo.startswith('https://'), 'Фото: HTTPS-ссылка', 422)
         s.add(Item(id=p['id'], name=p['name'], model=p['model'], kind=p['kind'], unit=p['unit'],
                    color=p.get('color', ''), size=p.get('size', ''), category=p.get('category', ''),
                    barcodes=codes, photo=photo, source={'document': doc}))
         return {'item_id': p['id']}
+    if command == 'cut.report':
+        from .report_import import store_report
+        return store_report(s,doc,p)
+    if command == 'stock.batch':
+        from .stock_edits import apply_changes
+        return apply_changes(s, doc, p)
     if command == 'stock.adjust':
         item = get_item(s, p['item_id'])
         b = get_balance(s, item.id, p['location'])
@@ -446,6 +455,9 @@ def dispatch(s, doc, command, p):
         d['status'] = 'returned' if all(Decimal(returned.get(i, '0')) == q for i, q in expected.items()) else 'returned_partial'
         save(e, d)
         return {'id': e.id, 'version': e.version}
+    if command.startswith('workshop.'):
+        from . import workshop
+        return (workshop.record if command=='workshop.record' else workshop.close)(s,doc,p)
     if command == 'finance.record':
         require(p['kind'] in ('advance', 'payment', 'rate', 'correction'), 'Неизвестная финансовая запись', 422)
         q = quantity(p['amount'], positive=False)
@@ -454,6 +466,7 @@ def dispatch(s, doc, command, p):
         require(p.get('effective_date'), 'Укажи дату действия', 422)
         from datetime import date
         date.fromisoformat(p['effective_date'])
+        require(not s.get(Entity,'workshop:'+p['effective_date'][:7]),'Месяц уже закрыт')
         e = create_entity(s, doc, 'finance', {**p, 'amount': str(q), 'calculation_status': 'rules_pending'})
         return {'id': e.id, 'final_payable': None, 'message': 'Правила расчёта цеха не подтверждены'}
     raise DomainError('Команда не реализована', 422)

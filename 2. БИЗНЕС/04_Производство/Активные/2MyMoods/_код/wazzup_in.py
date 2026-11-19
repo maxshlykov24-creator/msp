@@ -345,7 +345,7 @@ def _who(msg: dict) -> tuple[str, str, str]:
 def _align(tail: str, tg_id: str, username: str) -> None:
     import assign_shift
 
-    on_id, _why = assign_shift.shift_roster.duty()
+    on_id, _why = assign_shift.roster()
     off_id = assign_shift.shift_roster.other(on_id)
     if not off_id:
         return

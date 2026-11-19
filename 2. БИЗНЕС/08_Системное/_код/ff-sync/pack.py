@@ -27,6 +27,8 @@ def ozon_products(cab, posting):
     detail = pull_ozon_get(heads, "fbs", posting) or {}
     if isinstance(detail, list):
         detail = detail[0] if detail else {}
+    if detail.get('posting_number') != posting:
+        raise PackError('Ozon не подтвердил номер отправления. Обнови заказ перед сборкой.')
     return [{'product_id': p['product_id'], 'quantity': p['qty']}
             for p in ozon_composition(detail.get('products'))]
 
@@ -74,7 +76,10 @@ def ship_ozon(cab, posting, split=True):
     result = data.get("result")
     if isinstance(result, dict):
         result = result.get("posting_numbers") or result.get("result") or []
-    numbers = [str(x) for x in (result or []) if x]
+    if result and (not isinstance(result, list) or any(not isinstance(x, str) or not x.strip() for x in result)
+                   or len(set(result)) != len(result)):
+        raise PackError("Ozon вернул некорректные номера после сборки. Обнови заказ перед повтором.")
+    numbers = result or []
     if not numbers:
         from shipments_pull import pull_ozon_get
         detail = pull_ozon_get(ozon_headers(cab['client_id_ext'], cab['token']), 'fbs', posting, strict=True)

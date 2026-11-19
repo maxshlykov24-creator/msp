@@ -1480,8 +1480,11 @@ def enrich_shipment_discounts(snap: dict, ms=None) -> None:
                                          (doc.get("moment") if entity == "demand" else "") or "")[:10]}
             if not order:
                 unlinked[entity] += 1
-                gaps.append({**item, "reason": "Нет подтверждённой связи с заказом и исходной отгрузкой"})
-                continue
+                # A demand proves the shipment date and quantities on its own.
+                # A return still needs a verified original demand.
+                if entity == "salesreturn" and (not original or original["lines"] is None):
+                    gaps.append({**item, "reason": "Нет подтверждённой связи с заказом и исходной отгрузкой"})
+                    continue
             try:
                 # Currency conversion is not implicit in the dashboard's ruble totals.
                 rate = doc.get("rate") or {}

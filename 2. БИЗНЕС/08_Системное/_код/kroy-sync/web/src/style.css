@@ -28,3 +28,5 @@ label.check{flex-direction:row;align-items:center;gap:8px;margin:0 0 16px}
 
 ::view-transition-old(root),::view-transition-new(root){animation:none;mix-blend-mode:normal}
 @media(prefers-reduced-motion:reduce){.theme-pill:before,.theme-pill button,.theme-pill button svg{transition:none}}
+
+.stock-edit-stack,.stock-edit-line{display:grid;gap:14px}.stock-edit-line{border-block-end:1px solid var(--line);padding-block:10px}.catalog-header-actions{flex-wrap:wrap}

@@ -597,6 +597,9 @@
   .sheet-table th{font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--mute);text-align:left;padding:0 8px 8px 0}
   .sheet-table td{padding:10px 8px 10px 0;border-top:1px solid var(--line-soft);text-align:left}
   .sheet-person{width:100%;display:flex;justify-content:space-between;gap:16px;padding:12px 0;border:0;border-bottom:1px solid var(--line-soft);background:none;font:inherit;cursor:pointer;text-align:left}
+  .sheet-person.last-visited,tr.last-visited td{background:var(--cream-2)}
+  .sheet-person.last-visited,tr.last-visited td:first-child{box-shadow:inset 3px 0 var(--mute)}
+  .sheet-person.last-visited{padding-inline-start:9px}
   .sheet-person:hover{background:var(--cream-2)}
   .sheet-person b{font-weight:500;color:var(--mute);white-space:nowrap}
   .sheet-go{display:inline-block;margin-top:18px;font-size:13px;color:var(--ink);border-bottom:1px solid var(--ink);text-decoration:none}
@@ -824,6 +827,12 @@
   <nav class="nav" id="nav"></nav>
 
   <section class="view on" data-v="sales">
+  <h2 class="sect">Отгруженные товары за период</h2>
+  <div class="card">
+    <div id="shipped-goods"></div>
+    <div id="shipped-status" role="status"></div>
+    <div class="hint">По дате проведённой отгрузки. Стоимость после скидок, без услуг и доставки, до вычета возвратов.</div>
+  </div>
   <h2 class="sect">Откуда пришли заказы</h2>
   <div class="grid-2">
     <div class="card">
@@ -1190,16 +1199,20 @@ let sheetReturn=null;
 const msOrder=id=>`https://online.moysklad.ru/app/#customerorder/edit?id=${encodeURIComponent(id)}`;
 const msAgent=id=>`https://online.moysklad.ru/app/#Company/edit?id=${encodeURIComponent(id)}`;
 let sheetTimer=0;
-function closeSheet(){const sheet=el('sheet');sheet.classList.remove('on');sheetReturn=null;clearTimeout(sheetTimer);sheetTimer=setTimeout(()=>{if(sheet.classList.contains('on'))return;sheet.hidden=true;document.documentElement.classList.remove('sheet-on');document.body.classList.remove('sheet-on');},280);}
-function showSheet(kicker,title,html,back){sheetReturn=back||null;clearTimeout(sheetTimer);el('sheet-kicker').textContent=kicker;el('sheet-title').textContent=title;el('sheet-body').innerHTML=html;el('sheet-back').hidden=!back;const sheet=el('sheet'),card=sheet.querySelector('.sheet-card');document.documentElement.classList.add('sheet-on');document.body.classList.add('sheet-on');sheet.hidden=false;card.classList.remove('rise');void card.offsetWidth;requestAnimationFrame(()=>{card.classList.add('rise');sheet.classList.add('on');});}
+function closeSheet(){clientNavigation=null;const sheet=el('sheet');sheet.classList.remove('on');sheetReturn=null;clearTimeout(sheetTimer);sheetTimer=setTimeout(()=>{if(sheet.classList.contains('on'))return;sheet.hidden=true;document.documentElement.classList.remove('sheet-on');document.body.classList.remove('sheet-on');},280);}
+function showSheet(kicker,title,html,back){sheetReturn=back||null;clearTimeout(sheetTimer);el('sheet-kicker').textContent=kicker;el('sheet-title').textContent=title;el('sheet-body').innerHTML=html;el('sheet-body').scrollTop=0;el('sheet-back').hidden=!back;const sheet=el('sheet'),card=sheet.querySelector('.sheet-card');document.documentElement.classList.add('sheet-on');document.body.classList.add('sheet-on');sheet.hidden=false;card.classList.remove('rise');void card.offsetWidth;requestAnimationFrame(()=>{card.classList.add('rise');sheet.classList.add('on');});}
 function orderNoun(n){const a=n%100,b=n%10;if(a>10&&a<20)return 'заказов';if(b===1)return 'заказ';if(b>1&&b<5)return 'заказа';return 'заказов';}
 function showOrders(kicker,title,rows){const list=[...rows].sort((a,b)=>(b.o.paid_date||'').localeCompare(a.o.paid_date||''));showSheet(kicker,title,`<div class="sheet-count">${num(list.length)} ${orderNoun(list.length)} · ${money(sum(list,r=>r.amount))}. Нажатие открывает заказ в МойСклад.</div><table class="sheet-table"><thead><tr><th>Заказ</th><th>Дата</th><th>Клиент</th><th>Канал</th><th>Источник</th><th>Выручка</th></tr></thead><tbody>${list.map(r=>`<tr class="drill" data-order="${esc(r.o.id)}"><td>${esc(r.o.number)}</td><td>${dmy(r.o.paid_date)}</td><td>${esc(r.o.client||'—')}</td><td>${esc(r.o.channel||'')}</td><td title="${esc(r.o.source_basis||'utm_source заказа МойСклад')}">${esc(orderSource(r.o))}</td><td>${money(r.amount)}</td></tr>`).join('')||'<tr><td colspan="6">Нет заказов</td></tr>'}</tbody></table>`);}
 function foldOrders(xs, amountOf){const by=new Map();for(const x of xs){if(!x.o||x.o.exchange)continue;const back=!!x.o.return_event;const id=back?(x.o.original_order||''):x.o.id;if(!id)continue;const cur=by.get(id)||{id,o:back?null:x.o,amount:0};if(!back)cur.o=x.o;cur.amount+=amountOf(x);by.set(id,cur);}for(const cur of by.values())if(!cur.o)cur.o=(data.orders||[]).find(o=>o.id===cur.id)||null;return [...by.values()].filter(r=>r.o&&r.o.id);}
 const pack=xs=>foldOrders(xs,x=>orderRev(x.o,x.ls));
 function ordersFromGoods(lines){return foldOrders(lines,x=>Number(x.l.rev)||0);}
-let sheetPeople=[], sheetPeopleTitle='', lastProducts=[];
-function openClientList(title,list){sheetPeople=list;sheetPeopleTitle=title;const rows=[...list].sort((a,b)=>b.ltv-a.ltv);showSheet('Клиенты',title,rows.length?`<div class="sheet-count">${num(rows.length)} в этом списке. Нажатие открывает карточку.</div>`+rows.map(c=>`<button type="button" class="sheet-person" data-client="${esc(c.key)}"><span>${esc(c.name)}</span><b>${num(c.buys)} · ${money(c.ltv)}</b></button>`).join(''):'Нет клиентов');}
-function openClientCard(c,back){const latest=[...c.orders].filter(o=>o.agent_id).sort((a,b)=>(b.paid_date||'').localeCompare(a.paid_date||''))[0];const link=latest?`<a class="sheet-go" href="${msAgent(latest.agent_id)}" target="_blank" rel="noopener">Контрагент в МойСклад</a>`:'<div class="hint">Ссылка на контрагента появится после следующей сборки среза.</div>';showSheet(c.tier||'Клиент',c.name,`<div class="sheet-facts">${kv([['Телефон',c.phone||'нет'],['Покупок',num(c.buys)],['LTV',money(c.ltv)],['Первая',c.first?dmy(c.first):'нет даты'],['Последняя',c.last?dmy(c.last):'нет даты'],['Размер',c.size||'нет данных'],['Чаще берёт',c.category||'нет данных']])}</div>${link}`,back);}
+let sheetPeople=[], lastProducts=[];
+function openClientList(title,list){sheetPeople=list;const rows=[...list].sort((a,b)=>b.ltv-a.ltv);showSheet('Клиенты',title,rows.length?`<div class="sheet-count">${num(rows.length)} в этом списке. Нажатие открывает карточку.</div>`+rows.map(c=>`<button type="button" class="sheet-person" data-client="${esc(c.key)}"><span>${esc(c.name)}</span><b>${num(c.buys)} · ${money(c.ltv)}</b></button>`).join(''):'Нет клиентов');}
+function clientOrdersTable(c){
+ const rows=[...c.orders].reverse().map(o=>`<tr data-order="${esc(o.id)}" class="drill"><td><a class="ms-open" target="_blank" rel="noopener" href="${msOrder(o.id)}">${esc(o.number)}</a></td><td>${dmy(o.paid_date)||'—'}</td></tr>`).join('');
+ return `<h4>Покупки клиента</h4><table class="sheet-table"><thead><tr><th>Заказ</th><th>Полная оплата</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+function openClientCard(c,back){const latest=[...c.orders].filter(o=>o.agent_id).sort((a,b)=>(b.paid_date||'').localeCompare(a.paid_date||''))[0];const link=latest?`<a class="sheet-go" href="${msAgent(latest.agent_id)}" target="_blank" rel="noopener">Контрагент в МойСклад</a>`:'<div class="hint">Ссылка на контрагента появится после следующей сборки среза.</div>';showSheet(c.tier||'Клиент',c.name,`<div class="sheet-facts">${kv([['Телефон',c.phone||'нет'],['Покупок',num(c.buys)],['LTV',money(c.ltv)],['Первая',c.first?dmy(c.first):'нет даты'],['Последняя',c.last?dmy(c.last):'нет даты'],['Размер',c.size||'нет данных'],['Чаще берёт',c.category||'нет данных']])}</div>${link}${clientOrdersTable(c)}`,back);}
 const selected = id => [...el(id).selectedOptions].map(o=>o.value).filter(Boolean);
 const setSelected=(id,values)=>{const e=el(id);[...e.options].forEach(o=>o.selected=values.includes(o.value));e.dispatchEvent(new Event('pick-sync'))};
 const matches=(values,value)=>!values.length||values.includes(value);
@@ -1482,10 +1495,10 @@ const discountKv=rows=>rows.map(([label,value,key])=>`<div class="kv"><span>${es
 const preciseMoney=n=>Number(n||0).toLocaleString('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:2})+' ₽';
 let shipmentDateBasis=localStorage.getItem('2my-shipment-date-basis')==='shipment'?'shipment':'payment';
 const shipmentBasisText=()=>shipmentDateBasis==='shipment'?'по дате отгрузки':'по дате полной оплаты заказа';
-function shipmentDiscountSelection(){
+function shipmentDiscountSelection(dateBasis=shipmentDateBasis){
  const source=data.shipment_discounts;
  const byOrder=new Map(data.orders.map(o=>[o.id,o]));
- const byShipment=shipmentDateBasis==='shipment';
+ const byShipment=dateBasis==='shipment';
  const ready=!byShipment||!!source?.date_bases?.includes('shipment');
  const contextual=d=>byOrder.get(d.order_id)||{id:'',number:'Без связи с заказом',source:'не указано',channel:'не указано',city:'не указано'};
  const accepts=d=>{
@@ -1526,8 +1539,35 @@ function showDiscountOrderList(title,rows,amountLabel,note){
  const list=[...rows].sort((a,b)=>(b.o.paid_date||'').localeCompare(a.o.paid_date||'')||String(a.o.number).localeCompare(String(b.o.number),'ru'));
  showSheet('МойСклад · оплаченные заказы',title,`<div class="sheet-count">${num(list.length)} ${orderNoun(list.length)} · ${esc(amountLabel)}: ${preciseMoney(sum(list,r=>r.amount))}. ${esc(note)} Нажатие на заказ открывает его в МойСклад.</div><table class="sheet-table"><thead><tr><th>Заказ</th><th>Дата полной оплаты</th><th>Канал</th><th>Промокод</th><th>${esc(amountLabel)}</th></tr></thead><tbody>${list.map(r=>`<tr class="drill" data-order="${esc(r.o.id)}"><td><a class="ms-open" href="${msOrder(r.o.id)}" target="_blank" rel="noopener">${esc(r.o.number)}</a></td><td>${dmy(r.o.paid_date)}</td><td>${esc(r.o.channel||'—')}</td><td>${esc(r.o.promo||'—')}</td><td>${preciseMoney(r.amount)}</td></tr>`).join('')||'<tr><td colspan="5">Нет заказов</td></tr>'}</tbody></table>`);
 }
+function shippedGoods(selection){
+ const demands=selection.docs.filter(d=>d.kind==='demand');
+ return {demands,amount:sum(demands,d=>sum(d.lines,l=>l.net_kopecks)),qty:sum(demands,d=>sum(d.lines,l=>l.qty)),
+  discount:selection.gross,issues:selection.allGaps.filter(g=>g.kind==='demand')};
+}
+function renderShippedGoods(selection){
+ const box=el('shipped-goods'),status=el('shipped-status');
+ status.textContent='';box.onclick=null;
+ if(!selection.ready||!selection.source){
+  box.textContent='Данные отгрузок ещё не загружены.';return;
+ }
+ const v=shippedGoods(selection);
+ box.innerHTML=discountKv([['Стоимость отгруженных товаров',preciseMoney(v.amount/100),'amount'],
+  ['Отгружено изделий',num(v.qty)+' шт.','qty'],['Скидки на отгруженные товары',preciseMoney(v.discount/100),'discount']]);
+ const docGaps=v.issues.filter(g=>!g.price_gap).length,priceGaps=v.issues.length-docGaps;
+ status.textContent=[docGaps?'Итог неполный. Требуют проверки отгрузки: '+num(docGaps)+'.':'',
+  priceGaps?'Скидки подтверждены частично. Позиций на проверке: '+num(priceGaps)+'.':''].filter(Boolean).join(' ');
+ box.onclick=e=>{
+  if(!e.target.closest('[data-discount-metric]'))return;
+  const url=d=>'https://online.moysklad.ru/app/#demand/edit?id='+encodeURIComponent(d.id);
+  const rows=v.demands.flatMap(d=>d.lines.map(l=>`<tr><td><a class="ms-open" target="_blank" rel="noopener" href="${url(d)}">${esc(d.number)}</a></td><td>${dmy(d.shipment_date)}</td><td>${esc(l.name)} ${esc(l.size||'')} ${esc(l.color||'')}</td><td>${num(l.qty)}</td><td>${preciseMoney(l.net_kopecks/100)}</td><td>${preciseMoney(l.discount_kopecks/100)}${l.discount_gap?' · '+esc(l.discount_gap):''}</td></tr>`)).join('');
+  const gaps=v.issues.filter(g=>!g.price_gap).map(g=>`<p><a href="${url(g)}" target="_blank" rel="noopener">Отгрузка ${esc(g.number)}</a> · ${esc(g.reason)}</p>`).join('');
+  showSheet('МойСклад · '+dmy(state.from)+' — '+dmy(state.to),'Отгруженные товары',
+   `<div class="sheet-count">${num(v.qty)} шт. · ${preciseMoney(v.amount/100)} · скидки ${preciseMoney(v.discount/100)}</div><table class="sheet-table"><thead><tr><th>Отгрузка</th><th>Дата</th><th>Товар</th><th>Шт.</th><th>Стоимость</th><th>Скидки</th></tr></thead><tbody>${rows||'<tr><td colspan="6">Нет отгруженных товаров</td></tr>'}</tbody></table>${gaps}`);
+ };
+}
 function renderShipmentDiscounts(){
  const v=shipmentDiscountSelection();
+ renderShippedGoods(shipmentDateBasis==='shipment'?v:shipmentDiscountSelection('shipment'));
  el('shipment-date-toggle').setAttribute('aria-checked',shipmentDateBasis==='shipment'?'true':'false');
  el('shipment-basis').dataset.basis=shipmentDateBasis;
  el('shipment-basis-note').textContent=shipmentDateBasis==='shipment'?'Проведённые отгрузки за выбранные даты, включая неоплаченные и нулевые заказы.':'Отгрузки заказов, полностью оплаченных за выбранные даты. Дата самой отгрузки может быть вне периода.';
@@ -1535,7 +1575,7 @@ function renderShipmentDiscounts(){
  if(!v.source){el('shipment-discounts').innerHTML=kv([['Сумма скидок','Данные не загружены']]);el('shipment-discounts-hint').textContent='Данные отгрузок ещё не загружены.';el('shipment-discounts').onclick=null;return;}
  el('shipment-discounts').innerHTML=discountKv([['На отгруженные товары · до возвратов',preciseMoney(v.gross/100),'gross'],['На возвращённые товары',preciseMoney(v.returned/100),'returned'],[(v.gaps.length?'Подтверждённая часть':'Итого')+(includeReturns?' · без вычета возвратов':' · после возвратов'),preciseMoney(v.total/100),'total']]);
  const missing=sum(Object.values(v.source.unlinked||{}),Number);
- el('shipment-discounts-hint').textContent=(shipmentDateBasis==='shipment'?'Период по дате исходной отгрузки. Возвраты вычитаются из выбранных отгрузок независимо от даты возврата. ':'Период по дате полной оплаты исходного заказа. Возвраты относятся к этой же выборке. ')+'Учитываются проведённые документы на дату обновления, размер, цвет и остальные товарные фильтры. '+(v.gaps.length?`Расчёт неполный: ${docsWord(v.gaps.length)} ${v.gaps.length%10===1&&v.gaps.length%100!==11?'требует':'требуют'} проверки. Нажми на сумму для подробностей. `:'')+(missing?`Во всей базе ${docsWord(missing)} без подтверждённой связи с заказом или исходной отгрузкой. В выбранном периоде такие документы показаны как требующие проверки, если дата отбора известна. `:'')+'Скидка рассчитывается от подтверждённой цены каталога на дату отгрузки или большей цены документа. Возврат использует ту же базу, что исходная отгрузка. Доставка исключена. При пробеле истории показана только записанная скидка; причина доступна в расшифровке.';
+ el('shipment-discounts-hint').textContent=(shipmentDateBasis==='shipment'?'Период по дате исходной отгрузки. Возвраты вычитаются из выбранных отгрузок независимо от даты возврата. ':'Период по дате полной оплаты исходного заказа. Возвраты относятся к этой же выборке. ')+'Учитываются проведённые документы на дату обновления, размер, цвет и остальные товарные фильтры. '+(v.gaps.length?`Расчёт неполный: ${docsWord(v.gaps.length)} ${v.gaps.length%10===1&&v.gaps.length%100!==11?'требует':'требуют'} проверки. Нажми на сумму для подробностей. `:'')+(missing?`Во всей базе документов без связи с заказом: ${num(missing)}. Проведённая отгрузка с проверенными позициями учитывается по её собственной дате. `:'')+'Скидка рассчитывается от подтверждённой цены каталога на дату отгрузки или большей цены документа. Возврат использует ту же базу, что исходная отгрузка. Доставка исключена. При пробеле истории показана только записанная скидка; причина доступна в расшифровке.';
  el('shipment-discounts').onclick=e=>{const b=e.target.closest('[data-discount-metric]');if(b)showShipmentDiscounts(b.dataset.discountMetric)};
 }
 function refresh(){
@@ -1864,9 +1904,28 @@ el('s-size').onchange=()=>{state.size=selected('s-size');refresh()};el('s-color'
 el('s-clear').onclick=()=>{state.size=[];state.color=[];state.cat=[];state.prod='';el('s-cat').value='';el('f-prod').value='';el('s-prod').value='';el('f-prod').title='';el('s-prod').title='';refresh()};
 el('reset').onclick=()=>{state.cat=[];state.prod='';state.source=[];state.channel=[];state.city=[];state.size=[];state.color=[];el('f-prod').value='';el('s-prod').value='';el('f-prod').title='';el('s-prod').title='';refresh()};
 el('items').onclick=e=>{const row=e.target.closest('tr[data-product]');if(!row)return;if(e.target.closest('.product-pick')){state.prod=state.prod===row.dataset.product?'':row.dataset.product;el('f-prod').value=state.prod;el('s-prod').value=state.prod;refresh();return;}const p=lastProducts.find(x=>x.name===row.dataset.product);if(p)showOrders('Товар',p.name,ordersFromGoods(p.lines));};
+function markVisited(row,container){
+ container.querySelector('.last-visited')?.classList.remove('last-visited');
+ row.classList.add('last-visited');
+}
+for(const id of ['tier','clients']){
+ el(id).addEventListener('click',e=>{const row=e.target.closest('tr[data-i]');if(row)markVisited(row,el(id));},true);
+}
+let clientNavigation=null,clientVisitId=0;
+function leaveClientCard(){
+ if(sheetReturn&&history.state?.clientVisit===clientNavigation?.id){history.back();return;}
+ closeSheet();
+}
+window.addEventListener('popstate',()=>{
+ const nav=clientNavigation;
+ if(!nav)return;
+ if(history.state?.clientVisit===nav.id){nav.open();return;}
+ if(sheetReturn)nav.restore();
+ else clientNavigation=null;
+});
 el('sheet').addEventListener('click',e=>{
- if(e.target.closest('[data-close]')||e.target.closest('#sheet-x')){closeSheet();return;}
- if(e.target.closest('#sheet-back')){const back=sheetReturn;if(typeof back==='function')back();else closeSheet();return;}
+ if(e.target.closest('[data-close],#sheet-x,#sheet-back')){leaveClientCard();return;}
+ const visited=e.target.closest('tr,.sheet-person');if(visited)markVisited(visited,el('sheet-body'));
  if(e.target.closest('a[href]'))return;
  const order=e.target.closest('[data-order]');
  if(order&&order.dataset.order){window.open(msOrder(order.dataset.order),'_blank','noopener');return;}
@@ -1874,10 +1933,19 @@ el('sheet').addEventListener('click',e=>{
  if(!person)return;
  const c=sheetPeople.find(x=>x.key===person.dataset.client);
  if(!c)return;
- const list=sheetPeople.slice(), title=sheetPeopleTitle;
- openClientCard(c,()=>openClientList(title,list));
+ const body=el('sheet-body'),top=body.scrollTop,left=body.scrollLeft;
+ const title=el('sheet-title').textContent,list=sheetPeople;
+ const nav={id:++clientVisitId,
+  open(){openClientCard(c,nav.restore);el('sheet-back').focus({preventScroll:true});},
+  restore(){
+   openClientList(title,list);
+   const row=body.querySelector('[data-client="'+CSS.escape(c.key)+'"]');
+   if(row){markVisited(row,body);row.focus({preventScroll:true});}
+   body.scrollTop=top;body.scrollLeft=left;
+  }};
+ clientNavigation=nav;history.pushState({clientVisit:nav.id},'');nav.open();
 });
-document.addEventListener('keydown',e=>{if(e.key==='Escape'&&el('sheet')&&!el('sheet').hidden)closeSheet();});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&el('sheet')&&!el('sheet').hidden)leaveClientCard();});
 const periodClients=()=>{const keys=new Set((includeReturns?filtered:financial).map(x=>clientKey(x.o)));return clients.filter(c=>keys.has(c.key)).map(showClient)};
 ['c-q','c-base','c-tier','c-buys','c-sil','c-sort'].forEach(id=>el(id).addEventListener(id==='c-q'?'input':'change',()=>{clientPage=0;renderClients(periodClients())}));
 el('c-clear').onclick=()=>{['c-q','c-tier','c-buys','c-sil'].forEach(id=>el(id).value='');el('c-base').value='period';el('c-sort').value='ltv';clientPage=0;renderClients(periodClients())};

@@ -47,6 +47,23 @@ def filter_wb_fbs(client, orders):
     return [o for o in orders if str(o.get("warehouseId") or "") in allowed]
 
 
+# Кабинет Овчинников ОЗОН: ID склада продавца из delivery_method, не город доставки.
+OZON_FBS_WAREHOUSES = {"b1879c7f-d210-11f1-0a80-0b61003b36fe": {"1020005034978570"}}
+
+
+def ozon_fbs_served(client, kind, post):
+    if kind != "fbs":
+        return True
+    allowed = OZON_FBS_WAREHOUSES.get(client["ms_counterparty_id"])
+    if allowed is None:
+        return True
+    method = post.get("delivery_method") or {}
+    warehouse = method.get("warehouse_id") if isinstance(method, dict) else None
+    if not warehouse:
+        raise ValueError("Ozon не сообщил склад отправления %s. Обнови отправления." % post.get("posting_number", ""))
+    return str(warehouse) in allowed
+
+
 def now_iso():
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -382,6 +399,8 @@ def handle_ozon(client, cab, kind, postings):
     for post in postings:
         ext_id = str(post.get("posting_number") or "")
         if not ext_id or already_ok(cab["id"], ext_id):
+            continue
+        if not ozon_fbs_served(client, kind, post):
             continue
         if post.get('status') in ('cancelled', 'canceled'):
             continue

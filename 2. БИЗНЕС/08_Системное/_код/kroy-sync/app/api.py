@@ -196,7 +196,7 @@ def create_app(engine=None):
             return result
 
     @app.get('/api/orders')
-    def market_orders(platform: str='', scheme: str='', status: str='', q: str=Query('',max_length=200), start: str='', end: str='', page: int=Query(1,ge=1), per_page: int=Query(50,ge=1,le=100), attention: bool=False, user=Depends(auth)):
+    def market_orders(platform: str='', scheme: str='', status: str='', q: str=Query('',max_length=200), start: str='', end: str='', page: int=Query(1,ge=1), per_page: int=Query(50,ge=1,le=100), attention: bool=False, compact: bool=False, user=Depends(auth)):
         if user.role=='cutter':raise HTTPException(403,'Нет доступа к заказам')
         from .order_feed import list_orders, STATES
         from datetime import date
@@ -206,7 +206,7 @@ def create_app(engine=None):
             if end:date.fromisoformat(end)
             if start and end and start>end:raise ValueError()
         except ValueError:raise HTTPException(422,'Проверь период заказов')
-        with Session(engine) as s:return list_orders(s,platform,scheme,status,q,start,end,page,per_page,attention)
+        with Session(engine) as s:return list_orders(s,platform,scheme,status,q,start,end,page,per_page,attention,compact)
 
     @app.get('/api/orders/sync')
     def order_sync_state(user=Depends(auth)):
@@ -232,17 +232,23 @@ def create_app(engine=None):
             if not e or e.kind!='market_order':raise HTTPException(404,'Заказ не найден')
             return public_order(s,e)
 
+    @app.get('/api/workshop/{month}')
+    def workshop_report(month:str,user=Depends(auth)):
+        if 'finance' not in PERMISSIONS[user.role]:raise HTTPException(403,'Нет доступа к цеху')
+        from .workshop import worksheet
+        with Session(engine) as session:return worksheet(session,month)
+
     @app.get('/api/journal')
     def journal(item_id: str | None = None, user=Depends(auth)):
         with Session(engine) as s:
             query = select(Document).order_by(Document.created_at.desc()).limit(200)
             if 'finance' not in PERMISSIONS[user.role]:
-                query = query.where(Document.kind != 'finance.record')
+                query = query.where(Document.kind.notin_(['finance.record','workshop.record','workshop.close']))
             if item_id:
                 query = query.where(Document.id.in_(select(Movement.document_id).where(Movement.item_id == item_id)))
             docs = list(s.scalars(query))
             movements = list(s.scalars(select(Movement).where(Movement.document_id.in_([d.id for d in docs]))))
-            return [{'id': d.id, 'kind': d.kind, 'actor': d.actor, 'reason': d.reason, 'at': d.created_at.isoformat(),
+            return [{'id': d.id, 'kind': d.kind, 'actor': d.actor, 'actor_name': (s.get(User,d.actor).name if s.get(User,d.actor) else d.actor), 'changes': d.payload.get('changes',[]) if d.kind=='stock.batch' else [], 'reason': d.reason, 'at': d.created_at.isoformat(),
                      'movements': [{'item_id': m.item_id, 'location': m.location, 'bucket': m.bucket, 'quantity': str(m.quantity)}
                                    for m in movements if m.document_id == d.id]} for d in docs]
 
@@ -314,6 +320,12 @@ def create_app(engine=None):
     def assignees(user=Depends(auth)):
         with Session(engine) as s:
             return [{'id': u.id, 'name': u.name} for u in s.scalars(select(User).where(User.active.is_(True), User.role.in_(['owner', 'cutter'])))]
+
+    @app.post('/api/cutting/report-preview')
+    def report_preview(body:dict,user=Depends(auth)):
+        if 'cut_plan' not in PERMISSIONS[user.role]:raise HTTPException(403,'Нет права подготовки кроя')
+        from .report_import import preview
+        with Session(engine) as session:return preview(session,body)
 
     @app.post('/api/cutting/demand')
     def cut_demand(body: dict, user=Depends(auth)):

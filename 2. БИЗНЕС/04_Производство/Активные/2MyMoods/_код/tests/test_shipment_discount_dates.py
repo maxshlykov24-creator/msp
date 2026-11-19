@@ -97,9 +97,12 @@ class Dates(unittest.TestCase):
         self.assertEqual(len(result["documents"]), 1)
         self.assertEqual(result["gaps"][0]["shipment_date"], "2026-10-01")
 
-    def test_missing_order_is_visible_as_dated_gap(self):
+    def test_conducted_demand_without_order_counts_by_shipment_date(self):
         result = self.collect([document("d", order="missing")])
-        self.assertEqual(result["gaps"][0]["shipment_date"], "2026-10-01")
+        self.assertFalse(result["gaps"])
+        shipment, = result["documents"]
+        self.assertEqual(shipment["shipment_date"], "2026-10-01")
+        self.assertEqual(shipment["lines"][0]["net_kopecks"], 100)
         self.assertEqual(result["unlinked"]["demand"], 1)
 
     def test_missing_original_never_uses_return_date_as_shipment_date(self):

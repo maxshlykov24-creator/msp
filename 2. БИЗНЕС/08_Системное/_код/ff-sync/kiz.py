@@ -126,7 +126,10 @@ def normalize_wb_code(code):
 
 
 def _row(ship_id):
-    rows = get_shipments_by_ids([ship_id])
+    try:
+        rows = get_shipments_by_ids([ship_id])
+    except ValueError as exc:
+        raise KizError(str(exc)) from exc
     if not rows:
         raise KizError("отправление не найдено")
     return rows[0]
@@ -620,9 +623,10 @@ def _wb_plan(row, cab):
                 "need": qty,
                 "have": 0,
                 "products": [],
+                "can_submit": False,
                 "note": "Товар с маркировкой, но WB не принимает код по этому заданию.",
             }
-        return {"need": 0, "have": 0, "products": [], "note": "WB не запрашивает коды по этому заданию."}
+        return {"need": 0, "have": 0, "products": [], "can_submit": False, "note": "WB не запрашивает коды по этому заданию."}
     decision = str(item.get("decision") or "")
     value = item.get("value")
     have = len(value) if isinstance(value, list) else (1 if value else 0)
@@ -641,7 +645,8 @@ def _wb_plan(row, cab):
         note = "WB не требует код по этому заданию, но примет его."
     else:
         note = "WB: %s." % note
-    return {"need": need, "have": have, "products": [], "note": note, "decision": decision}
+    return {"need": need, "have": have, "products": [], "note": note, "decision": decision,
+            "can_submit": decision not in (*WB_DONE, "pending")}
 
 
 def _wb_submit(row, cab, codes):
@@ -664,6 +669,10 @@ def _wb_submit(row, cab, codes):
     notes = []
     item = _wb_sgtin(_wb_meta(cab, row["ext_id"])) or {}
     decision = str(item.get("decision") or "")
+    if decision not in (*WB_DONE, "pending", *WB_WANT, "optional"):
+        raise KizError("WB получил запрос, но не подтвердил результат. Обнови задание перед повтором.")
+    if decision in ("required", "optional") and set(item.get("value") or []) != set(codes):
+        raise KizError("WB пока не подтвердил переданные КиЗ. Обнови задание перед повтором.")
     if decision in WB_WANT and decision != "required":
         raise KizError("WB не подтвердил код: %s. Проверь маркировку; задание остаётся без принятого КиЗ." % WB_DECISION_RU.get(decision, decision))
     if decision:

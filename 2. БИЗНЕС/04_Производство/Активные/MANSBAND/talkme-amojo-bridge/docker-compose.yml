@@ -66,5 +66,21 @@ services:
         condition: service_healthy
     command: python -c "from app.campaign import run; run()"
 
+  shift-handoff:
+    image: talkme-amojo-bridge-reminders:latest
+    profiles: ["shifts"]
+    restart: unless-stopped
+    env_file:
+      - .env
+      - .env.reminders
+    environment:
+      DATABASE_URL: postgresql+psycopg2://bridge:bridge@db:5432/bridge
+    volumes:
+      - ./app/shift_handoff.py:/app/app/shift_handoff.py:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    command: python -B -m app.shift_handoff --loop --apply
+
 volumes:
   talkme_amojo_pg:

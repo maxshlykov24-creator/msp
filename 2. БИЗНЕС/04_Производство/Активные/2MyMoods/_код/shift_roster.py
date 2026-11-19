@@ -142,27 +142,30 @@ def _rows(force: bool = False) -> dict[date, tuple[bool, bool]]:
         return _CACHE["rows"]
     url = (
         f"https://sheets.googleapis.com/v4/spreadsheets/{SHEET_ID}"
-        f"/values/{_a1('A3:D')}?valueRenderOption=UNFORMATTED_VALUE"
+        f"/values/{_a1('A2:D')}?valueRenderOption=UNFORMATTED_VALUE"
     )
     data = _api("GET", url)
     out: dict[date, tuple[bool, bool]] = {}
-    for row in data.get("values") or []:
+    values = data.get("values") or []
+    if not values or values[0][:4] != ["Дата", "День", "Кристина", "Таня"]:
+        raise ValueError("Изменились заголовки графика 2MY")
+    for row in values[1:]:
         day = _day(row[0] if row else None)
         if not day:
             continue
         kristina = _on(row[2]) if len(row) > 2 else False
         tanya = _on(row[3]) if len(row) > 3 else False
-        out[day] = (kristina, tanya)
+        out[day] = (True, True) if day in out else (kristina, tanya)
     _CACHE["at"] = now
     _CACHE["rows"] = out
     return out
 
 
-def duty(day: date | None = None) -> tuple[int | None, str]:
+def duty(day: date | None = None, *, force: bool = False) -> tuple[int | None, str]:
     """Кто работает в этот день. Пусто или две галочки: никого не назначаем."""
     day = day or datetime.now(TZ).date()
     try:
-        flags = _rows().get(day)
+        flags = _rows(force=force).get(day)
     except Exception as exc:
         return None, f"таблица недоступна: {exc}"
     if flags is None:
@@ -173,7 +176,7 @@ def duty(day: date | None = None) -> tuple[int | None, str]:
     if tanya and not kristina:
         return lib.USER_TANYA, "Таня"
     if kristina and tanya:
-        return None, "две галочки"
+        return None, "две галочки или повтор даты"
     return None, "пусто"
 
 
@@ -200,30 +203,44 @@ def ensure_horizon(days_ahead: int = 21, extend_to: int = 90) -> int:
     end = today + timedelta(days=extend_to)
     if start > end:
         return 0
-    values = []
+    base = f"https://sheets.googleapis.com/v4/spreadsheets/{SHEET_ID}"
+    meta = _api("GET", base + "?fields=sheets(properties(sheetId,title))")
+    sheet_id = next(s["properties"]["sheetId"] for s in meta["sheets"]
+                    if s["properties"]["title"] == TAB)
+    checkbox = {"userEnteredValue": {"boolValue": False},
+                "dataValidation": {"condition": {"type": "BOOLEAN"},
+                                   "strict": True, "showCustomUi": True}}
+    rows = []
     day = start
     while day <= end:
-        values.append([_serial(day), WD[day.weekday()], False, False])
+        rows.append({"values": [
+            {"userEnteredValue": {"numberValue": _serial(day)},
+             "userEnteredFormat": {"numberFormat": {"type": "DATE", "pattern": "dd.mm.yyyy"}}},
+            {"userEnteredValue": {"stringValue": WD[day.weekday()]}},
+            checkbox, checkbox,
+        ]})
         day += timedelta(days=1)
-    if not values:
-        return 0
-    url = (
-        f"https://sheets.googleapis.com/v4/spreadsheets/{SHEET_ID}"
-        f"/values/{_a1('A3:D')}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS"
-    )
-    _api("POST", url, {"values": values})
+    _api("POST", base + ":batchUpdate", {"requests": [{"appendCells": {
+        "sheetId": sheet_id, "rows": rows,
+        "fields": "userEnteredValue,userEnteredFormat,dataValidation",
+    }}]})
     _CACHE["at"] = 0
-    return len(values)
+    return len(rows)
 
 
 def publish() -> int:
     """Пустой календарь с галочками. Уже стоящие галочки не затирает."""
-    try:
-        existing = _rows(force=True)
-    except Exception:
-        existing = {}
-    if any(pair[0] or pair[1] for pair in existing.values()):
-        raise SystemExit("В графике уже есть галочки, лист не переписываю")
+    base = f"https://sheets.googleapis.com/v4/spreadsheets/{SHEET_ID}"
+    meta = _api("GET", base + "?fields=sheets(properties(sheetId,title))")
+    tabs = {s["properties"]["title"]: s["properties"]["sheetId"] for s in meta["sheets"]}
+    title = TAB if TAB in tabs else "Лист1"
+    sheet_id = tabs[title]
+    cells = urllib.parse.quote(f"{title}!A1:D", safe="")
+    existing = _api("GET", f"{base}/values/{cells}?valueRenderOption=UNFORMATTED_VALUE")
+    if existing.get("values"):
+        # Пересобрать можно только распознанный календарь без назначенных смен.
+        if title != TAB or any(any(pair) for pair in _rows(force=True).values()):
+            raise SystemExit("Лист содержит данные, календарь не переписываю")
     start = datetime.now(TZ).date()
     end = date(start.year, 12, 31)
     if end < start + timedelta(days=60):
@@ -234,16 +251,6 @@ def publish() -> int:
         days.append(day)
         day += timedelta(days=1)
     values = [[_serial(day), WD[day.weekday()], False, False] for day in days]
-    meta = _api(
-        "GET",
-        f"https://sheets.googleapis.com/v4/spreadsheets/{SHEET_ID}?fields=sheets(properties(sheetId,title))",
-    )
-    sheet_id = 0
-    for sheet in meta.get("sheets") or []:
-        props = sheet.get("properties") or {}
-        if props.get("title") in (TAB, "Лист1"):
-            sheet_id = props.get("sheetId") or 0
-            break
     _api(
         "POST",
         f"https://sheets.googleapis.com/v4/spreadsheets/{SHEET_ID}:batchUpdate",
