@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   computeCompleteness,
+  findSuitFrontConflicts,
   catalogSearchTerms,
   matchesCatalogTerms,
   countSuitsInLines,
@@ -85,6 +86,21 @@ test("catalogue suit front uses explicit, consistent jacket names across warehou
   assert.equal(front(["Пиджак двубортный", "Пиджак однобортный"]), null);
   assert.equal(front(["Пиджак двубортный", "Пиджак"]), null);
   assert.equal(front(["Пиджак", "Пиджак двубортный"]), null);
+});
+
+test("front review uses catalogue model keys and includes the exact jackets behind both types", () => {
+  const jacket = (id, name, extra = {}) => line("jacket", "50", 0, { msId: id, name, ...extra });
+  const single = "Пиджак однобортный", double = "Пиджак двубортный";
+  const models = findSuitFrontConflicts([
+    jacket("s", single, {size: "48"}), jacket("d", double), jacket("u", "Блейзер"),
+    jacket("t", single, {height: "8"}), jacket("v", double, {fit: "regular"}),
+    jacket("a", single + " / двухбортный", {variation: "B2"}),
+    jacket("b", single, {variation: "B3"}), jacket("c", "Смокинг", {variation: "B3"}),
+  ]);
+  assert.deepEqual(models.map(m => m.variation), ["B2", "S23/33S3"]);
+  assert.deepEqual(models[0].jackets[0].fronts, ["Однобортный", "Двубортный"]);
+  assert.deepEqual(new Set(models[1].jackets.map(j => j.msId)), new Set(["s", "d", "u"]));
+  assert.equal(models[1].jackets[0].size, "48");
 });
 
 test("suit part and line are read from the product kind name", () => {

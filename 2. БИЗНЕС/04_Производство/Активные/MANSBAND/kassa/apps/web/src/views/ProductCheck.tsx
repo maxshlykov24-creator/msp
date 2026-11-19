@@ -26,6 +26,7 @@ import {
 } from "@kassa/shared";
 import type { HallSectionId, Product, SuitFamily, SuitModel, WarehouseStockLine } from "../data/types";
 import { api, apiBlob, USE_MOCK } from "../api/client";
+import { useAuth } from "../auth/AuthContext";
 import { useStore } from "../store";
 import { money } from "../lib/format";
 import { BarcodeScannerModal } from "../components/BarcodeScanner";
@@ -316,6 +317,7 @@ function stockSum(product: Product): number {
 
 export function ProductCheck({ initialSection = "" }: { initialSection?: string }) {
   const { activeStore } = useStore();
+  const { user } = useAuth();
   const [q, setQ] = useState("");
   const [section, setSection] = useState<HallSectionId | "">(normalizeHallSection(initialSection) ?? "");
   const [color, setColor] = useState("");
@@ -328,6 +330,7 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
   const [priceMin, setPriceMin] = useState("");
   const [priceMax, setPriceMax] = useState("");
   const [suitFamily, setSuitFamily] = useState<"" | SuitFamily>("");
+  const [frontFilter, setFrontFilter] = useState("");
   const [suitTab, setSuitTab] = useState<SuitViewTab>("completeness");
   const [openSuit, setOpenSuit] = useState<string | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -513,6 +516,9 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
     }
     for (const m of suits) {
       if (m.height) heights.add(m.height);
+      if (m.color) colors.add(m.color);
+      if (m.variation) variations.add(m.variation);
+      for (const row of m.sizes) if (row.size) sizes.add(row.size);
     }
     const sortRu = (a: string, b: string) => a.localeCompare(b, "ru", { numeric: true });
     return {
@@ -523,13 +529,16 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
     };
   }, [parsed, section, suits]);
 
+  const filteredSuits = useMemo(() => !frontFilter ? suits : suits.filter(
+    model => (model.jacketFront ?? "unknown") === frontFilter
+  ), [suits, frontFilter]);
   const suitsByFamily = useMemo(() => {
     const map: Record<SuitFamily, CatalogSuitModel[]> = { double: [], triple: [], smoking: [] };
-    for (const model of suits) map[suitFamilyOf(model)].push(model);
+    for (const model of filteredSuits) map[suitFamilyOf(model)].push(model);
     return map;
-  }, [suits]);
+  }, [filteredSuits]);
 
-  const visibleSuits = suitFamily ? suitsByFamily[suitFamily] : suits;
+  const visibleSuits = suitFamily ? suitsByFamily[suitFamily] : filteredSuits;
 
   const tree = useMemo(() => {
     type BaseGroup = { baseName: string; rows: ParsedProduct[] };
@@ -579,7 +588,8 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
   }, [parsed, section]);
 
   const extraActive = Boolean(
-    color || size || variation || height || warehouseFilter || priceMin || priceMax || stockFilter !== "any"
+    color || size || variation || height || warehouseFilter || priceMin || priceMax || stockFilter !== "any" ||
+    (suitTab === "completeness" && frontFilter)
   );
 
   function resetExtraFilters() {
@@ -591,6 +601,7 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
     setPriceMin("");
     setPriceMax("");
     setStockFilter("any");
+    setFrontFilter("");
   }
 
   function selectHallSection(next: HallSectionId | "") {
@@ -812,6 +823,11 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
               {tab.label}
             </button>
           ))}
+          {user?.role === "admin" && (
+            <a href="#suit-front-review" className="chip px-3 py-1.5 text-[13px] font-semibold bg-ink-800 text-mute-soft hover:text-white">
+              Проверка типа борта
+            </a>
+          )}
         </div>
       )}
 
@@ -823,7 +839,7 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
         >
           <Filter size={15} className="text-mute" />
           <span className="text-[13px] font-medium text-white flex-1">
-            Фильтры{extraActive ? " · активны" : ""}
+            Фильтры{showSuitFamilies && frontFilter ? ` · ${frontFilter === "unknown" ? "Тип не определён" : frontFilter}` : extraActive ? " · активны" : ""}
           </span>
           {extraActive && (
             <span
@@ -910,6 +926,13 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
                 options={opts(["", "Любая"], ...filterOptions.heights)}
               />
             </div>
+            {showSuitFamilies && (
+              <div className="min-w-[140px] flex-1">
+                <div className="field-label">Тип борта</div>
+                <Select size="sm" ariaLabel="Тип борта" value={frontFilter} onChange={setFrontFilter}
+                  options={opts(["", "Все типы"], "Однобортный", "Двубортный", ["unknown", "Не определён"])} />
+              </div>
+            )}
             <div className="min-w-[100px]">
               <div className="field-label">Цена от, ₽</div>
               <input

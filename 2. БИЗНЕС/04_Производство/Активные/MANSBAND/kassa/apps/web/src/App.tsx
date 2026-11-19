@@ -11,6 +11,7 @@ import { Dashboard } from "./views/Dashboard";
 import { CrmAnalytics } from "./views/CrmAnalytics";
 import { ShiftClose } from "./views/ShiftClose";
 import { ProductCheck } from "./views/ProductCheck";
+import { SuitFrontReview } from "./views/SuitFrontReview";
 import { TasksMovements } from "./views/TasksMovements";
 import { HistoryScreen, RolesScreen } from "./views/AuditRoles";
 import { MessageTemplates } from "./views/MessageTemplates";
@@ -83,6 +84,8 @@ function Screens({
       return <ProductCheck />;
     case "suits":
       return <ProductCheck initialSection="suits" />;
+    case "suit-front-review":
+      return <SuitFrontReview />;
     case "tasks":
       return <TasksMovements />;
     case "history":
@@ -108,6 +111,7 @@ const ROUTES: Route[] = [
   "crm-analytics",
   "products",
   "suits",
+  "suit-front-review",
   "tasks",
   "history",
   "roles",
