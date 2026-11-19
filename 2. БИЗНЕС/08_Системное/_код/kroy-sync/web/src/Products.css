@@ -35,3 +35,5 @@
 .catalog-overview summary::-webkit-details-marker{display:none}
 .catalog-overview details[open] summary{margin-bottom:6px}
 .catalog-overview td>span{color:var(--muted)}
+
+.picker-footer{display:flex;justify-content:space-between;align-items:center;gap:12px}.picker-footer button{min-height:38px}.picker-matrix-wrap>.text-button{margin-bottom:6px}
