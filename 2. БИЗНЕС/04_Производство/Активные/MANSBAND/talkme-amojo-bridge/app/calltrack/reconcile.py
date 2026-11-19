@@ -7,7 +7,7 @@ import logging
 from datetime import timedelta, timezone
 from typing import Any, Optional
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.calltrack.matching import attribute_call, apply_call
@@ -119,12 +119,14 @@ def run_reconcile_once(db: Optional[Session] = None) -> dict[str, int]:
         settings = get_settings()
         calls = db.execute(select(CallEvent).where(
             CallEvent.status.in_(["new", "retry", "unattributed"]),
+            CallEvent.called.is_not(None), CallEvent.called != "",
+            CallEvent.caller.is_not(None), CallEvent.caller != "",
+            or_(CallEvent.status != "unattributed",
+                func.coalesce(CallEvent.result["source_recheck_at"].as_float(), 0) <= now.timestamp()),
             CallEvent.started_at <= now - timedelta(minutes=5)
         ).order_by(CallEvent.started_at).limit(100)).scalars().all()
         token = None
         for call in calls:
-            if not call.called or not call.caller:
-                continue  # Отдельные сгруппированные сигналы monitor_once.
             try:
                 token = token or get_valid_access_token(db)
                 if (call.result or {}).get("repeat_note_pending") and call.lead_id:

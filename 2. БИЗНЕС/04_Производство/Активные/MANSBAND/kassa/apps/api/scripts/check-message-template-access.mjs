@@ -136,6 +136,15 @@ for(const type of ['product','variant','bundle','service']){
  assert(rows.length===1 && rows[0].meta.type===type && rows[0].stockByStore[0].stock===3,'MS stock filter for '+type);checks++;
 }
 console.log(JSON.stringify({checks,result:'passed',scope:'including MS stock filters'}));
+
+const healthApi = Fastify();
+await healthApi.register((await import('../src/routes/health.routes.ts')).default);
+await (await import('../src/db/index.ts')).sql.end();
+const unavailable = await healthApi.inject({method:'GET', url:'/health'});
+assert(unavailable.statusCode === 503 && unavailable.json().db === false, 'database outage fails the HTTP health check');
+assert(unavailable.headers['cache-control'] === 'no-store', 'health responses must stay fresh');
+await healthApi.close();
+console.log(JSON.stringify({checks:checks + 2, result:'passed', scope:'including health on database outage'}));
 const {sql: testPool} = await import("../src/db/index.ts");
 await (await import("../src/lib/idempotency.ts")).closeOperationLocks();
 await testPool.end();

@@ -94,6 +94,36 @@ def test_nominal_comes_from_field_not_deal_budget():
  c=CRM([]);c.lead["price"]=42000
  assert g.data_for(c,c.lead)["nominal"]==15000
 
+@pytest.mark.parametrize("future", [False, True])
+def test_blocked_nominal_waits_for_correction_before_reissuing(monkeypatch, db, future):
+ c = CRM([(201, {"messageId": "text"}), (201, {"messageId": "pdf"})])
+ job = prepare(monkeypatch, db, c)
+ field = next(f for f in c.lead["custom_fields_values"] if f["field_id"] == 3830333)
+ field["values"] = []
+ calls = []
+
+ def issue(lead_id):
+  calls.append(lead_id)
+  if len(calls) == 1:
+   raise ValueError("Касса: " + g.NOMINAL_REQUIRED)
+  return issuer(lead_id)
+
+ g.process(db, c, job, STAMP, issue)
+ for values in ([], [{"value": True}], [{"value": "1e4"}], [{"value": 1}, {"value": 2}]):
+  field["values"] = values
+  g.process(db, c, job, STAMP + timedelta(minutes=1), issue)
+  assert job.state == "blocked" and calls == [1] and not c.posts
+ field["values"] = [{"value": "15000.00"}]
+ if future:
+  start = next(f for f in c.lead["custom_fields_values"] if f["field_id"] == 3829442)
+  start["values"][0]["value"] = int((STAMP + timedelta(days=1)).timestamp())
+ g.process(db, c, job, STAMP + timedelta(minutes=2), issue)
+ assert calls == [1, 1] and not job.reason
+ if future:
+  assert job.state == "queued" and not c.posts
+ else:
+  assert job.state == "pending" and len(c.posts) == 2
+
 @pytest.mark.parametrize("value", ["", "0", "-1", "abc", "nan", "inf"])
 def test_invalid_nominal_blocks_sending_even_with_budget(value):
  c=CRM([])

@@ -338,16 +338,24 @@ def apply_call(
         # Произвольное заполненное UTM-поле не доказывает наличие источника.
         has_source = bool(meta["tech_written"])
         call.status = "matched" if has_source else "unattributed"
+        if has_source:
+            meta_old.pop("source_recheck_at", None)
+        else:
+            now = dt.datetime.now(timezone.utc)
+            delay = timedelta(minutes=10) if now - _aware(call.started_at) < timedelta(days=1) else timedelta(hours=6)
+            meta_old["source_recheck_at"] = (now + delay).timestamp()
         call.result = {**meta_old, "written": meta["written"],
                        "tech_source": attr.tech_source, "tech_written": has_source,
-                       "disputed": attr.disputed, "error": None}
+                       "disputed": attr.disputed, "error": None,
+                       "apply_failures": 0, "reconcile_attempts": 0}
         db.commit()
         return {"ok": True, "status": call.status, "result": call.result}
     except Exception as exc:
         db.rollback()
         call.lead_id = lead_id
-        call.status = "retry" if meta_old["attempts"] < 6 else "error"
+        failures = int(meta_old.get("apply_failures", 0)) + 1
+        call.status = "retry" if failures < 6 else "error"
         # Не сохраняем тела ответов CRM или URL с секретами.
-        call.result = {**meta_old, "error": type(exc).__name__}
+        call.result = {**meta_old, "apply_failures": failures, "error": type(exc).__name__}
         db.commit()
         return {"ok": False, "reason": type(exc).__name__}

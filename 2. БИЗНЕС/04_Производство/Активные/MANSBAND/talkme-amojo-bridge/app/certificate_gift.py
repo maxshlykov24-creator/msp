@@ -1,6 +1,8 @@
 """Two durable, ordered parts. Once either part is accepted the route is pinned."""
 from __future__ import annotations
 import asyncio,base64,hashlib,hmac,json,logging,uuid
+import math
+import re
 from datetime import datetime,timedelta,timezone
 from typing import Optional,Literal
 import httpx
@@ -22,6 +24,7 @@ from app.certificate_pdf import render_pdf,DEFAULT_INTRO,DEFAULT_INSTRUCTIONS,CO
 log=logging.getLogger(__name__)
 RULE_ID="gift-certificate"
 CUTOVER_ID="certificate-gift-cutover-v1"
+NOMINAL_REQUIRED="Заполните поле «Номинал» положительной суммой"
 
 def mark_cutover(db):
  if not db.get(m.Operation,CUTOVER_ID):
@@ -67,6 +70,22 @@ def seed(db):
  rule=m.Rule(name="Выдача электронного сертификата",enabled=False,action="certificate",pipelines=[9601214],statuses=[76675038],trigger=m.Trigger(type="date",field=3829442,offset=0,time="10:00",repeat="once"),recipient="field",phone_field=3830052,content=BODY,certificate_pdf={"intro":DEFAULT_INTRO,"instructions":DEFAULT_INSTRUCTIONS,"contacts":CONTACTS})
  data=rule.model_dump();db.add(m.Document(id=RULE_ID,kind="rule",draft=data,active=data,published_version=1));db.commit()
 
+def certificate_nominal(lead):
+ field = next((f for f in lead.get("custom_fields_values") or [] if f.get("field_id") == 3830333), {})
+ values = field.get("values") or []
+ raw = values[0].get("value") if len(values) == 1 else None
+ if isinstance(raw, str) and not re.fullmatch(r"[0-9]+(?:\.[0-9]+)?", raw.strip()):
+  raise ValueError(NOMINAL_REQUIRED)
+ if type(raw) not in (str, int, float):
+  raise ValueError(NOMINAL_REQUIRED)
+ try:
+  amount = float(raw)
+ except OverflowError:
+  raise ValueError(NOMINAL_REQUIRED) from None
+ if amount <= 0 or not math.isfinite(amount):
+  raise ValueError(NOMINAL_REQUIRED)
+ return amount
+
 def data_for(c,lead):
  from app.stage_notifications import certificate_phone,CalendarSettings
  if not paid_certificate_scope(lead):raise ValueError("Сделка больше не является оплаченным сертификатом")
@@ -84,11 +103,7 @@ def data_for(c,lead):
  except (ValueError,OverflowError,OSError):raise ValueError("Некорректная дата окончания сертификата")
  if until<start:raise ValueError("Дата окончания сертификата раньше даты начала")
  if until<m.now().astimezone(MSK).date():raise ValueError("Сертификат просрочен")
- import math
- raw_amount=field_value(lead,3830333)
- try:amount=float(raw_amount)
- except (TypeError,ValueError):raise ValueError("Заполните поле «Номинал» положительной суммой")
- if not math.isfinite(amount) or amount<=0:raise ValueError("Заполните поле «Номинал» положительной суммой")
+ amount=certificate_nominal(lead)
  return {"phone":phone,"buyer":name,"guest":field_value(lead,3185675),"greeting":field_value(lead,3830305),"number":field_value(lead,3135463),"nominal":amount,"start":start.strftime("%d.%m.%Y"),"until":until.strftime("%d.%m.%Y"),"start_iso":start.isoformat()}
 
 def rendered(rule,data):
@@ -153,6 +168,11 @@ def process(db,c,job,stamp,issuer=issue):
  try:
   if not paid_certificate_scope(lead) or field_value(lead,3828225).lower() not in ("true","1"):raise ValueError("Нет подтверждённого оплаченного электронного сертификата")
   if lead.get("pipeline_id") not in rule.pipelines:raise ValueError("Воронка вне опубликованного сценария выдачи")
+  # The first issue request can reserve the number before the nominal is filled.
+  # After that rejection, check CRM until a valid nominal is available.
+  waiting_for_nominal = job.state=="blocked" and job.reason in (NOMINAL_REQUIRED, "Касса: "+NOMINAL_REQUIRED)
+  if waiting_for_nominal:
+   certificate_nominal(lead)
   cert=issuer(job.lead_id)
   lead=c.get(f"/api/v4/leads/{job.lead_id}",**{"with":"contacts"})
   if lead.get("pipeline_id") not in rule.pipelines:raise ValueError("Воронка вне опубликованного сценария выдачи")
@@ -163,6 +183,9 @@ def process(db,c,job,stamp,issuer=issue):
   job.number=cert["number"];job.check_at=stamp+timedelta(seconds=60)
   hour,minute=map(int,rule.trigger.time.split(":"));start=datetime.strptime(data["start_iso"],"%Y-%m-%d").date()
   due=datetime.combine(start,datetime.min.time(),MSK).replace(hour=hour,minute=minute)
+  if waiting_for_nominal:
+   job.state="queued"
+   job.reason=""
   job.due_at=due;db.commit()
   if stamp<due:return
   if not rule.window_start<=stamp.astimezone(MSK).hour<rule.window_end:return

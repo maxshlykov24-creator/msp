@@ -1413,6 +1413,47 @@ def test_stale_source_alarm_rechecks_actual_crm_without_duplicate_note(monkeypat
         assert call.status == "matched" and call.result["tech_written"]
 
 
+def test_unattributed_recheck_is_scheduled_and_transient_errors_still_retry(monkeypatch):
+    import datetime as dt
+    from app import amo_v4, tokens
+    from app.calltrack.models import CallEvent
+    from app.calltrack.reconcile import run_reconcile_once
+
+    reads = []
+    def get_lead(**kwargs):
+        reads.append(kwargs["lead_id"])
+        return {"id": kwargs["lead_id"], "custom_fields_values": []}
+
+    monkeypatch.setattr(tokens, "get_valid_access_token", lambda db: "test")
+    monkeypatch.setattr(amo_v4, "get_lead", get_lead)
+    monkeypatch.setattr(amo_v4, "field_id_by_key", lambda **kw: {})
+    monkeypatch.setattr(amo_v4, "select_field", lambda **kw: {"field_id": 99, "enums": {}})
+    now = dt.datetime.now(dt.timezone.utc)
+    with _db() as db:
+        call = CallEvent(call_id="slow-source", called="9310000000", caller="9000000000", lead_id=123,
+                         started_at=now-dt.timedelta(days=2), status="unattributed",
+                         result={"note_sent": True, "attempts": 400})
+        db.add(call)
+        db.commit()
+        run_reconcile_once(db)
+        assert call.status == "unattributed"
+        assert call.result["source_recheck_at"] >= (now + dt.timedelta(hours=6)).timestamp()
+        run_reconcile_once(db)
+        assert reads == [123]
+        call.result = {**call.result, "source_recheck_at": now.timestamp()-1}
+        db.commit()
+        def unavailable(**kwargs):
+            raise RuntimeError("temporary")
+        monkeypatch.setattr(amo_v4, "select_field", unavailable)
+        run_reconcile_once(db)
+        assert call.status == "retry" and call.result["apply_failures"] == 1
+        monkeypatch.setattr(amo_v4, "select_field", lambda **kw: {"field_id": 99, "enums": {}})
+        monkeypatch.setattr(amo_v4, "get_lead", lambda **kw: {"id": 123, "custom_fields_values": [
+            {"field_id": 99, "values": [{"value": "Яндекс Карты"}]}]})
+        run_reconcile_once(db)
+        assert call.status == "matched" and call.result["apply_failures"] == 0
+        assert "source_recheck_at" not in call.result
+
 def test_initial_note_timeout_recovers_marker_without_duplicate(monkeypatch):
     import datetime as dt
     from app import amo_v4
