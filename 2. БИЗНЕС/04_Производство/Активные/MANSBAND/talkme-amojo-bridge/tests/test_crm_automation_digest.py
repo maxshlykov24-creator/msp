@@ -56,15 +56,17 @@ def test_collect_preserves_closed_lead_tasks_and_excludes_tests_migration(stage,
     class Client:
         def get(self,path,**params):
             if path=='/api/v4/leads/pipelines':return {'_embedded':{'pipelines':[{'id':pid,'name':str(pid),'_embedded':{'statuses':[{'id':11,'name':stage}]}} for pid in a.PIPELINES]}}
-            if path=='/api/v4/tasks':return {'_embedded':{'tasks':[{'id':i,'entity_id':i,'entity_type':'leads','is_completed':False,'complete_till':yesterday} for i in (1,2,3)]}}
+            if path=='/api/v4/tasks':return {'_embedded':{'tasks':[{'id':i,'entity_id':i,'entity_type':'leads','is_completed':False,'complete_till':yesterday} for i in (1,2,3,6)]}}
             if path=='/api/v4/leads':return {'_embedded':{'leads':[leads[4],leads[5]] if params['filter[statuses][0][pipeline_id]']==a.SALES else []}}
-            return leads[int(path.rsplit('/',1)[1])]
+            return leads.get(int(path.rsplit('/',1)[1]), {})
     result=d.collect(Client(),at,held={3})
     assert [x['lead_id'] for x in result['tasks']]==[1]
     assert result['stages']==[]  # Actual date today wins; missing actual date does not use stale technical SLA.
     assert result['missing_dates']==[5]
+    assert result['unavailable_tasks']==[6]
     body=d.render(result,at)
     assert 'Задачи: 1.' in body and '/leads/detail/1' in body
+    assert 'недоступной карточкой' in body
 
 
 def test_digest_never_runs_outside_noon_window(monkeypatch):

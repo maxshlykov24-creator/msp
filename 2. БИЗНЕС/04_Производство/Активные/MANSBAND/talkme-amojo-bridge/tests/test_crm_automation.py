@@ -477,3 +477,12 @@ def test_manually_rescheduled_owned_task_survives_stage_exit(db):
     c.task["complete_till"]+=3600
     assert a.complete_owned_task(db,job,c,"Этап изменился",preview=False)=="manual_edit_conflict"
     assert not c.patches and job.state=="created"
+
+
+def test_migration_preflight_holds_unfinished_kassa_edit_and_tag():
+    from app.pipeline_guard import MIGRATION_TAG
+    item = lead()
+    binding = {"lead_id": item["id"], "kind": "company", "edit_pending": True}
+    assert a.route_with_bindings(item, catalog(), [binding]).reason == "kassa_edit_pending"
+    item["_embedded"] = {"tags": [{"name": MIGRATION_TAG}]}
+    assert a.route_with_bindings(item, catalog(), []).reason == "migration_guard"

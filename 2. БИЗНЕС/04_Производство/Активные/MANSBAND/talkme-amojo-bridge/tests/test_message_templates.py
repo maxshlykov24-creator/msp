@@ -841,3 +841,37 @@ def test_shipping_template_requires_single_manually_recorded_track():
         with pytest.raises(ValueError,match="трек-номер СДЭК"):
             m.render({"custom_fields_values":[{"field_id":3133923,"values":values}]},r)
     assert m.render({"custom_fields_values":[{"field_id":3133923,"values":[{"value":" 00123 "}]}]},r)=="Номер трека: 00123"
+
+
+@pytest.mark.parametrize("fresh_value", ["UPDATED", "", None])
+def test_refreshes_tracking_on_final_read_before_first_post(db, transport, fresh_value):
+    j = job(db, doc(db, rule(content="Трек {{lead.field.3133923}}")))
+    track = {"field_id": 3133923, "values": [{"value": "ORIGINAL"}]}
+    transport.document["custom_fields_values"].append(track)
+    original = transport.get
+    reads = []
+    def get(path, **kwargs):
+        if path == "/api/v4/leads/17":
+            reads.append(path)
+            if len(reads) == 3:
+                track["values"] = [{"value": fresh_value}]
+        return original(path, **kwargs)
+    transport.get = get
+    m.send(db, j, transport, STAMP)
+    if fresh_value:
+        assert [p["text"] for p in transport.posts] == ["Трек UPDATED"]
+        assert j.rendered == "Трек UPDATED"
+    else:
+        assert not transport.posts and j.state == "blocked"
+        assert db.scalar(select(m.Attempt)) is None
+
+
+def test_changed_body_after_attempt_cannot_fall_through_to_next_channel(db, transport):
+    d = doc(db, rule(content="{{lead.field.3133923}}"))
+    j = job(db, d)
+    j.snapshot, j.plan, j.recipient_key, j.rendered = m.snapshot(db, d), [], "key", "OLD"
+    db.add(m.Attempt(job_id=j.id, position=0, transport="telegram", state="error", crm_id="original"))
+    db.commit()
+    transport.document["custom_fields_values"].append({"field_id": 3133923, "values": [{"value": "NEW"}]})
+    m.send(db, j, transport, STAMP)
+    assert j.state == "blocked" and not transport.posts and j.rendered == "OLD"

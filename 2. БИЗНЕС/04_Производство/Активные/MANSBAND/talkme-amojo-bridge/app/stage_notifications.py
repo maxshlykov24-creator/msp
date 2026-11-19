@@ -621,17 +621,9 @@ TABLES.extend([CalendarJob.__table__, CalendarAttempt.__table__])
 
 
 def calendar_date(lead, field):
-    from app.reservation_reminders import values
-    entries = values(lead, field)
-    if len(entries) != 1:
-        return None
-    try:
-        raw = entries[0]["value"]
-        if isinstance(raw, bool):
-            return None
-        return datetime.fromtimestamp(int(raw), MSK).date()
-    except (ValueError, TypeError, KeyError, OverflowError, OSError):
-        return None
+    from app.crm_automation import field_date
+    value = field_date(lead, field)
+    return value.date() if value is not None else None
 
 
 def free_hold_valid(lead, settings):

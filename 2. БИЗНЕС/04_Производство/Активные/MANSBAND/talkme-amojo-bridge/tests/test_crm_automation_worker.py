@@ -534,3 +534,92 @@ def test_store_cursor_rejects_out_of_window_and_replays_overlap(db):
     w.process_store_updates(db,c,catalog(),1000,1100)
     w.process_store_updates(db,c,catalog(),1000,1120)
     assert db.get(w.Cursor,"store-details-v1").through == 1120 and not c.patches
+
+
+def test_closed_task_on_excluded_lead_is_observed_without_writes(db):
+    c = Client([event()])
+    collect(db, c)
+    w.process_event(db, c, db.get(w.Event, "one"), catalog(), {"qualify"})
+    w.dispatch(db, c, catalog(), {"qualify"}, cutover_at=1)
+    job = db.scalar(select(a.TaskExecution))
+    c.lead.update(isTest=True, status_id=12)
+    c.kassa_state = lambda *args: pytest.fail("excluded lead must not start operational work")
+    w.dispatch(db, c, catalog(), {"qualify"}, cutover_at=1)
+    assert job.state == "created" and not c.patches
+    c.tasks[1]["is_completed"] = True
+    c.tasks[1]["entity_id"] = 999
+    w.dispatch(db, c, catalog(), {"qualify"}, cutover_at=1)
+    assert job.state == "created"
+    c.tasks[1]["entity_id"] = 55
+    w.dispatch(db, c, catalog(), {"qualify"}, cutover_at=1)
+    assert (job.state, job.reason) == ("completed", "completed_on_excluded_lead")
+    assert len(c.posts) == 1 and not c.patches
+
+
+@pytest.mark.parametrize("change_during_read", [True, False])
+def test_courier_keeps_existing_cash_desk_obligation(db, change_during_read):
+    c = Client([event()])
+    cat = a.Catalog([{"id": a.SALES, "_embedded": {"statuses": [{"id": 11, "name": "Собран", "type": 0}]}}])
+    collect(db, c)
+    w.process_event(db, c, db.get(w.Event, "one"), cat, {"courier"})
+    snapshot = {"version": 1, "lead_id": 55, "bindings": [{"number": 38, "lead_id": 55, "kind": "delivery"}],
+                "execution_owners": {"courier": "amocrm"}, "tasks": []}
+    task = {"deal_number": 38, "kind": "call_courier", "status": "pending"}
+    calls = []
+    def read(lead_id):
+        calls.append(lead_id)
+        return {**snapshot, "tasks": [task] if not change_during_read or len(calls) > 1 else []}
+    c.kassa_state = read
+    w.dispatch(db, c, cat, {"courier"}, cutover_at=1)
+    assert not c.posts
+    task.update(status="done", completed_at="1970-01-01T00:20:00+00:00")
+    w.dispatch(db, c, cat, {"courier"}, cutover_at=1)
+    assert not c.posts
+    task["completed_at"] = "1970-01-01T00:10:00+00:00"  # A previous stage entry.
+    w.dispatch(db, c, cat, {"courier"}, cutover_at=1)
+    assert len(c.posts) == 1
+
+
+def test_completed_shop_work_retires_only_unchanged_control(db):
+    c = Client([event()])
+    cat = a.Catalog([{"id": a.SALES, "_embedded": {"statuses": [{"id": 11, "name": "Ждет товар", "type": 0}]}}])
+    snap = {"version": 1, "lead_id": 55, "bindings": [{"number": 38, "lead_id": 55, "kind": "company"}],
+            "tasks": [{"kind": "movement", "deal_number": 38, "status": "pending"}]}
+    c.kassa_state = lambda lid: snap
+    collect(db, c)
+    w.process_event(db, c, db.get(w.Event, "one"), cat, {"transfer_control"})
+    def dispatch():
+        w.dispatch(db, c, cat, {"transfer_control"}, cutover_at=1)
+    dispatch()
+    assert len(c.posts) == 1
+    work = snap["tasks"].pop()
+    dispatch()
+    assert not c.patches
+    work["status"] = "done"
+    snap["tasks"].append(work)
+    due = c.tasks[1]["complete_till"]
+    c.tasks[1]["complete_till"] += 100
+    dispatch()
+    assert not c.patches
+    c.tasks[1]["complete_till"] = due
+    dispatch()
+    assert len(c.patches) == 1 and c.tasks[1]["is_completed"]
+
+
+def test_online_placeholder_never_creates_a_meeting_deadline(db):
+    from app.crm_automation_fields import project_fields
+    from app.stage_notifications import calendar_date
+    c = Client([event()])
+    cat = a.Catalog([{"id": a.SALES, "_embedded": {"statuses": [{"id": 11, "name": "Встреча назначена", "type": 0}]}}])
+    placeholder = int(datetime(2001, 1, 1, tzinfo=a.MSK).timestamp())
+    c.lead["custom_fields_values"] = [{"field_id": f, "values": [{"value": placeholder}]} for f in (3382311, 3185681)]
+    collect(db, c)
+    stage_event = db.get(w.Event, "one")
+    w.process_event(db, c, stage_event, cat, {"visit_followup"})
+    assert stage_event.reason == "missing_required_date" and not db.scalar(select(a.TaskExecution))
+    assert all(calendar_date(c.lead, f) is None for f in (3382311, 3185681))
+    assert 3279145 not in {v["field_id"] for v in project_fields(c.lead, cat).fields}
+    actual = datetime(2026, 11, 20, tzinfo=a.MSK)
+    c.lead["custom_fields_values"][0]["values"] = [{"value": int(actual.timestamp())}]
+    w.process_event(db, c, stage_event, cat, {"visit_followup"})
+    assert stage_event.state == "planned" and db.scalar(select(a.TaskExecution)) is not None

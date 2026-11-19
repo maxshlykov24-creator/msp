@@ -6,7 +6,7 @@ fresh projection; unknown outcomes are reconciled without repeating the PATCH.
 from dataclasses import dataclass, field
 from datetime import datetime, time
 
-from app.crm_automation import Catalog, MSK, PIPELINES, field_date, field_values, is_test, stamp
+from app.crm_automation import Catalog, MSK, PIPELINES, field_date, field_values, is_test, placeholder_meeting_date, stamp
 from app.crm_automation_rules import STAGE_DATE_FIELDS
 from app.pipeline_guard import migration_blocked
 from app.models import Base
@@ -155,8 +155,8 @@ def project_fields(lead: dict, catalog: Catalog, *, event_at: datetime | None = 
 
     # Copy only a real meeting date into an empty approximate date. Never emit
     # the legacy 01.01.2001 placeholder, and never erase it without review.
-    meeting = field_date(lead, 3382311)
-    if meeting and meeting.astimezone(MSK).date().isoformat() == "2001-01-01":
+    meeting = field_date(lead, 3382311, include_placeholder=True)
+    if meeting and placeholder_meeting_date(3382311, meeting.date()):
         out.issues.append("legacy_fake_meeting_date")
     elif meeting:
         fill(3185681, int(meeting.timestamp()))

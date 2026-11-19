@@ -43,13 +43,21 @@ def collect(c,now,held=frozenset()):
     cat=Catalog(pipelines)
     if PIPELINES-set(cat.pipelines): raise ValueError('missing_digest_pipeline')
     tasks=all_pages(c,'/api/v4/tasks','tasks',**{'filter[is_completed]':0})
-    overdue=[];leads={}
+    overdue=[];leads={};unavailable_tasks=[]
     for task in tasks:
         if task.get('is_completed') or int(task['complete_till'])>=int(now.timestamp()): continue
         if task.get('entity_type')!='leads': continue
         lid=int(task['entity_id'])
-        if lid not in leads:leads[lid]=c.get(f'/api/v4/leads/{lid}')
+        if lid not in leads:
+            try:
+                leads[lid]=c.get(f'/api/v4/leads/{lid}')
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code!=404:raise
+                leads[lid]={}
         lead=leads[lid]
+        if not lead:
+            unavailable_tasks.append(task['id'])
+            continue
         if lead.get('id')!=lid: raise ValueError('unexpected_digest_lead')
         if eligible(lead,held):overdue.append({'id':task['id'],'lead_id':lid,'pipeline_id':lead['pipeline_id'],'due':int(task['complete_till'])})
     stages=[];missing=[]
@@ -74,7 +82,7 @@ def collect(c,now,held=frozenset()):
                 stages.append({'lead_id':lead['id'],'pipeline_id':pid,'stage':stage,'due':int(value.timestamp())})
     return {'tasks':sorted(overdue,key=lambda x:(x['due'],x['id'])),
             'stages':sorted(stages,key=lambda x:(x['due'],x['lead_id'])),
-            'missing_dates':sorted(set(missing)),
+            'missing_dates':sorted(set(missing)), 'unavailable_tasks':sorted(set(unavailable_tasks)),
             'pipeline_names':{p:cat.pipelines[p]['name'] for p in PIPELINES}}
 
 
@@ -86,6 +94,8 @@ def render(result,now):
     for pid in sorted(set(counts)|set(stage_counts)):
         lines.append(f"{result['pipeline_names'][pid]}: задач {counts[pid]}, этапов {stage_counts[pid]}.")
     if result['missing_dates']:lines.append(f"Нужно указать обязательную дату: {len(result['missing_dates'])} сделок.")
+    if result.get('unavailable_tasks'):
+        lines.append(f"Не включены в итоги: {len(result['unavailable_tasks'])} просроченных задач с недоступной карточкой сделки.")
     for title,rows in [('Самые давние задачи',tasks),('Просроченные этапы',stages)]:
         if not rows:continue
         lines.extend(['',title+':'])

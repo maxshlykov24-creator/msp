@@ -111,7 +111,13 @@ class Client:
         self.settings = settings or Settings()
 
     def get(self, path, **params):
-        return self.wrapped.get(path, **params)
+        try:
+            return self.wrapped.get(path, **params)
+        except httpx.HTTPStatusError as exc:
+            if (exc.response.status_code == 404 and path.startswith("/api/v4/leads/")
+                    and path.removeprefix("/api/v4/leads/").isdecimal()):
+                return {}
+            raise
 
     def post(self, path, body):
         response = self.wrapped.amo.post(path, json=body)
@@ -233,6 +239,10 @@ def process_event(db, c, event: Event, catalog: a.Catalog, enabled_rules: frozen
         event.state, event.reason = "migration", "no_business_replay"
     else:
         lead = c.get(f"/api/v4/leads/{event.lead_id}")
+        if lead.get("id") != event.lead_id:
+            event.state, event.reason = "held", "crm_lead_unavailable"
+            db.commit()
+            return
         if creation and not event.after:
             cursor = db.get(Cursor, "stage-v1")
             updated_at = lead.get("updated_at")
@@ -397,6 +407,10 @@ def process_store_updates(db, c, catalog, boundary, through):
         job.updated_at = datetime.now(timezone.utc)
         db.commit()
         current = c.get(f"/api/v4/leads/{job.lead_id}")
+        if current.get("id") != job.lead_id:
+            job.reason = "crm_lead_unavailable"
+            db.commit()
+            continue
         if job.state == "planned" and current.get("updated_at") != int(job.event_id.split(":")[1]):
             job.state, job.reason = "cancelled", "snapshot_changed"
             db.commit()
@@ -554,6 +568,8 @@ def visit_tasks(db, c, now, live_from):
         task.updated_at = now
         db.commit()
         lead = c.get(f"/api/v4/leads/{task.lead_id}")
+        if lead.get("id") != task.lead_id:
+            continue
         if a.is_test(lead) or lead.get("is_deleted"):
             a.observe_excluded_task(db, task, c)
             continue
@@ -721,7 +737,7 @@ def shop_control_needed(rule_id, snapshot):
                for task in snapshot.get("tasks") or [])
 
 
-def execution_hold(rule_id, snapshot):
+def execution_hold(rule_id, snapshot, entry_at):
     """A pre-cutover cash-desk obligation stays with its original executor."""
     if rule_id not in ("promise", "courier") or not snapshot.get("bindings"):
         return None
@@ -730,7 +746,18 @@ def execution_hold(rule_id, snapshot):
     kind = "promise_follow" if rule_id == "promise" else "call_courier"
     if not isinstance(snapshot.get("tasks"), list):
         return "invalid_kassa_snapshot"
-    if any(t.get("kind") == kind and t.get("status") == "pending" for t in snapshot["tasks"]):
+    for task in snapshot["tasks"]:
+        if task.get("kind") != kind:
+            continue
+        if task.get("status") == "cancelled":
+            continue
+        if task.get("status") == "done":
+            try:
+                completed = datetime.fromisoformat(task.get("completed_at") or "")
+                if completed.tzinfo is not None and completed.timestamp() < entry_at:
+                    continue
+            except (TypeError, ValueError):
+                pass  # An unverified completion must not generate a second obligation.
         return f"existing_kassa_{rule_id}_requires_reconciliation"
     return None
 
@@ -782,6 +809,10 @@ def dispatch(db, c, catalog, ids, *, cutover_at, pipelines=None):
             db.commit()
             continue
         lead = c.get(f"/api/v4/leads/{job.lead_id}")
+        if lead.get("id") != job.lead_id:
+            job.reason = "crm_lead_unavailable"
+            db.commit()
+            continue
         if migration_blocked(lead): continue
         if a.is_test(lead) or lead.get("is_deleted"):
             if job.state == "created":
@@ -793,7 +824,7 @@ def dispatch(db, c, catalog, ids, *, cutover_at, pipelines=None):
         snapshot = (c.kassa_state(job.lead_id, include_promise=True) if rule.id == "promise"
                     else c.kassa_state(job.lead_id))
         problem = binding_issue(lead, snapshot, required=rule.id in SHOP_TASK_KINDS)
-        problem = problem or execution_hold(rule.id, snapshot)
+        problem = problem or execution_hold(rule.id, snapshot, event.at)
         if problem:
             job.reason = problem
             db.commit()
@@ -818,7 +849,18 @@ def dispatch(db, c, catalog, ids, *, cutover_at, pipelines=None):
             job.reason = "missing_required_date"
             db.commit()
             continue
-        if job.state == "planned" and not shop_control_needed(rule.id, snapshot):
+        if not shop_control_needed(rule.id, snapshot):
+            if job.state == "created":
+                # Only a recorded completion/cancellation of the linked work
+                # can close our control task; missing data is inconclusive.
+                fresh = c.kassa_state(job.lead_id)
+                if (not binding_issue(lead, fresh, required=True) and fresh["bindings"] == snapshot["bindings"]
+                        and not shop_control_needed(rule.id, fresh)
+                        and any(t.get("deal_number") == fresh["bindings"][0].get("number")
+                                and t.get("kind") in SHOP_TASK_KINDS[rule.id]
+                                and t.get("status") in ("done", "cancelled") for t in fresh.get("tasks") or [])):
+                    a.complete_owned_task(db, job, c, "Работа в кассе завершена или отменена", preview=False)
+                continue
             job.reason = "no_pending_kassa_work"
             db.commit()
             continue
@@ -838,7 +880,7 @@ def dispatch(db, c, catalog, ids, *, cutover_at, pipelines=None):
             if rule.id in ("promise", "courier"):
                 fresh = (c.kassa_state(job.lead_id, include_promise=True) if rule.id == "promise"
                          else c.kassa_state(job.lead_id))
-                if (binding_issue(lead, fresh) or execution_hold(rule.id, fresh)
+                if (binding_issue(lead, fresh) or execution_hold(rule.id, fresh, event.at)
                         or fresh["bindings"] != snapshot["bindings"]
                         or (rule.id == "promise" and fresh.get("promise") != snapshot.get("promise"))):
                     job.reason = f"kassa_{rule.id}_changed"

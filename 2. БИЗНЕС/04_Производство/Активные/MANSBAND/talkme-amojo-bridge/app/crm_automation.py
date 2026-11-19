@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
-from datetime import datetime, time, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Callable, Literal, Optional
 from zoneinfo import ZoneInfo
 
@@ -48,14 +48,20 @@ def field_values(lead: dict, field: int) -> list:
             if v.get("value") not in (None, "")]
 
 
-def field_date(lead: dict, field: int) -> datetime | None:
-    values = field_values(lead, field)
-    if len(values) != 1:
+def placeholder_meeting_date(field: int, day: date) -> bool:
+    return field in (3382311, 3185681) and day == date(2001, 1, 1)
+
+
+def field_date(lead: dict, field: int, *, include_placeholder=False) -> datetime | None:
+    values = [v.get("value") for f in lead.get("custom_fields_values") or []
+              if f.get("field_id") == field for v in f.get("values") or []]
+    if len(values) != 1 or isinstance(values[0], bool):
         return None
     try:
-        return datetime.fromtimestamp(int(values[0]), MSK)
+        result = datetime.fromtimestamp(int(values[0]), MSK)
     except (ValueError, TypeError, OverflowError, OSError):
         return None
+    return result if include_placeholder or not placeholder_meeting_date(field, result.date()) else None
 
 
 def is_test(lead: dict) -> bool:
@@ -140,10 +146,14 @@ def route_with_bindings(lead: dict, catalog: Catalog, bindings: list[dict]) -> R
         return RouteDecision("excluded", "test_kassa_binding")
     if len(matched) > 1:
         return RouteDecision("manual", "multiple_kassa_bindings")
+    if migration_blocked(lead):
+        return RouteDecision("manual", "migration_guard")
     if not matched:
         return route_candidate(lead, catalog)
     if matched[0].get("isTest"):
         return RouteDecision("excluded", "test_kassa_binding")
+    if matched[0].get("edit_pending"):
+        return RouteDecision("manual", "kassa_edit_pending")
     label = type_from_binding(matched[0])
     if label is None:
         return RouteDecision("manual", "unknown_kassa_base_type")
@@ -275,6 +285,8 @@ def execute_task(db: Session, job: TaskExecution, client, *, enabled_rules: froz
     if available > stamp(now or datetime.now(timezone.utc)):
         return "not_due"
     lead = client.get(f"/api/v4/leads/{job.lead_id}")
+    if lead.get("id") != job.lead_id:
+        return "crm_lead_unavailable"
     if migration_blocked(lead):
         return "migration_guard"
     migration = db.get(MigrationEntry, job.lead_id)
@@ -341,6 +353,8 @@ def complete_owned_task(db: Session, job: TaskExecution, client, reason: str, *,
     if migration and migration.state not in ("preview", "verified", "rolled_back"):
         return "migration_guard"
     lead = client.get(f"/api/v4/leads/{job.lead_id}")
+    if lead.get("id") != job.lead_id:
+        return "crm_lead_unavailable"
     if migration_blocked(lead):
         return "migration_guard"
     if is_test(lead) or lead.get("is_deleted"):
@@ -385,6 +399,8 @@ def revise_task(db: Session, job: TaskExecution, client, *, due: datetime,
     if migration and migration.state not in ("preview", "verified", "rolled_back"):
         return "migration_guard"
     lead = client.get(f"/api/v4/leads/{job.lead_id}")
+    if lead.get("id") != job.lead_id:
+        return "crm_lead_unavailable"
     if migration_blocked(lead):
         return "migration_guard"
     if is_test(lead) or lead.get("is_deleted") or not current(lead):
