@@ -269,10 +269,17 @@ def match_selection(choice, group, by_variation):
     models = {norm(v) for v in choice["models"]}
     fits = {norm(v) for v in choice.get("fits", [])}
     overrides = {norm(k): v for k, v in choice.get("confirmed_codes", {}).items()}
-    if overrides.keys() - {norm(e["entry"]) for e in group["catalog"]}:
+    excluded = {norm(k): v for k, v in choice.get("excluded_entries", {}).items()}
+    entries = {norm(e["entry"]) for e in group["catalog"]}
+    if overrides.keys() - entries:
         raise ValueError(f"{choice['cell']}: ручная привязка относится к другой группе Excel")
+    if (excluded.keys() - entries or excluded.keys() & overrides.keys() or entries <= excluded.keys()
+            or any(not str(reason or "").strip() for reason in excluded.values())):
+        raise ValueError(f"{choice['cell']}: укажи причину для каждой пропущенной записи этой группы")
     matched = set()
     for entry in group["catalog"]:
+        if norm(entry["entry"]) in excluded:
+            continue
         candidates = entry["candidates"]
         override = overrides.get(norm(entry["entry"]))
         if override:
