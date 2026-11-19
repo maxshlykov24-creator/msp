@@ -3,6 +3,7 @@
 @tailwind utilities;
 
 .catalog-photo-thumb {
+  position: relative;
   align-self: center;
   flex: 0 0 44px;
   width: 44px;
@@ -15,6 +16,24 @@
 }
 .catalog-photo-thumb:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
 .catalog-photo-thumb img { width: 100%; height: 100%; object-fit: contain; }
+.catalog-photo-icon {
+  display: grid;
+  place-items: center;
+  color: rgb(var(--fg));
+  background: rgb(var(--ink-800));
+}
+.catalog-photo-count {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  min-width: 15px;
+  padding: 0 2px;
+  border-radius: 4px;
+  background: #141414dc;
+  color: white;
+  font-size: 10px;
+  line-height: 15px;
+}
 .catalog-photo-hover {
   position: fixed;
   z-index: 10000;

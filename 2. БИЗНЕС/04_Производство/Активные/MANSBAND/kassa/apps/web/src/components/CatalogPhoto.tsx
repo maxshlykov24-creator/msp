@@ -1,8 +1,10 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { Images } from "lucide-react";
 import type { SuitModel } from "@kassa/shared";
 
 type PhotoProps = { name: string; suit?: SuitModel; groupNames?: string[] };
+type PhotoChoice = { asset: string; name: string };
 type PhotoIndex = {
   products: Record<string, Record<string, Record<string, string>>>;
   suits: Record<string, string>;
@@ -50,14 +52,13 @@ const PhotoWithIndex = lazy(async () => {
     if (suit?.mixed) {
       const options = suitOptions.get([suit.line, suit.variation, suit.fit].map(normalize).join("|"));
       if (!options?.length) return null;
-      return <div className="mx-4 mb-2 flex flex-wrap gap-3" aria-label="Фотографии расцветок">
-        {options.map(({ asset, color, pattern }) =>
-          <div key={[asset, color, pattern].join("|")} className="flex items-center gap-2 text-xs text-mute-soft">
-            <PhotoButton asset={asset} name={[suit.variation, color, pattern].filter(Boolean).join(" · ")} jacket />
-            <span>{[color, pattern].filter(Boolean).join(" · ")}</span>
-          </div>
-        )}
-      </div>;
+      const cover = options.find(option => option.color === normalize(suit.color) && option.pattern === normalize(suit.pattern));
+      const ordered = cover ? [cover, ...options.filter(option => option !== cover)] : options;
+      const choices = ordered.map(({ asset, color, pattern }) => ({
+        asset, name: [color, pattern].filter(Boolean).join(" · "),
+      }));
+      return <PhotoButton key={suit.modelId} asset={ordered[0]!.asset} name={suit.variation}
+        jacket choices={choices} differentAppearance={!cover} />;
     }
     const asset = suit
       ? index.suits[[suit.line, suit.variation, suit.color, suit.pattern, suit.fit].map(normalize).join("|")]
@@ -71,15 +72,26 @@ export function CatalogPhoto(props: PhotoProps) {
   return <Suspense fallback={null}><PhotoWithIndex {...props} /></Suspense>;
 }
 
-function PhotoButton({ name, asset, jacket }: { name: string; asset: string; jacket: boolean }) {
+function PhotoButton({ name, asset, jacket, choices, differentAppearance = false }: {
+  name: string;
+  asset: string;
+  jacket: boolean;
+  choices?: PhotoChoice[];
+  differentAppearance?: boolean;
+}) {
   const [pinned, setPinned] = useState(false);
   const [anchor, setAnchor] = useState<{ top: number; left: number } | null>(null);
   const [missing, setMissing] = useState(false);
   const [previewFailed, setPreviewFailed] = useState(false);
+  const [selected, setSelected] = useState(0);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const dialog = useRef<HTMLDialogElement>(null);
   const prefix = "/catalog-photos/" + asset;
   const caption = jacket ? "На фото пиджак этой вариации" : "Фото вариации";
+  const current = choices?.[selected];
+  const photoName = [name, current?.name].filter(Boolean).join(" · ");
+  const action = differentAppearance ? "Открыть фото других расцветок" : "Открыть фото вариации";
+  const buttonName = [action, name, differentAppearance ? undefined : choices?.[0]?.name].filter(Boolean).join(" · ");
 
   function hideHover() {
     clearTimeout(timer.current);
@@ -116,15 +128,19 @@ function PhotoButton({ name, asset, jacket }: { name: string; asset: string; jac
     };
   }, [anchor]);
 
-  if (missing) return null;
+  const iconCover = differentAppearance || missing;
+  if (missing && (!choices || choices.length < 2)) return null;
   return <>
-    <button type="button" className="catalog-photo-thumb" aria-label={"Открыть фото вариации · " + name}
+    <button type="button" className={`catalog-photo-thumb${iconCover ? " catalog-photo-icon" : ""}`}
+      aria-label={buttonName} title={iconCover ? buttonName : undefined}
       aria-haspopup="dialog"
-      onPointerEnter={(e) => { if (e.pointerType === "mouse" && !pinned) showHover(e.currentTarget); }}
+      onPointerEnter={(e) => { if (e.pointerType === "mouse" && !pinned && !iconCover) showHover(e.currentTarget); }}
       onPointerLeave={hideHover} onBlur={hideHover}
-      onClick={(e) => { e.stopPropagation(); hideHover(); setPreviewFailed(false); setPinned(true); }}>
-      <img src={prefix + "-s.webp"} width="40" height="48" loading="lazy" decoding="async" alt=""
-        onError={() => setMissing(true)} />
+      onClick={(e) => { e.stopPropagation(); hideHover(); setSelected(0); setPreviewFailed(false); setPinned(true); }}>
+      {iconCover ? <Images size={19} aria-hidden /> :
+        <img src={prefix + "-s.webp"} width="40" height="48" loading="lazy" decoding="async" alt=""
+          onError={() => setMissing(true)} />}
+      {choices && choices.length > 1 && <span className="catalog-photo-count" aria-hidden>{choices.length}</span>}
     </button>
     {anchor && !pinned && createPortal(<div className="catalog-photo-hover" style={anchor} aria-hidden="true">
       <img src={prefix + "-l.webp"} alt="" onError={hideHover} />
@@ -135,8 +151,20 @@ function PhotoButton({ name, asset, jacket }: { name: string; asset: string; jac
       <figure>
         <button type="button" autoFocus aria-label="Закрыть фото" onClick={() => dialog.current?.close()}>×</button>
         {previewFailed ? <p role="status">Увеличенное фото не загрузилось</p> :
-          <img src={prefix + "-l.webp"} alt={caption + " · " + name} onError={() => setPreviewFailed(true)} />}
-        <figcaption><span>{caption}</span>{name}</figcaption>
+          <img src={"/catalog-photos/" + (current?.asset ?? asset) + "-l.webp"}
+            alt={caption + " · " + photoName} onError={() => setPreviewFailed(true)} />}
+        <figcaption><span>{caption}</span>{photoName}</figcaption>
+        {choices && choices.length > 1 && (
+          <div className="flex flex-wrap gap-2 px-4 pb-4" aria-label="Расцветки на фото">
+            {choices.map((choice, i) => (
+              <button key={choice.name + choice.asset} type="button" aria-pressed={selected === i}
+                className={`rounded-md border px-2 py-1 text-xs ${selected === i ? "border-gold text-white" : "border-ink-600 text-mute-soft"}`}
+                onClick={() => { setSelected(i); setPreviewFailed(false); }}>
+                {choice.name || `Фото ${i + 1}`}
+              </button>
+            ))}
+          </div>
+        )}
       </figure>
     </dialog>, document.body)}
   </>;
