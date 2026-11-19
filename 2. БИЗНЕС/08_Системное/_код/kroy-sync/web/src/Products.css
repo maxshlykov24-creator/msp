@@ -37,3 +37,5 @@
 .catalog-overview td>span{color:var(--muted)}
 
 .picker-footer{display:flex;justify-content:space-between;align-items:center;gap:12px}.picker-footer button{min-height:38px}.picker-matrix-wrap>.text-button{margin-bottom:6px}
+
+.workspace-header .catalog-header-actions{gap:6px}.workspace-header .catalog-header-actions>button{padding:5px 10px;min-height:34px;gap:6px;font-size:11px;line-height:1.25}.catalog-header-actions>button svg{width:15px;height:15px;flex:none}@media(pointer:coarse){.workspace-header .catalog-header-actions>button{min-height:44px}}

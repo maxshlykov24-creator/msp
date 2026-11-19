@@ -8,6 +8,8 @@ from .db import Entity,Item,transaction
 def refresh_wb_mappings(engine,catalog):
     digest=hashlib.sha256(json.dumps(catalog,sort_keys=True).encode()).hexdigest()
     with transaction(engine) as s:
+        from .catalog_cards import remember, wb_variants
+        remember(s, "wb", catalog["at"], wb_variants(catalog["cards"]))
         items=list(s.scalars(select(Item).where(Item.kind=='garment')));codes=defaultdict(set);previous={};proposals=defaultdict(list)
         for i in items:
             for c in i.barcodes:codes[str(c)].add(i.id)
@@ -15,6 +17,8 @@ def refresh_wb_mappings(engine,catalog):
             if e.data['platform']=='wb' and e.data['identity_kind']=='barcode':codes[e.data['value']].add(e.data['item_id'])
         old={e.data['item_id']:e for e in s.scalars(select(Entity).where(Entity.kind=='mapping',Entity.data['platform'].as_string()=='wb'))}
         for iid,e in old.items():
+            manual=e.data.get('manual_card')
+            if manual:previous.setdefault((manual['product_id'],manual['variant_id']),set()).add(iid)
             if e.data.get('state')=='unique':
                 for c in e.data['candidates']:previous.setdefault((str(c['product_id']),str(c['variant_id'])),set()).add(iid)
         for card in catalog['cards']:
@@ -36,6 +40,8 @@ def refresh_wb_mappings(engine,catalog):
             previous_aliases={code for c in (e.data.get('candidates',[]) if e else []) for code in c.get('market_barcodes',[])}|set(i.barcodes)
             if state=='unique' and any(set(c['market_barcodes'])-previous_aliases for c in rows):aliases_added.add(i.id)
             if e:
+                if e.data.get('manual_card'):
+                    data.update(manual_card=e.data['manual_card'],document_id=e.data['document_id'],approved=state=='unique' and rows[0]['variant_id']==e.data['manual_card']['variant_id'])
                 if e.data.get('candidates')==rows and e.data.get('state')==state:data['approved']=e.data.get('approved',False)
                 if any(e.data.get(k)!=data.get(k) for k in ('candidates','state','local_conflicts')):e.version+=1;changed+=1
                 e.data=data

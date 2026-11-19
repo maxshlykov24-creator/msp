@@ -2,6 +2,7 @@ import React,{useEffect,useId,useLayoutEffect,useRef,useState} from 'react';
 import {createPortal,flushSync} from 'react-dom';
 
 const paths:Record<string,React.ReactNode>={
+ plus:<path d="M12 5v14M5 12h14"/>,edit:<><path d="m4 16 11-11 4 4L8 20l-5 1zM13 7l4 4"/></>,
  search:<><circle cx="11" cy="11" r="7"/><path d="m16 16 4 4"/></>,
  chevron:<path d="m9 5 7 7-7 7"/>,down:<path d="m6 9 6 6 6-6"/>,
  calendar:<><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M7 3v4m10-4v4M3 10h18m-13 5h2m4 0h2"/></>,

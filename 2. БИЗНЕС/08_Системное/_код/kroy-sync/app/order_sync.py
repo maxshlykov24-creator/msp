@@ -251,7 +251,7 @@ def run(engine,env,history_steps=1,on_current=None,deep=True,reports=None,curren
             if not isinstance(batch,list):raise FeedFailure('Неполный каталог ВБ')
             for c in batch:
                 if not c.get('nmID') or c['nmID'] in seen:raise FeedFailure('Повтор карточки ВБ')
-                seen.add(c['nmID']);cards.append(dict(id=c['nmID'],sizes=[dict(chrtID=r['chrtID'],skus=r.get('skus',[])) for r in c.get('sizes',[])]))
+                seen.add(c['nmID']);cards.append(dict(id=c['nmID'],vendorCode=c.get('vendorCode'),sizes=[dict(chrtID=r['chrtID'],techSize=r.get('techSize'),skus=r.get('skus',[])) for r in c.get('sizes',[])]))
             if len(batch)<100:break
             nxt=data.get('cursor') or {};key=(nxt.get('updatedAt'),nxt.get('nmID'))
             if not all(key) or key in cursors:raise FeedFailure('Не продвинулся курсор карточек ВБ')

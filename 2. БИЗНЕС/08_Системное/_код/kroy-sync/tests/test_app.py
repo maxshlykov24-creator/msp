@@ -532,3 +532,24 @@ def test_count_number_backfill_preserves_original_document(setup):
     c = cmd('count.create', {'location': 'own', 'mode': 'scanned', 'barcode': '001'})
     with Session(engine) as s:
         assert s.get(Entity, c['id']).data['number'] == 'ПР-002'
+
+
+def test_explicit_card_links_validate_ownership_and_roll_back_creation(setup):
+    from app.catalog_cards import remember, wb_variants, ozon_variants
+    from app.sales import catalog_links
+    engine, _, cmd = setup
+    wb = [dict(id=42, sizes=[dict(chrtID=210, skus=['free-code'])])]
+    products = [dict(id=90, offer_id='XS-blue', sources=[{'sku': 1001}])]
+    with transaction(engine) as s:
+        remember(s, 'wb', '2026-11-19', wb_variants(wb))
+        remember(s, 'ozon', '2026-11-19', ozon_variants(products))
+    garment = dict(id='new',kind='garment',unit='piece',name='Test XS',model='Test',size='XS',color='Blue')
+    with pytest.raises(DomainError):
+        cmd('item.create', {**garment,'cards':{'wb':'210','ozon':'wrong'}})
+    with Session(engine) as s:
+        assert s.get(Item,'new') is None and s.get(Entity,'mapping:wb:new') is None
+    cmd('item.create', {**garment,'cards':{'wb':'210'}})
+    cmd('catalog.link', dict(item_id='new',platform='ozon',identifier='1001'))
+    with pytest.raises(DomainError):
+        cmd('catalog.link', dict(item_id='s',platform='ozon',identifier='XS-blue'))
+    assert catalog_links(engine,dict(at='2026-11-19',items=products,complete=True))[0]['1001']==['new']

@@ -35,6 +35,8 @@ def import_candidates(engine, wb, ozon):
                 data = {'item_id': item.id, 'platform': platform, 'state': state, 'candidates': rows,
                         'local_conflicts': other_items, 'source_sha256': digest, 'approved': False,
                         'observed_at': wb['at'] if platform == 'wb' else ozon['at']}
+                if e and e.data.get('manual_card'):
+                    continue
                 if e is None:
                     s.add(Entity(id=key, kind='mapping', version=1, data=data))
                 else:

@@ -285,9 +285,16 @@ def catalog_links(engine, catalog):
         skus=defaultdict(set);covered=set();matched_products=0;manual=defaultdict(set)
         for e in s.scalars(select(Entity).where(Entity.kind=='market_identity')):
             if e.data['identity_kind']=='ozon_sku':manual[e.data['value']].add(e.data['item_id'])
+        from .catalog_cards import remember, ozon_variants
+        if catalog.get('complete'):
+            remember(s, 'ozon', catalog['at'], ozon_variants(catalog['items']))
         for sku,ids in manual.items():
             skus[sku]|=ids
             if len(ids)==1:covered|=ids
+        for e in s.scalars(select(Entity).where(Entity.kind=='mapping',Entity.data['platform'].as_string()=='ozon')):
+            if e.data.get('approved') and e.data.get('state')=='unique':
+                for card in e.data['candidates']:
+                    for sku in card.get('skus',[]):manual[sku].add(e.data['item_id'])
         for product in catalog['items']:
             product_skus={str(v['sku']) for v in product.get('sources')or[] if v.get('sku')}
             matches=set().union(*(codes.get(str(c),set()) for c in product.get('barcodes')or[]))|set().union(*(manual.get(sku,set()) for sku in product_skus))

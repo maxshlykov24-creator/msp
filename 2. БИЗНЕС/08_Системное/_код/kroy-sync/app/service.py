@@ -14,7 +14,7 @@ PERMISSIONS = {
     'cutter': {'cut'}, 'viewer': set(),
 }
 COMMAND_RIGHT = {
-    'market.order.apply': 'orders', 'market.order.map': 'catalog',
+    'catalog.link': 'catalog', 'market.order.apply': 'orders', 'market.order.map': 'catalog',
     'task.reserve_materials': 'cut_plan', 'material.receive': 'adjust', 'task.save': 'cut_plan', 'task.issue': 'cut_plan', 'item.create': 'catalog', 'item.update': 'catalog', 'user.create': 'settings', 'user.update': 'settings', 'norm.set': 'settings', 'telegram.link': 'settings', 'stock.adjust': 'adjust', 'freeze.create': 'freeze',
     'freeze.release': 'freeze', 'freeze.extend': 'freeze', 'freeze.configure': 'settings', 'task.create': 'cut_plan',
     'task.reverse_fact': 'adjust', 'order.reserve': 'orders', 'fbo.reserve': 'orders', 'fbo.resolve': 'adjust', 'task.approve': 'cut_plan', 'task.revise': 'cut_plan', 'task.confirm': 'cut', 'task.cancel': 'cut_plan',
@@ -172,6 +172,12 @@ def dispatch(s, doc, command, p):
     if command == 'market.order.apply':
         from .order_accounting import apply
         return apply(s, doc, p)
+    if command == 'catalog.link':
+        from .catalog_cards import link_card
+        item = get_item(s, p['item_id'])
+        require(item.kind == 'garment', 'Выбери изделие', 422)
+        link_card(s, item, p.get('platform'), p.get('identifier'), doc)
+        return {'item_id': item.id}
     if command == 'item.create':
         require(p.get('kind') in ('garment', 'material'), 'Вид: изделие или материал', 422)
         require(p.get('unit') in ('piece', 'roll', 'meter'), 'Неизвестная единица', 422)
@@ -191,6 +197,12 @@ def dispatch(s, doc, command, p):
         s.add(Item(id=p['id'], name=p['name'], model=p['model'], kind=p['kind'], unit=p['unit'],
                    color=p.get('color', ''), size=p.get('size', ''), category=p.get('category', ''),
                    barcodes=codes, photo=photo, source={'document': doc}))
+        if p.get('cards'):
+            from .catalog_cards import link_card
+            require(isinstance(p['cards'], dict) and p['kind']=='garment','Проверь данные карточек',422)
+            s.flush()
+            for platform, identifier in p['cards'].items():
+                link_card(s, s.get(Item,p['id']), platform, identifier, doc)
         return {'item_id': p['id']}
     if command == 'cut.report':
         from .report_import import store_report

@@ -149,6 +149,24 @@ def create_app(engine=None):
                 raise HTTPException(422, 'Штрихкод не найден или соответствует нескольким товарам')
             return {'item_id':matches[0].id}
 
+    @app.get('/api/catalog/cards')
+    def card_choices(user=Depends(auth)):
+        if 'catalog' not in PERMISSIONS[user.role]:
+            raise HTTPException(403, 'Нет права управления товарами')
+        with Session(engine) as s:
+            claimed = {'wb':set(),'ozon':set()}
+            for mapping in s.scalars(select(Entity).where(Entity.kind=='mapping')):
+                platform = mapping.data['platform']
+                field = 'variant_id' if platform=='wb' else 'product_id'
+                claimed[platform].update(str(c.get(field)) for c in mapping.data.get('candidates',[]))
+            choices = {}
+            for platform, field in [('wb','variant_id'),('ozon','product_id')]:
+                row = s.get(Entity,'card-catalog:'+platform)
+                if row:
+                    choices[platform] = {'at':row.data['at'], 'variants':[
+                        c for c in row.data['variants'] if c[field] not in claimed[platform]]}
+            return choices
+
     @app.get('/api/catalog')
     def catalog(user=Depends(auth)):
         with Session(engine) as s:
