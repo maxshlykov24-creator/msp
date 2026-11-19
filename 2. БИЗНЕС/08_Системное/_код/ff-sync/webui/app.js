@@ -1116,6 +1116,7 @@ async function loadLots() {
   }
   if (mine !== lotsLoad) return;
   state.stockSyncError = res.sync_error || "";
+  state.stockClientErrors = res.client_errors || {};
   state.lots = res.rows;
   state.stockDateTo = dateTo;
   renderLedgerSync(res);
@@ -1189,13 +1190,14 @@ function refreshPick() {
       : `Все позиции, ${selected.length} на ${num(sum)} ₽`;
   const oneClient = new Set(selected.map((r) => r.client_id)).size === 1;
   const incomplete = selected.some((r) => (r.billing_errors || []).length);
-  const ready = selected.length > 0 && oneClient && !incomplete && !state.stockSyncError && validStockDate($("sTo").value) && state.stockDateTo === $("sTo").value;
+  const syncError = oneClient ? (state.stockClientErrors?.[selected[0].client_id] ?? state.stockSyncError) : state.stockSyncError;
+  const ready = selected.length > 0 && oneClient && !incomplete && !syncError && validStockDate($("sTo").value) && state.stockDateTo === $("sTo").value;
   $("sBill").disabled = !ready || sum <= 0;
   $("sBill").title = !oneClient ? "Выбери одного контрагента" : incomplete ? "Заполни литраж и стоимость сборки выделенных товаров" : sum <= 0 ? "По выбранным товарам всё уже выставлено" : "";
   $("sReport").disabled = !ready;
   const missing = selected.filter(r => (r.billing_errors || []).length)
     .map(r => `${r.article || r.name}: ${r.billing_errors.join(", ")}`);
-  const reasons = [state.stockSyncError ? "Учёт не сверён: " + state.stockSyncError : "",
+  const reasons = [syncError ? "Учёт не сверён: " + syncError : "",
     missing.length ? "Заполни данные товаров: " + missing.join("; ") : ""].filter(Boolean);
   if (reasons.length) {
     $("sBill").title = reasons.join(". ");
@@ -1298,7 +1300,7 @@ $("sAccept").onclick = async () => {
     if (!res.ok) { say($("sMsg"), res.msg, "bad"); return; }
     await loadClients();
     await loadLots();
-    say($("sMsg"), `Обновлено: ${res.products} товаров, ${res.receipts} приёмок, ${res.demands} отгрузок.`, "ok");
+    if (!res.partial) say($("sMsg"), `Обновлено: ${res.products} товаров, ${res.receipts} приёмок, ${res.demands} отгрузок.`, "ok");
   } catch (e) {
     say($("sMsg"), e.message, "bad");
   } finally {

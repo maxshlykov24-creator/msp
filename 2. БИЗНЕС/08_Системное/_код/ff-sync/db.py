@@ -479,6 +479,20 @@ def get_setting(key):
     return row["value"] if row else None
 
 
+def pending_invoices(conn):
+    """Legacy and per-client pending requests, read under the billing lock."""
+    requests = {}
+    for key, raw in conn.execute("SELECT key,value FROM settings WHERE key='billing:pending' OR key GLOB 'billing:pending:*'"):
+        data = json.loads(raw or 'null')
+        if data is None:
+            continue
+        cid = data.get('client_id')
+        if not isinstance(cid, int) or cid in requests or key not in ('billing:pending', 'billing:pending:%s' % cid):
+            raise ValueError('Не удалось определить владельца неподтверждённого счёта. Требуется сверка.')
+        requests[cid] = (key, data)
+    return requests
+
+
 def record_sync(cabinet_id, stream, error="", count=0):
     """Последняя попытка отдельно от последнего полного успешного ответа."""
     key = "sync:%s:%s" % (int(cabinet_id), stream)

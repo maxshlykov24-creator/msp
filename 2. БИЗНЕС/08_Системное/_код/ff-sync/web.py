@@ -544,16 +544,16 @@ def marked_flag(raw):
 def lots(client_id: int = 0, q: str = "", marked: str = "", date_to: str = "", ff_session: str = Cookie(default="")):
     who(ff_session)
     init_db()
-    from account import lot_rows, totals, group_rows
+    from account import _lot_rows, totals, group_rows, ledger_status
+    from db import run_lock
 
-    rows = group_rows(lot_rows(
-        client_id=client_id or None,
-        query=q,
-        marked=marked_flag(marked),
-        date_to=checked_day(date_to),
-    ))
-    from account import ledger_status
-    return {"rows": rows, "totals": totals(rows), **ledger_status(client_id)}
+    with run_lock('billing'):
+        rows = group_rows(_lot_rows(client_id=client_id or None, query=q,
+                                    marked=marked_flag(marked), date_to=checked_day(date_to)))
+        status = ledger_status(client_id)
+        client_errors = {} if client_id else {
+            cid: ledger_status(cid)['sync_error'] for cid in {r['client_id'] for r in rows}}
+    return {"rows": rows, "totals": totals(rows), "client_errors": client_errors, **status}
 
 
 @app.get("/api/ledger/sync-status")

@@ -132,7 +132,7 @@ import hashlib
 import json
 import math
 from collections import defaultdict
-from db import connect, get_setting, set_setting
+from db import connect, get_setting, pending_invoices, set_setting
 from ms import attrs_by_name, org_id, store_id
 
 
@@ -481,9 +481,6 @@ def apply_plan(snapshot, plan, groups, scope_parties=None):
     try:
         with conn:
             conn.execute('BEGIN IMMEDIATE')
-            pending = conn.execute("SELECT value FROM settings WHERE key='billing:pending'").fetchone()
-            if pending and json.loads(pending[0] or 'null'):
-                raise ValueError('Есть неподтверждённый счёт. Сначала заверши его, затем обнови учёт.')
             old_lots = {(x['source_key'] or 'legacy:%s' % x['id']):dict(x) for x in conn.execute('SELECT * FROM lots')}
             old_moves = defaultdict(list)
             for m in conn.execute('SELECT m.*,l.source_key AS lot_key FROM lot_moves m JOIN lots l ON l.id=m.lot_id WHERE m.source_active=1'):
@@ -492,6 +489,12 @@ def apply_plan(snapshot, plan, groups, scope_parties=None):
             if conn.execute("SELECT ms_counterparty_id FROM clients WHERE coalesce(ms_counterparty_id,'')<>'' GROUP BY ms_counterparty_id HAVING count(*)>1").fetchone():
                 raise ValueError('В панели есть дубли привязки к контрагенту МойСклад. Нужна сверка клиентов.')
             clients = {x['ms_counterparty_id']:x['id'] for x in conn.execute('SELECT * FROM clients')}
+            for pid, party in snapshot['parties'].items():
+                if scope_parties is not None and pid not in scope_parties:
+                    continue
+                if pid not in clients:
+                    clients[pid] = conn.execute('INSERT INTO clients(code,name,ms_counterparty_id,ms_org_id,ms_store_id,active) VALUES (?,?,?,?,?,1)',
+                        ('MS-'+pid.replace('-','')[:12], party['name'], pid, org_id(), store_id())).lastrowid
             scope_ids = None
             if scope_parties is not None:
                 if not scope_parties or any(p not in clients for p in scope_parties):
@@ -500,6 +503,9 @@ def apply_plan(snapshot, plan, groups, scope_parties=None):
                 if any(l['party'] not in scope_parties for l in plan['lots'].values()):
                     raise ValueError('План вышел за границы отдельной сверки')
                 old_lots = {k:l for k,l in old_lots.items() if l['client_id'] in scope_ids}
+            pending = pending_invoices(conn)
+            if pending and (scope_ids is None or not scope_ids.isdisjoint(pending)):
+                raise ValueError('Есть неподтверждённый счёт. Заверши его, затем обнови учёт.')
             correction_row = conn.execute("SELECT value FROM settings WHERE key='ledger:closed_corrections'").fetchone()
             corrections = json.loads(correction_row[0]) if correction_row else {}
             for key, old in old_lots.items():
@@ -517,7 +523,7 @@ def apply_plan(snapshot, plan, groups, scope_parties=None):
                         invoiced=bool(conn.execute('SELECT 1 FROM invoice_lots WHERE lot_id=? LIMIT 1', (old['id'],)).fetchone())):
                     continue
                 if not new or clients.get(new['party']) != old['client_id'] or any(new.get(k) != old.get(k) for k in ('ms_product_id','qty_in','accepted_at','ledger_kind','storage_from')):
-                    raise ValueError('Изменена уже выставленная партия %s. Нужна корректировка закрытого периода.' % old['id'])
+                    raise ValueError('%s, %s: изменилась партия %s, уже учтённая по %s. Сверь изменение с выставленным счётом.' % (old['source_document'], old['article'] or old['name'], old['id'], closed))
                 after = sorted((m['created_at'],m['kind'],m['qty']) for m in plan['moves'].values() if m['lot_key']==key and m['created_at'][:10] <= closed)
                 if before != after and not approved_closed_correction(old, before, after, corrections.get(key)):
                     raise ValueError('Изменены движения закрытого периода партии %s. Нужна корректировка.' % old['id'])
@@ -525,12 +531,6 @@ def apply_plan(snapshot, plan, groups, scope_parties=None):
                 if key not in old_lots and new['party'] in clients and new['accepted_at'][:10] <= cutoffs.get(clients[new['party']], ''):
                     if plan.get('late_receipt_keys', {}).get(key) != cutoffs.get(clients[new['party']]):
                         raise ValueError('Новый документ попал в уже выставленный период. Нужна сверка корректировки.')
-            for pid, party in snapshot['parties'].items():
-                if scope_parties is not None and pid not in scope_parties:
-                    continue
-                if pid not in clients:
-                    clients[pid] = conn.execute('INSERT INTO clients(code,name,ms_counterparty_id,ms_org_id,ms_store_id,active) VALUES (?,?,?,?,?,1)',
-                        ('MS-'+pid.replace('-','')[:12], party['name'], pid, org_id(), store_id())).lastrowid
             clause = '' if scope_ids is None else ' WHERE client_id IN ('+','.join('?' for _ in scope_ids)+')'
             args = [] if scope_ids is None else sorted(scope_ids)
             conn.execute('UPDATE lots SET source_active=0'+clause, args)
@@ -578,6 +578,53 @@ def apply_plan(snapshot, plan, groups, scope_parties=None):
         conn.close()
 
 
+def independent_scopes(snapshot):
+    scopes = {tuple(sorted({r[k]['party'] for k in ('source_before','destination')}))
+              for r in snapshot.get('receipt_transfers', [])}
+    scopes.update((r['party'],) for r in snapshot.get('late_receipts', []))
+    for scope in snapshot.get('independent_scopes', []):
+        if not isinstance(scope, list) or not scope or any(not isinstance(p, str) or p not in snapshot['parties'] for p in scope):
+            raise ValueError('Некорректный список контрагентов отдельной сверки')
+        scopes.add(tuple(sorted(set(scope))))
+    seen = set()
+    for scope in scopes:
+        if seen.intersection(scope):
+            raise ValueError('Пересекаются независимые группы сверки')
+        seen.update(scope)
+    return scopes
+
+
+def billing_scopes(snapshot, groups, previous_parties):
+    """Shared stock and approved transfers must always reconcile together."""
+    members = set(snapshot['parties']) | set(previous_parties)
+    configured = independent_scopes(dict(snapshot, parties=members))
+    links = list(groups) + list(configured)
+    components = [{party} for party in members]
+    for link in links:
+        if not isinstance(link, (tuple, list)) or not link or not all(isinstance(p, str) and p for p in link):
+            raise ValueError('Некорректная группа контрагентов для сверки')
+        group = set(link)
+        joined = [c for c in components if c & group]
+        if joined:
+            components = [c for c in components if not c & group]
+            components.append(group.union(*joined))
+    return sorted(tuple(sorted(c)) for c in components)
+
+
+def apply_scope(snapshot, groups, parties, docs):
+    stock = defaultdict(float)
+    for doc in docs:
+        for pos in doc['positions']:
+            stock[pos['product']] += pos['qty'] * (1 if doc['kind'] in ('supply', 'salesreturn') else -1)
+    scoped = dict(snapshot, documents=docs, stock=dict(stock), scope_parties=sorted(parties),
+                  receipt_transfers=[r for r in snapshot.get('receipt_transfers', [])
+                                     if r['source_before']['party'] in parties],
+                  late_receipts=[r for r in snapshot.get('late_receipts', []) if r['party'] in parties])
+    plan = build_plan(scoped, groups)
+    return apply_plan(scoped, plan, groups, scope_parties=parties)
+
+
+
 def sync_transfer_scope(snapshot, groups, parties=None, billing_locked=False):
     """A verified transfer pair can be billed despite unrelated clients' errors.
 
@@ -598,65 +645,107 @@ def sync_transfer_scope(snapshot, groups, parties=None, billing_locked=False):
     if any(abs(balance[p]-snapshot['stock'].get(p, 0)) > 1e-6 for p in set(balance)|set(snapshot['stock'])):
         raise ValueError('Общая сверка остатков не пройдена')
     docs = [d for d in snapshot['documents'] if d['party'] in parties]
-    stock = defaultdict(float)
-    for d in docs:
-        for p in d['positions']:
-            stock[p['product']] += p['qty'] * (1 if d['kind'] in ('supply', 'salesreturn') else -1)
-    scoped = dict(snapshot, documents=docs, stock=dict(stock), scope_parties=sorted(parties),
-                  receipt_transfers=[r for r in snapshot.get('receipt_transfers', [])
-                                    if {r[k]['party'] for k in ('source_before','destination')} <= parties],
-                  late_receipts=[r for r in snapshot.get('late_receipts', []) if r['party'] in parties])
-    plan = build_plan(scoped, groups)
     from contextlib import nullcontext
     with (nullcontext() if billing_locked else run_lock('billing')):
-        return apply_plan(scoped, plan, groups, scope_parties=parties)
+        return apply_scope(snapshot, groups, parties, docs)
 
 
-def independent_scopes(snapshot):
-    scopes = {tuple(sorted({r[k]['party'] for k in ('source_before','destination')}))
-              for r in snapshot.get('receipt_transfers', [])}
-    scopes.update((r['party'],) for r in snapshot.get('late_receipts', []))
-    for scope in snapshot.get('independent_scopes', []):
-        if not isinstance(scope, list) or not scope or any(not isinstance(p, str) or p not in snapshot['parties'] for p in scope):
-            raise ValueError('Некорректный список контрагентов отдельной сверки')
-        scopes.add(tuple(sorted(set(scope))))
-    seen = set()
-    for scope in scopes:
-        if seen.intersection(scope):
-            raise ValueError('Пересекаются независимые группы сверки')
-        seen.update(scope)
-    return scopes
+def set_ledger_failure(error):
+    # Publish a new generation only on a completed check or a known failure.
+    # While fetching, the last verified ledger stays subject to its normal expiry.
+    conn = connect()
+    try:
+        with conn:
+            conn.executemany('INSERT OR REPLACE INTO settings(key,value) VALUES (?,?)', [
+                ('ledger:last_error', str(error)[:500]),
+                ('ledger:last_attempt', datetime.now(MSK).isoformat(timespec='microseconds')),
+            ])
+    finally:
+        conn.close()
+
+
+def reconcile_snapshot(snapshot, groups):
+    """Caller holds billing lock across validation and publication of all results."""
+    try:
+        return apply_plan(snapshot, build_plan(snapshot, groups), groups)
+    except ValueError as exc:
+        global_error = str(exc)
+    set_ledger_failure(global_error)
+    conn = connect()
+    try:
+        previous = list(conn.execute(
+            'SELECT DISTINCT c.ms_counterparty_id,l.ms_product_id FROM lots l '
+            'JOIN clients c ON c.id=l.client_id WHERE l.source_active=1 AND l.source_key IS NOT NULL'))
+        clients = {r[0]: r[1] for r in conn.execute('SELECT ms_counterparty_id,id FROM clients')}
+    finally:
+        conn.close()
+
+    balance = defaultdict(float)
+    owners = defaultdict(set)
+    for party, product in previous:
+        owners[product].add(party)
+    for doc in snapshot['documents']:
+        for pos in doc['positions']:
+            pid = pos['product']
+            owners[pid].add(doc['party'])
+            balance[pid] += pos['qty'] * (1 if doc['kind'] in ('supply', 'salesreturn') else -1)
+    mismatches = {p for p in set(balance) | set(snapshot['stock'])
+                  if abs(balance[p] - snapshot['stock'].get(p, 0)) > 1e-6}
+    if any(not owners[p] for p in mismatches):
+        raise ValueError('Есть расхождение остатков без установленного контрагента. Требуется общая сверка.')
+    errors = {}
+    completed = []
+    for group in billing_scopes(snapshot, groups, {p for p, _ in previous}):
+        parties = set(group)
+        docs = [d for d in snapshot['documents'] if d['party'] in parties]
+        try:
+            disputed = sorted(p for p in mismatches if owners[p] & parties)
+            if disputed:
+                labels = [snapshot['products'].get(p, {}).get('article') or p for p in disputed]
+                raise ValueError('Документы расходятся с остатками МойСклад по товарам: ' + ', '.join(labels))
+            apply_scope(snapshot, groups, parties, docs)
+            completed.extend(group)
+        except ValueError as exc:
+            message = str(exc)
+            proof = canonical({'attempt': get_setting('ledger:last_attempt'), 'error': message})
+            for party in group:
+                errors[party] = message
+                if party in clients:
+                    set_setting('ledger:scope:%s' % clients[party], proof)
+    checked_docs = [d for d in snapshot['documents'] if d['party'] in completed]
+    print('По отдельным контрагентам сверены: %d. Ошибки: %s' % (len(completed), sorted(set(errors.values()))))
+    return {'partial': True, 'ok_parties': completed, 'scope_errors': errors, 'msg': global_error,
+            'products': len({pos['product'] for d in checked_docs for pos in d['positions']}),
+            'receipts': sum(d['kind'] == 'supply' for d in checked_docs),
+            'demands': sum(d['kind'] == 'demand' for d in checked_docs),
+            'last_sync': stamp(), 'checked': len(snapshot['documents']), 'accepted': [], 'errors': list(set(errors.values()))}
+
+
+def configured_snapshot():
+    groups = json.loads(get_setting('ledger:groups') or '[]')
+    if not groups:
+        raise ValueError('Не настроены подтверждённые группы контрагентов для учёта')
+    snapshot = fetch_snapshot()
+    for key in ('receipt_transfers', 'late_receipts', 'independent_scopes'):
+        snapshot[key] = json.loads(get_setting('ledger:' + key) or '[]')
+    return snapshot, groups
 
 
 def run(blocking=True):
     init_db()
     with run_lock('ledger', blocking=blocking):
-        set_setting('ledger:last_attempt', datetime.now(MSK).isoformat(timespec='microseconds'))
-        snapshot = None
         try:
-            groups = json.loads(get_setting('ledger:groups') or '[]')
-            if not groups:
-                raise ValueError('Не настроены подтверждённые группы контрагентов для учёта')
-            snapshot = fetch_snapshot()
-            snapshot['receipt_transfers'] = json.loads(get_setting('ledger:receipt_transfers') or '[]')
-            snapshot['late_receipts'] = json.loads(get_setting('ledger:late_receipts') or '[]')
-            snapshot['independent_scopes'] = json.loads(get_setting('ledger:independent_scopes') or '[]')
-            plan = build_plan(snapshot, groups)
-            with run_lock('billing'):
-                return apply_plan(snapshot, plan, groups)
+            snapshot, groups = configured_snapshot()
         except Exception as exc:
-            set_setting('ledger:last_error', str(exc)[:500])
-            if snapshot is not None:
-                for parties in independent_scopes(snapshot):
-                    try:
-                        result = sync_transfer_scope(snapshot, groups, set(parties))
-                        if result:
-                            print('Отдельная сверка завершена: %s партий' % result['lots'])
-                    except Exception as scoped_exc:
-                        # No proof is written on failure; the current attempt invalidates
-                        # the previous one, so bills stay blocked rather than use old data.
-                        print('Отдельная сверка: ' + str(scoped_exc))
+            with run_lock('billing'):
+                set_ledger_failure(exc)
             raise
+        with run_lock('billing'):
+            try:
+                return reconcile_snapshot(snapshot, groups)
+            except Exception as exc:
+                set_ledger_failure(exc)
+                raise
 
 
 if __name__ == '__main__':

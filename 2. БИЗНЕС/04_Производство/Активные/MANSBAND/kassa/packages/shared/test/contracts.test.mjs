@@ -143,6 +143,9 @@ test("Edwin expense dictionary matches approved fixed order", () => {
 
 test("catalog can filter by Moysklad group without text query", () => {
   assert.equal(catalogSearchSchema.safeParse({ category: "Костюмы" }).success, true);
+  assert.equal(catalogSearchSchema.parse({ q: "красный 03/" }).offset, 0);
+  assert.equal(catalogSearchSchema.parse({ q: "03/ красный", offset: "30" }).offset, 30);
+  assert.equal(catalogSearchSchema.safeParse({ q: "03/", offset: -1 }).success, false);
 });
 
 test("movement requires stable idempotency key", () => {

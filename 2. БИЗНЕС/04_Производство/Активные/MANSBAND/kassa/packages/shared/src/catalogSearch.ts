@@ -30,6 +30,7 @@ const inflectedColor = /(^|-)([а-я]+?)(?:ая|яя|ое|ее|ые|ие|ую|ю
 
 export interface CatalogSearchTerm {
   text: string;
+  invalid?: boolean;
   color?: string;
   code?: string;
   compact?: string;
@@ -38,7 +39,7 @@ export interface CatalogSearchTerm {
 export function catalogSearchTerms(query: string): CatalogSearchTerm[] {
   const normalized = catalogText(query.trim());
   const words = normalized.split(/[\s,;()\u001f]+/u).filter(Boolean);
-  if (normalized && !words.length) return [{ text: normalized }];
+  if (normalized && !/[\p{L}\p{N}]/u.test(normalized)) return [{ text: normalized, invalid: true }];
   return [...new Set(words)].map((text) => {
     const color = text.replace(inflectedColor, (word, prefix: string, root: string) =>
       colors[root] ? prefix + colors[root] : word);
@@ -64,6 +65,7 @@ export function matchesCatalogTerms(
   terms: CatalogSearchTerm[], fields: SearchValue[], identifiers: SearchValue[] = [],
 ): boolean {
   if (!terms.length) return true;
+  if (terms.some(term => term.invalid)) return false;
   const text = catalogText([...fields, ...identifiers].join(" "));
   // A field separator prevents a compact match spanning two unrelated identifiers.
   const codes = foldCodeLetters(catalogText(identifiers.join("\u001f")));

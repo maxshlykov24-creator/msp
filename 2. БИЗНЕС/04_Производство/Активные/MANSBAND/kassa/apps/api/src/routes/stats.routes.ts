@@ -1,4 +1,6 @@
 import type { FastifyInstance } from "fastify";
+import { readFile } from "node:fs/promises";
+import { getUserById } from "../services/auth.js";
 import { z } from "zod";
 import { dealStoreSchema } from "@kassa/shared";
 import { appendAudit } from "../services/audit.js";
@@ -8,6 +10,15 @@ const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const periodSchema = z.object({ from: day.optional(), to: day.optional() });
 
 export default async function statsRoutes(app: FastifyInstance) {
+  app.get("/stats/crm-preview", { preHandler: [app.requireAdmin] }, async (req, reply) => {
+    reply.header("Cache-Control", "private, no-store");
+    const user = await getUserById(req.user.sub);
+    if (!user || user.role !== "admin" || user.mustChangePassword) {
+      return reply.code(403).send({ message: "Доступ только для администратора с действующей учётной записью" });
+    }
+    const html = await readFile(new URL("../../reports/crm-analytics.html", import.meta.url), "utf8");
+    return { html };
+  });
   const canStore = (user: {role:string;store?:string}, store:string) => ["admin","rop"].includes(user.role) || user.store === store;
   app.get("/shifts/current",{preHandler:[app.requireRoles(["admin","rop","consultant","seller"])]},async(req,reply)=>{
     const parsed=z.object({store:dealStoreSchema}).safeParse(req.query);

@@ -8,6 +8,7 @@ import { Certificates } from "./views/Certificates";
 import { EdwinQueue } from "./views/EdwinQueue";
 import { MishaQueue } from "./views/MishaQueue";
 import { Dashboard } from "./views/Dashboard";
+import { CrmAnalytics } from "./views/CrmAnalytics";
 import { ShiftClose } from "./views/ShiftClose";
 import { ProductCheck } from "./views/ProductCheck";
 import { TasksMovements } from "./views/TasksMovements";
@@ -76,6 +77,8 @@ function Screens({
       return <ShiftClose />;
     case "dashboard":
       return <Dashboard />;
+    case "crm-analytics":
+      return <CrmAnalytics />;
     case "products":
       return <ProductCheck />;
     case "suits":
@@ -102,6 +105,7 @@ const ROUTES: Route[] = [
   "misha",
   "shift",
   "dashboard",
+  "crm-analytics",
   "products",
   "suits",
   "tasks",

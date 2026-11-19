@@ -40,6 +40,7 @@ export type Route =
   | "misha"
   | "shift"
   | "dashboard"
+  | "crm-analytics"
   | "products"
   | "suits"
   | "tasks"

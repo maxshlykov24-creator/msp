@@ -1,4 +1,4 @@
-import { and, gt, isNotNull, sql } from "drizzle-orm";
+import { and, gt, isNotNull, sql, type SQL } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { products, stock } from "../db/schema.js";
 import {
@@ -61,7 +61,7 @@ async function loadStockLines(): Promise<SuitStockLine[]> {
  * 09.09): LEFT JOIN вместо inner — товар без строки в `stock` попадает в
  * список одной строкой с `qty: 0`, а не выпадает из модели совсем.
  */
-async function loadCatalogSuitLines(): Promise<SuitStockLine[]> {
+async function loadCatalogSuitLines(candidateVariations?: SQL): Promise<SuitStockLine[]> {
   const rows = await db
     .select({
       msId: products.msId,
@@ -83,7 +83,7 @@ async function loadCatalogSuitLines(): Promise<SuitStockLine[]> {
     })
     .from(products)
     .leftJoin(stock, sql`${stock.productMsId} = ${products.msId}`)
-    .where(and(isNotNull(products.suitPart), isNotNull(products.variation)));
+    .where(and(isNotNull(products.suitPart), isNotNull(products.variation), candidateVariations));
 
   return rows
     .map((r) => ({
@@ -120,10 +120,11 @@ export interface CatalogSuitModel extends SuitModel {
 export async function catalogSuitModels(query: {
   q?: string;
   warehouse?: string;
+  candidateVariations?: SQL;
   limit?: number;
 }): Promise<{ models: CatalogSuitModel[]; total: number }> {
   const settings = await getAppSettings();
-  const lines = await loadCatalogSuitLines();
+  const lines = await loadCatalogSuitLines(query.candidateVariations);
 
   // Имя и группа пиджака по ключу модели — нужны только для сопоставления с
   // матрицей цен (suitPriceOf смотрит на реальное наименование МС, а не на

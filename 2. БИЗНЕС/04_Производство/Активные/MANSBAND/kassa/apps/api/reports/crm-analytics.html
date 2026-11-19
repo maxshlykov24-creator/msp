@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="ru"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark"><title>Статистика · Касса MANSBAND</title>
+<style>
+:root{color-scheme:dark;--bg:#101112;--panel:#191a1c;--panel2:#202225;--line:#37393b;--text:#f6f5f1;--mute:#b3b5b2;--quiet:#989c98;--accent:#c6d7bc;--sand:#dccbad;--red:#e7b7ad;font:16px/1.45 Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text)}button,select,input{font:inherit;color:inherit}button{cursor:pointer}button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:2px solid #e6efc8;outline-offset:3px}button:disabled{cursor:default;opacity:.38}button{background:none;border:0;padding:0;text-align:inherit}h1,h2,h3,p{margin:0}svg{display:block}.icon{width:20px;height:20px;flex:none}.shell{max-width:1380px;margin:auto;padding:0 clamp(16px,5vw,78px) 44px}.mast{border-bottom:1px solid var(--line);background:#0b0c0d}.mastin{max-width:1380px;margin:auto;padding:0 clamp(16px,5vw,78px);height:70px;display:flex;justify-content:space-between;align-items:center;gap:12px}.brand,.identity,.crumbs,.tags,.cardtitle,.rowhead,.flex,.line,.actions{display:flex;align-items:center;gap:10px}.brand{font-weight:780;letter-spacing:.09em;font-size:19px}.brand svg{width:31px;height:30px}.brand small{font-size:14px;font-weight:450;color:var(--mute);letter-spacing:0;border-left:1px solid var(--line);padding-left:15px;margin-left:4px}.identity{font-size:14px;color:var(--mute)}.avatar{border-radius:50%;width:30px;height:30px;background:#363a37;color:#e6eadf;display:grid;place-items:center;font-weight:600}.demo,.chip{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;border:1px solid var(--line);border-radius:20px;font-size:12px;font-weight:550;line-height:1.3;padding:5px 10px;color:var(--mute)}.demo{background:#282821;color:#e3d9b7;border-color:#474331}.tags{gap:8px}.crumbs{min-height:55px;color:var(--quiet);font-size:14px;flex-wrap:wrap;gap:9px}.crumbs button:hover{text-decoration:underline;color:white}.crumbs b{font-weight:500;color:var(--text)}.crumbs .icon{width:13px;height:13px}.intro{margin:10px 0 26px}.intro h1{font-size:clamp(32px,4.4vw,58px);line-height:1.07;letter-spacing:-.055em;font-weight:640}.intro p,.subtitle{color:var(--mute);margin-top:9px;font-size:16px}.sectiontitle{font-size:19px;font-weight:600;letter-spacing:-.028em;margin:26px 0 12px}.cards{display:grid;grid-template-columns:1.2fr 1fr;gap:14px}.entry,.panel,.metric,.future,.empty{border:1px solid var(--line);border-radius:17px;background:var(--panel)}.entry{padding:24px;position:relative;display:flex;flex-direction:column;align-items:stretch;overflow:hidden;min-width:0;transition:border-color .15s,background .15s}.entry:hover,.metric:hover,.stage:hover,.item:hover,.link:hover{border-color:#737971;background:#242729}.entry:focus-visible{outline-offset:1px}.entry.hero{background:linear-gradient(125deg,#2a302c,#1b211e);border-color:#475346}.entry.log{background:linear-gradient(130deg,#2b2927,#211f1e);border-color:#49423a}.entry.hero:hover,.entry.log:hover{border-color:#858c7e}.rowhead{justify-content:space-between}.entry h2{font-size:clamp(25px,3.1vw,38px);line-height:1.13;letter-spacing:-.045em;margin:15px 0 7px;font-weight:620}.entry p,.future p,.tiny,.note{color:var(--mute);font-size:14px}.round,.badgeicon{border:1px solid #ffffff30;width:38px;height:38px;display:grid;place-items:center;border-radius:12px;color:var(--accent);background:#ffffff08}.log .badgeicon{color:var(--sand)}.round{width:29px;height:29px;border-radius:50%;color:var(--mute)}.round .icon{width:15px;height:15px}.cardfoot{margin-top:22px;border-top:1px solid #ffffff20;padding-top:13px;display:flex;justify-content:space-between;align-items:end;gap:10px}.big{font-size:34px;letter-spacing:-.055em;line-height:1.12;font-weight:570;font-variant-numeric:tabular-nums}.caption{font-size:13px;color:var(--mute);margin-top:3px}.spark{width:108px;height:38px;color:var(--accent);flex:none}.log .spark{color:var(--sand)}.wide{display:flex;align-items:center;justify-content:space-between;gap:24px;flex-direction:row;margin-top:14px;width:100%;padding:20px 24px}.wide h2{font-size:23px;margin:0 0 3px}.wide .spark{width:146px}.futuregrid,.double{display:grid;grid-template-columns:1fr 1fr;gap:14px}.future{padding:16px 20px;display:flex;align-items:center;gap:14px}.future .chip{margin-left:auto}.future strong{font-size:16px}.future .icon{color:var(--quiet)}.three{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.three .entry h2{font-size:24px;margin-top:21px}.three .entry .cardfoot{margin-top:auto}.three .entry p{margin-bottom:20px}.panel{padding:21px;margin:14px 0}.panel h2,.panel h3,dialog h3{font-size:20px;letter-spacing:-.025em;font-weight:600}.panel h3{font-size:17px}.panel p{margin:4px 0 10px}.toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:10px 16px;padding:15px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin-bottom:18px}.seg{display:inline-flex;flex-wrap:wrap;background:#1c1d1f;border:1px solid var(--line);padding:3px;border-radius:10px;gap:2px}.seg button,.pill,.date,.step{font-size:14px;padding:7px 11px;border-radius:7px;color:var(--mute)}.seg [aria-pressed=true],.seg [aria-current=page]{background:#efefeb;color:#141515;font-weight:600}.seg button:hover:not([aria-pressed=true]){background:#36383a}.cal{display:flex;align-items:center;gap:5px}.step,.date,.pill,select{background:#222426;border:1px solid var(--line);color:var(--text)}.step{padding:7px}.step .icon{width:18px;height:18px}.date{max-width:145px}.periodlabel{font-size:14px;color:var(--mute)}.filter{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--mute)}select{border-radius:8px;padding:8px 30px 8px 10px;appearance:none;background:#222426 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='m1 1 5 5 5-5' stroke='%23d4d4cf' fill='none'/%3E%3C/svg%3E") no-repeat right 10px center;font-size:14px;max-width:100%}.filterbar,.subnav{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:15px 0}.subnav button{border-bottom:2px solid transparent;font-size:14px;padding:6px 0;margin-right:12px;color:var(--mute)}.subnav button[aria-current=page]{border-color:var(--accent);color:var(--text)}.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(155px,100%),1fr));gap:10px;margin:15px 0}.metric{padding:17px 16px;display:flex;flex-direction:column;justify-content:flex-start;gap:6px;min-height:123px}.metric strong{font-size:31px;letter-spacing:-.045em;line-height:1.1;font-weight:600}.metric span:first-child{font-size:14px;color:var(--mute)}.metric small,.note,.tiny,.caption{line-height:1.4}.metric small{font-size:13px;color:var(--mute)}.accent{color:var(--accent)}.warm{color:var(--sand)}.bad{color:var(--red)}.flex{flex-wrap:wrap}.between{justify-content:space-between}.num{font-variant-numeric:tabular-nums}.stack{display:grid;gap:8px}.stage,.item{width:100%;display:grid;align-items:center;gap:12px;padding:12px 14px;background:#202224;border:1px solid #343638;border-radius:10px;text-align:left}.stage{grid-template-columns:minmax(125px,1fr) minmax(90px,1.2fr) minmax(95px,.65fr)}.item{grid-template-columns:1fr auto;font-size:14px}.item small,.stage small{display:block;color:var(--mute);font-size:13px}.track{height:7px;background:#393c3b;border-radius:5px;overflow:hidden}.track i{display:block;height:100%;background:var(--accent);border-radius:5px}.alignr{text-align:right}.tablewrap{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:14px}th,td{padding:10px 8px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}th{color:var(--mute);font-size:13px;font-weight:500}td:first-child,th:first-child{text-align:left}td small{display:block;color:var(--mute);font-size:12px}td button:hover{text-decoration:underline}td button{min-width:30px}.chart{display:flex;align-items:end;gap:3px;height:100px;border-bottom:1px solid var(--line);margin-top:17px}.chart button{flex:1;height:100%;display:flex;align-items:end;justify-content:center;min-width:0}.chart button i{width:100%;max-width:44px;border-radius:4px 4px 0 0;background:#92a38c}.chart button:hover i,.chart button:focus-visible i{background:#d9e7d1}.axis{display:flex;justify-content:space-between;gap:8px;font-size:12px;color:var(--quiet);margin-top:5px}.axis span:nth-child(2){text-align:center}.footer{display:flex;align-items:center;justify-content:space-between;gap:14px;border-top:1px solid var(--line);padding-top:16px;margin-top:30px;color:var(--quiet);font-size:13px}.link{color:var(--text);text-decoration:underline;text-underline-offset:3px}.empty{padding:18px;color:var(--mute);font-size:15px}.empty strong{display:block;color:var(--text)}details{margin:12px 0}summary{color:var(--mute);cursor:pointer;font-size:14px}details p{font-size:14px;color:var(--mute);max-width:85ch}.dialog{position:fixed;inset:0 0 0 auto;margin:0;border:0;border-left:1px solid var(--line);width:min(540px,100%);max-width:100%;height:100dvh;max-height:100dvh;padding:0;background:var(--bg);color:var(--text)}dialog::backdrop{background:#000a}.dlghead{position:sticky;top:0;background:#18191af5;z-index:1;border-bottom:1px solid var(--line);padding:20px 22px;display:flex;justify-content:space-between;align-items:flex-start;gap:10px}.dlghead h2{font-size:24px;letter-spacing:-.035em}.dlgbody{padding:18px 22px 40px}.dlgbody p{margin-bottom:12px}.dlgrow{display:grid;grid-template-columns:1fr 1fr;gap:6px;border-bottom:1px solid var(--line);padding:9px 0;font-size:14px}.dlgrow span{color:var(--mute)}.timeline{list-style:none;margin:14px 0;padding:0}.timeline li{border-left:1px solid #51584f;position:relative;margin-left:5px;padding:0 0 15px 16px;font-size:15px}.timeline li:before{content:"";position:absolute;left:-4px;top:6px;width:7px;height:7px;border-radius:50%;background:var(--accent)}.timeline small{display:block;font-size:13px;color:var(--mute)}.actions{margin:10px 0}.hintline{padding:11px 13px;border-left:2px solid #899780;background:#202420;font-size:14px;color:#d4dbcf;margin:12px 0}.ringbutton{display:flex;align-items:center;gap:8px}.sourcebuttons{margin-top:14px}.future h3{font-size:16px}.locked{margin:60px 0}.embedded .mast{display:none}.embedded .shell{padding:0 6px 25px}.embedded .intro{margin-top:0}
+@media(max-width:760px){.three{grid-template-columns:1fr}.three .entry{display:grid;grid-template-columns:auto 1fr;gap:2px 15px}.three .entry .rowhead{grid-row:1/3}.three .entry .round,.three .cardfoot{display:none}.three .entry h2,.three .entry p{margin:0}.double{grid-template-columns:1fr}.wide .spark{display:none}.toolbar{align-items:flex-start}.future{padding:14px}.shell{padding-bottom:20px}.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:580px){.mastin{height:57px}.brand{font-size:16px;gap:6px}.brand small,.identity>span:not(.demo){display:none}.brand svg{width:25px}.intro{margin:4px 0 18px}.cards,.futuregrid{grid-template-columns:1fr;gap:10px}.entry{padding:18px}.entry h2{font-size:28px;margin:8px 0 3px}.cardfoot{margin-top:12px;padding-top:8px}.wide{gap:8px;padding:15px}.wide h2{font-size:20px}.wide .badgeicon{display:none}.wide .big{font-size:26px}.wide .caption{display:none}.future{padding:12px 15px}.futuregrid{gap:7px}.sectiontitle{margin:19px 0 10px}.panel{padding:15px}.stage{grid-template-columns:minmax(0,1fr) auto;gap:4px 10px}.stage .track{grid-column:1/-1;grid-row:2}.metric{padding:13px;min-height:108px}.metric strong{font-size:28px}.seg button{padding:7px 9px}.footer{align-items:flex-start;flex-wrap:wrap}.subnav{gap:0}.crumbs{min-height:44px}.date{max-width:140px}.dlgbody{padding:15px}.intro p{font-size:15px}.filter{flex-wrap:wrap}.panel .rowhead{align-items:flex-start}.wide .round{display:none}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}} 
+.reviewlink{display:inline-flex;align-items:center;gap:8px}.crumbs .demo{margin-left:auto}.source-label{display:none}.reasonlist{padding-left:18px;font-size:14px;color:var(--mute)}.main-period{font-size:14px;color:var(--mute);margin:-6px 0 12px}
+@media(max-width:720px){.source-table table,.source-table tbody{display:block}.source-table thead{position:absolute;clip-path:inset(50%);width:1px;height:1px;overflow:hidden}.source-table tr{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:12px 0 0;padding:10px;background:#202224;border-radius:10px}.source-table td{border:0;text-align:left;padding:0;white-space:normal}.source-table td:first-child{grid-column:1/-1;font-weight:650}.source-table td button{width:100%;padding:4px 2px;min-height:44px}.source-label{display:block;color:var(--mute);font-size:12px}.source-table td small{font-size:12px}.source-table .tablewrap{overflow:visible}.seg button,.subnav button{min-height:40px}.crumbs button{min-height:36px}}
+</style></head><body>
+<header class="mast"><div class="mastin"><button class="brand" data-page="home" aria-label="MANSBAND, к выбору статистики"><svg aria-hidden="true" viewBox="0 0 14 14"><path fill="currentColor" d="M1 10H13V4H9L7 8 5 4H1Z"/></svg>MANSBAND <small>Касса</small></button><div class="identity"><span class="demo">Демоданные</span><span class="avatar">А</span><span>Администратор</span></div></div></header>
+<main class="shell" id="app"></main>
+<dialog class="dialog" id="drawer" aria-labelledby="dlgtitle"><div class="dlghead"><div><div class="tiny" id="dlgmeta"></div><h2 id="dlgtitle"></h2></div><button class="step" id="close" aria-label="Закрыть подробности">✕</button></div><div class="dlgbody" id="dlgbody"></div></dialog>
+<script>
+"use strict";
+// Все записи вымышлены. Время ниже — московское календарное время демонстрации.
+const DAY=86400000, MIN=60000, START=Date.UTC(2026,8,1), NOW=Date.UTC(2026,10,19,18);
+const day0=t=>Math.floor(t/DAY)*DAY, iso=t=>new Date(t).toISOString().slice(0,10);
+const dateFmt=(t,opts={day:'numeric',month:'short'})=>new Intl.DateTimeFormat('ru-RU',{...opts,timeZone:'UTC'}).format(t).replace(/ г\.$/,'');
+const stamp=t=>dateFmt(t)+' · '+new Date(t).toISOString().slice(11,16);
+const fmt=n=>new Intl.NumberFormat('ru-RU',{maximumFractionDigits:1}).format(n);
+const percent=(n,d)=>d?fmt(100*n/d)+'%':'—';
+const SOURCES=['ВКонтакте','Инстаграм','Яндекс Директ','Яндекс Карты','2ГИС','Google Карты','Телеграм-канал','Авито','Ютуб','Дзен','Тикток','Пинтерест','Сарафан','Совет','Клиент','Сайт (органика)','Другое'];
+const CHANNEL={off:'Офлайн',on:'Онлайн'}, paths={
+ off:['Взято в работу','Дано обещание','Хочет прийти','Товар в пути','Товар в магазине','Товар отложен','Встреча назначена'],
+ on:['Взято в работу','Дано обещание','Хочет заказать','Товар в пути','Товар в магазине','Товар отложен','Передан на сборку']
+};
+const logistics={off:['Дано обещание','Товар в пути','Товар в магазине'],on:['Дано обещание','Товар в пути','Товар в магазине','Передан на сборку','Собран','Отправлен','Доставлен']};
+const reasons=['Не подошёл ассортимент','Отложил покупку','Перестал отвечать','Не подошла цена'];
+let seed=53917;
+function random(){seed=(Math.imul(1664525,seed)+1013904223)>>>0;return seed/4294967296}
+const rand=n=>Math.floor(random()*n),pick=a=>a[rand(a.length)];
+const owner=()=>pick(['Менеджер А','Менеджер Б','Менеджер В']);
+function buildDeals(){
+ const out=[];
+ for(let day=START; day<=NOW; day+=DAY){
+  const volume=5+rand(8);
+  for(let k=0;k<volume;k++){
+   const created=day+(10*60+rand(710))*MIN;if(created>NOW)continue;
+   const direct=random()<.14, lane=direct?'off':random()<.58?'off':'on';
+   const source=random()<.53?pick([SOURCES[0],SOURCES[2],SOURCES[6],SOURCES[15],SOURCES[3]]):pick(SOURCES);
+   const target=random()<.84, qualified=target&&random()<.82, win=direct?random()<.69:qualified&&random()<.64;
+   const history=[{s:'Новая заявка',t:created}];let clock=created;
+   const next=(s,delay)=>{clock+=delay;history.push({s,t:clock})};
+   if(!direct){
+    next('Взято в работу',(5+rand(46))*MIN);
+    if(qualified||win){
+     next('Дано обещание',(25+rand(200))*MIN);
+     const steps=paths[lane];
+     if(random()<.82)next(steps[2],(2+rand(15))*60*MIN);
+     if(random()<.58){next('Товар в пути',(3+rand(12))*60*MIN);if(win||random()<.78)next('Товар в магазине',(8+rand(70))*60*MIN)}
+     if(random()<.42)next('Товар отложен',(2+rand(15))*60*MIN);
+     if(win||random()<.42){next(steps.at(-1),(3+rand(32))*60*MIN);
+      if(lane==='on'){if(win||random()<.84){next('Собран',(2+rand(20))*60*MIN);if(win||random()<.78){next('Отправлен',(3+rand(23))*60*MIN);if(win||random()<.6)next('Доставлен',(12+rand(70))*60*MIN)}}}
+     }
+    }
+   }
+   const closeAt=clock+(direct?(1+rand(50))*MIN:(2+rand(77))*60*MIN);
+   const status=win?'Успех':'Провал',closed=closeAt<=NOW?closeAt:null;
+   const d={id:'Д-'+(2401+out.length),created,lane,source,direct,owner:direct?'Консультант':owner(),targetAt:target&&!direct?history[1].t:null,qualAt:qualified&&!direct?history[2].t:null,closed,result:closed?status:null,reason:!win?(target?pick(reasons):pick(['Спам','Ателье'])):null,history:history.filter(e=>e.t<=NOW),responses:[],tasks:[],misses:[]};
+   if(closed)d.history.push({s:status,t:closed});
+   if(!direct){
+    const first=created, end=first+(2+rand(27))*MIN;
+    if(end<=NOW)d.responses.push({start:first,t:end,minutes:(end-first)/MIN});
+    if(random()<.42){const missed=created+rand(31)*MIN,cb=missed+(1+rand(65))*MIN;
+     if(missed<=NOW)d.misses.push({t:missed,cb:random()<.79&&cb<Math.min(closeAt,NOW)?cb:null});
+    }
+    for(let i=1;i<d.history.length;i++){
+     const e=d.history[i];if(['Успех','Провал'].includes(e.s))continue;
+     const until=d.history[i+1]?.t??NOW,visit=e.s==='Хочет прийти',plan=e.t+(3+rand(6))*DAY;
+     if(visit)e.plan=plan;
+     e.due=visit?plan:e.t+(18+rand(48))*60*MIN;
+     e.basis=visit?'Ожидаемая дата визита':'Демо-норматив пребывания на этапе';
+     if(random()<.32||visit){
+      const due=visit?Math.max(e.t,plan-2*DAY):e.t+(6+rand(21))*60*MIN;
+      const done=Math.min(until,e.t+(4+rand(40))*60*MIN);
+      d.tasks.push({name:visit?'Уточнить дату визита':'Связаться с клиентом',stage:e.s,opened:e.t,due,done:done<NOW?done:null,basis:visit?'За два дня до планового визита (пример)':'Демо-срок задачи'});
+     }
+    }
+   }
+   out.push(d);
+  }
+ }
+ function example(id,stage,days,due,extra={}){
+  const created=day0(NOW)-days*DAY+12*60*MIN;
+  return {id,lane:'off',source:'Сайт (органика)',direct:false,owner:'Менеджер А',created,closed:null,result:null,reason:null,targetAt:created+MIN,qualAt:created+2*MIN,
+   history:[{s:'Новая заявка',t:created},{s:'Взято в работу',t:created+MIN},{s:'Дано обещание',t:created+2*MIN},{s:stage,t:created+3*MIN,due,...extra}],responses:[],tasks:[],misses:[]};
+ }
+ const visitDate=day0(NOW)+4*DAY+12*60*MIN,certDate=Date.UTC(2026,11,14,23,59);
+ const visit=example('П-101','Хочет прийти',7,visitDate,{plan:visitDate,basis:'Ожидаемая дата визита'});
+ visit.tasks.push({name:'Уточнить дату визита',stage:'Хочет прийти',opened:visitDate-2*DAY,due:visitDate-2*DAY+4*60*MIN,done:null,basis:'За два дня до планового визита (пример)'});
+ out.push(visit,example('П-102','Сертификат оплачен',62,certDate,{basis:'Срок действия сертификата'}));
+ // Один повторный вход в этап для проверки конверсии по уникальным заявкам.
+ const repeat=out.find(d=>d.result==='Успех'&&d.history.some(h=>h.s==='Встреча назначена')&&d.closed>day0(NOW)-6*DAY);
+ if(repeat){const i=repeat.history.findIndex(e=>e.s==='Встреча назначена'),t=repeat.history[i].t;repeat.history.splice(i,0,{s:'Взято в работу',t:t-2*MIN},{s:'Товар отложен',t:t-MIN})}
+ return out;
+}
+const deals=buildDeals(), byId=new Map(deals.map(d=>[d.id,d]));
+const isOpen=(d,t)=>d.created<=t&&(!d.closed||d.closed>t);
+const outcome=(d,t)=>d.closed&&d.closed<=t?d.result:'В работе';
+const targetAt=(d,t)=>Boolean((d.targetAt&&d.targetAt<=t)||outcome(d,t)==='Успех');
+const qualAt=(d,t)=>Boolean((d.qualAt&&d.qualAt<=t)||outcome(d,t)==='Успех');
+const stageAt=(d,t)=>d.history.filter(e=>e.t<=t).at(-1)?.s??'';
+const snapshot=deals.filter(d=>isOpen(d,NOW));
+// Фиксированные срезы на конец каждого завершившегося дня демонабора.
+const snapshots=[];
+for(let t=START+DAY-1;t<NOW;t+=DAY)snapshots.push({t,ids:deals.filter(d=>isOpen(d,t)).map(d=>d.id)});
+function boundaries(kind,date){
+ const z=new Date(day0(date)),y=z.getUTCFullYear(),m=z.getUTCMonth();let a=day0(date),b=a+DAY;
+ if(kind==='week'){a-=((z.getUTCDay()+6)%7)*DAY;b=a+7*DAY}
+ if(kind==='month'){a=Date.UTC(y,m,1);b=Date.UTC(y,m+1,1)}
+ if(kind==='year'){a=Date.UTC(y,0,1);b=Date.UTC(y+1,0,1)}
+ return {a,b,cut:Math.min(b-1,NOW)};
+}
+const state={kind:'week',date:day0(NOW),mode:'closed',source:'*',touch:'*',lane:'off'};
+const period=()=>boundaries(state.kind,state.date);
+function cohort(basis='closed',touch='*',source='*'){
+ const {a,cut}=period();
+ return deals.filter(d=>{const t=basis==='created'?d.created:d.closed;return t!==null&&t>=a&&t<=cut&&(source==='*'||d.source===source)&&(touch==='*'||(touch==='yes')===!d.direct)});
+}
+const was=(d,s)=>d.history.some(e=>e.s===s);
+function reached(d,s,goal){const first=d.history.find(e=>e.s===s);return !!first&&d.history.some(e=>e.s===goal&&e.t>=first.t)}
+function quality(rows){
+ const get=(arr,d,kind)=>arr.map(e=>({d,e,kind}));
+ const responses=[],tasks=[],stages=[],misses=[],callbacks=[];
+ for(const d of rows){
+  responses.push(...get(d.responses,d,'response'));
+  tasks.push(...get(d.tasks.filter(e=>e.due<(e.done??NOW)&&e.opened<=NOW),d,'task'));
+  for(let i=0;i<d.history.length;i++){const e=d.history[i],until=d.history[i+1]?.t??d.closed??NOW;if(e.due&&until>e.due)stages.push({d,e:{...e,until},kind:'stage'})}
+  for(const e of d.misses){const r={d,e,kind:'miss'};misses.push(r);if(e.cb)callbacks.push({...r,kind:'callback'})}
+ }
+ return {responses,tasks,stages,misses,callbacks};
+}
+
+
+const titles={home:'Статистика',crm:'Статистика CRM',quality:'Качество работы CRM',general:'Общая статистика',effect:'Эффективность CRM',log:'Логистика',queue:'Сейчас в работе',review:'Что проверить в прототипе'};
+const intro={home:'Выбери, какой участок работы разобрать.',crm:'Выбери вопрос, на который нужен ответ.',quality:'Как колл-менеджеры отвечают клиентам и соблюдают сроки?',general:'Сколько обращений становятся покупками и из каких источников они приходят?',effect:'С каких этапов менеджеры доводят клиента до встречи или передачи на сборку?',log:'Как товар доходит до магазина и до клиента?',queue:'Сколько заявок осталось открытыми и на каких этапах они ждут?',review:'Три сценария для согласования перед подключением реальных данных.'};
+const icons={crm:'<path d="M4 19V5m0 14h16M8 15v-4m5 4V7m5 8v-6"/>',log:'<path d="M3 6h11v10H3zM14 10h4l3 4v2h-7z"/><circle cx="7" cy="18" r="2"/><circle cx="18" cy="18" r="2"/>',queue:'<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M8 4v16m4-11h5m-5 4h3"/>',right:'<path d="m9 5 7 7-7 7"/>',left:'<path d="m15 5-7 7 7 7"/>',goods:'<path d="m3 8 9-5 9 5v9l-9 5-9-5zM3 8l9 5 9-5m-9 5v9"/>',users:'<circle cx="10" cy="8" r="3"/><path d="M3 20v-2a7 7 0 0 1 14 0v2m-1-15a3 3 0 0 1 0 6m3 3c1 .8 2 2.5 2 5"/>',quality:'<path d="m3 12 4 0 3-7 4 14 3-7h4"/>',general:'<path d="M3 5h18l-7 8v5l-4 2v-7z"/>',effect:'<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><path d="m12 12 8-8"/>',calendar:'<rect x="3" y="5" width="18" height="16" rx="3"/><path d="M7 3v4m10-4v4M3 10h18"/>'};
+const ic=k=>`<svg class="icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${icons[k]??''}</svg>`;
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const app=document.querySelector('#app'), drawer=document.querySelector('#drawer'),dlgbody=document.querySelector('#dlgbody');
+const embedded=window.self!==window.top;if(embedded)document.body.classList.add('embedded');
+let page=Object.hasOwn(titles,location.hash.slice(1))?location.hash.slice(1):'home';
+let actions=new Map(),dialogActions=new Map(),serial=0,backDialog=null,closeFocus=null;
+function reg(fn,dialog=false){const k=String(++serial);(dialog?dialogActions:actions).set(k,fn);return `data-act="${k}"`}
+function nav(p){if(!Object.hasOwn(titles,p))return;if(drawer.open)drawer.close();if(!embedded&&location.hash!=='#'+p){location.hash=p;return}page=p;render();window.scrollTo(0,0)}
+addEventListener('hashchange',()=>{page=Object.hasOwn(titles,location.hash.slice(1))?location.hash.slice(1):'home';if(drawer.open)drawer.close();render();window.scrollTo(0,0)});
+document.addEventListener('click',e=>{const el=e.target.closest('[data-page],[data-act]');if(!el)return;if(el.dataset.page)nav(el.dataset.page);else (dialogActions.get(el.dataset.act)??actions.get(el.dataset.act))?.()});
+drawer.addEventListener('click',e=>{if(e.target===drawer&&e.clientX<drawer.getBoundingClientRect().left)drawer.close()});
+document.querySelector('#close').onclick=()=>drawer.close();drawer.addEventListener('close',()=>{dialogActions.clear();backDialog=null;document.body.style.overflow='';closeFocus?.focus?.()});
+function show(title,meta,html){document.querySelector('#dlgtitle').textContent=title;document.querySelector('#dlgmeta').textContent=meta;dlgbody.innerHTML=html;if(!drawer.open){closeFocus=document.activeElement;drawer.showModal();document.body.style.overflow='hidden'}drawer.scrollTop=0}
+const empty=msg=>`<div class="empty"><strong>Нет записей</strong>${msg??'По выбранным условиям ничего не найдено.'}</div>`;
+function eventInfo(r){
+ const e=r.e;
+ if(r.kind==='response')return [`Ответ за ${fmt(e.minutes)} мин`,`${stamp(e.start)} · ответ ${stamp(e.t)}`];
+ if(r.kind==='task')return [e.name,`${e.stage} · срок ${stamp(e.due)} · ${e.done?'выполнена '+stamp(e.done):'ещё открыта'}`];
+ if(r.kind==='stage')return [e.s,`Срок ${stamp(e.due)} · выход ${stamp(e.until)} · ${e.basis}`];
+ if(r.kind==='miss'||r.kind==='callback')return ['Пропущенный звонок',`${stamp(e.t)} · ${e.cb?'перезвон '+stamp(e.cb):'перезвон не зафиксирован'}`];
+ return null;
+}
+function list(title,records,explain='',cut=NOW){
+ const openList=(limit=35)=>{
+  dialogActions.clear();backDialog=()=>openList(limit);
+  const items=records.slice(0,limit).map(r=>{const d=r.d??r,info=r.kind?eventInfo(r):null;
+   return `<button class="item" ${reg(()=>detail(d,cut,()=>openList(limit)),true)}><span><strong>${d.id}</strong> · ${esc(info?info[0]:stageAt(d,cut))}<small>${esc(info?info[1]:dateFmt(d.created)+' · '+CHANNEL[d.lane]+' · '+d.source)}</small></span>${ic('right')}</button>`}).join('');
+  show(title,`${fmt(records.length)} записей`,(explain?`<p class="note">${esc(explain)}</p>`:'')+(items?`<div class="stack">${items}</div>`:empty())+(limit<records.length?`<p class="actions"><button class="pill" ${reg(()=>openList(limit+60),true)}>Показать ещё</button></p>`:''));
+ };openList();
+}
+function detail(d,cut=NOW,back=null){
+ dialogActions.clear();const st=outcome(d,cut),hist=d.history.filter(e=>e.t<=cut),current=hist.at(-1);
+ const props=[['Создана',stamp(d.created)],['Канал',CHANNEL[d.lane]],['Источник',d.source],['Касание в интернете',d.direct?'Без касания':'С касанием'],['Ответственный',d.owner],['Целевая · квал',`${targetAt(d,cut)?'Да':'Нет'} · ${qualAt(d,cut)?'Да':'Нет'}`]];
+ if(d.closed&&d.closed<=cut)props.push(['Завершена',stamp(d.closed)]);
+ if(st==='Провал')props.push(['Причина провала',d.reason]);
+ if(current?.due)props.push([current.basis,stamp(current.due)],[ 'Состояние срока',current.due<cut?'Просрочен':'В сроке']);
+ const tasks=d.tasks.filter(e=>e.opened<=cut||d.id==='П-101');
+ show('Заявка '+d.id,`Демонстрационная карточка · ${st}`,(back?`<p><button class="link" ${reg(back,true)}>К списку записей</button></p>`:'')+
+ props.map(([k,v])=>`<div class="dlgrow"><span>${esc(k)}</span><strong>${esc(v)}</strong></div>`).join('')+
+ `<h3 class="sectiontitle">История этапов</h3><ol class="timeline">${hist.map(e=>`<li>${esc(e.s)}<small>${stamp(e.t)}</small></li>`).join('')}</ol>`+
+ (tasks.length?`<h3>Задачи</h3>${tasks.map(e=>`<div class="dlgrow"><span>${esc(e.name)}<small class="caption"> · ${esc(e.basis)}</small></span><strong>${e.opened>cut?'Появится '+stamp(e.opened):'Срок '+stamp(e.due)}<br><small class="tiny">${e.done&&e.done<=cut?'Выполнена '+stamp(e.done):e.opened>cut?'Запланирована':e.due<cut?'Просрочена':'В сроке'}</small></strong></div>`).join('')}`:''));
+}
+function methodology(){
+ dialogActions.clear();show('Как читать статистику','Правила расчёта',`<div class="stack">
+ <section><h3>За период</h3><p class="note">CRM и логистика включают сделки, завершённые в выбранные даты. В отчёте качества считаются ответы, задачи и звонки этих сделок за их историю. Если считать обращения в день события, получится другой отчёт.</p></section>
+ <section><h3>Источники</h3><p class="note">В общей статистике режим «Источники» группирует заявки по дате создания. Учитываем результат только до конца выбранного периода. Открытая заявка остаётся в общем количестве.</p></section>
+ <section><h3>Целевые и квалы</h3><p class="note">В демо используем отметки целевой заявки и квалификации. Успех автоматически даёт обе. Провал сам по себе их не даёт. Без интернет-касания считаем созданную консультантом сразу при исходе заявку, которой раньше не было в CRM.</p></section>
+ <section><h3>Путь к цели</h3><p class="note">Каждая сделка учитывается один раз для каждого посещённого этапа. Цель должна быть достигнута на этом этапе или позднее. Повторные переходы видны в карточке.</p></section>
+ <section><h3>Демонстрационные данные</h3><p class="note">События с 1 сентября по 19 ноября 2026, 18:00 МСК. Ежедневные срезы очереди показаны по завершённым дням. Тайминги, ответственные и причины приведены для проверки интерфейса. Сроки по каждому этапу требуют сверки перед подключением к кассе и amoCRM.</p></section></div>`);
+}
+function spark(values){const max=Math.max(1,...values),w=100/values.length;return `<svg aria-hidden="true" class="spark" viewBox="0 0 100 32" preserveAspectRatio="none">${values.map((v,i)=>`<rect x="${i*w}" y="${32-30*v/max}" width="${Math.max(.8,w-1.7)}" height="${30*v/max}" rx="1" opacity="${.5+.5*(i+1)/values.length}" fill="currentColor"/>`).join('')}</svg>`}
+const openButton=(p,cls,body)=>`<button class="${cls}" data-page="${p}">${body}</button>`;
+const badge=k=>`<span class="badgeicon">${ic(k)}</span>`,chev=`<span class="round">${ic('right')}</span>`;
+function home(){
+ const {a,cut}=period(),first=Math.max(a,START),dayCount=Math.floor((day0(cut)-first)/DAY)+1;
+ const bucket=Math.max(1,Math.ceil(dayCount/14))*DAY;
+ const series=(rows)=>Array.from({length:Math.ceil(dayCount*DAY/bucket)},(_,i)=>rows.filter(d=>d.closed>=first+i*bucket&&d.closed<first+(i+1)*bucket).length);
+ const rows=cohort(), goal=logistics[state.lane].at(-1);
+ const cr=series(rows),del=series(rows.filter(d=>d.lane===state.lane&&was(d,goal)));
+ const range=dateFmt(first)+(first===day0(cut)?'':' — '+dateFmt(cut));
+ function tile(p,cls,title,blurb,val,caption,series){return openButton(p,'entry '+cls,`<span class="rowhead">${badge(p)}${chev}</span><h2>${title}</h2><p>${blurb}</p><div class="cardfoot"><div><div class="big">${fmt(val)}</div><div class="caption">${caption}</div></div>${spark(series)}</div>`)}
+ return `<p class="main-period">Завершённые сделки · ${range}</p><div class="cards">${tile('crm','hero','Статистика CRM','Обращения, качество работы и путь до цели.',cr.reduce((a,b)=>a+b,0),'завершённых заявок',cr)}${tile('log','log','Логистика','Путь товара до магазина и до клиента.',del.reduce((a,b)=>a+b,0),CHANNEL[state.lane]+' · '+goal,del)}</div>`+
+ openButton('queue','entry wide',`<div class="cardtitle">${badge('queue')}<div><h2>Сейчас в работе</h2><p>Открытые заявки, этапы и история очереди.</p></div></div><div class="flex">${spark(snapshots.slice(-14).map(x=>x.ids.length))}<strong class="big">${snapshot.length}</strong>${chev}</div>`)+
+ `<h2 class="sectiontitle">Следующие разделы</h2><div class="futuregrid">${[['goods','Товары'],['users','Консультанты']].map(([k,n])=>`<div class="future">${ic(k)}<h3>${n}</h3><span class="chip">В планах</span></div>`).join('')}</div>`;
+}
+function crm(){return `<div class="three">${[['quality','Качество работы','Ответы, пропущенные звонки и просрочки.'],['general','Общая статистика','Целевые заявки, покупки и источники.'],['effect','Эффективность','На каких этапах заявки не доходят до цели.']].map(([p,n,b])=>openButton(p,'entry',`<span class="rowhead">${badge(p)}${chev}</span><h2>${n}</h2><p>${b}</p>`)).join('')}</div>`}
+function segment(key,options){return `<div class="seg">${options.map(([v,n])=>`<button aria-pressed="${state[key]===v}" ${reg(()=>{state[key]=v;render()})}>${n}</button>`).join('')}</div>`}
+function step(dir){const {a,b}=period();state.date=day0(dir<0?a-1:b);render()}
+function toolbar(){
+ const {a,b,cut}=period(),end=b-1;const span=a===day0(cut)?dateFmt(a):dateFmt(a)+' — '+dateFmt(cut,{day:'numeric',month:'long',year:'numeric'});
+ return `<div class="toolbar">${segment('kind',[['day','День'],['week','Неделя'],['month','Месяц'],['year','Год']])}<div class="cal"><button class="step" aria-label="Предыдущий период" ${a<=START?'disabled':''} ${reg(()=>step(-1))}>${ic('left')}</button><input class="date" type="date" id="anchor" aria-label="Дата внутри периода" min="${iso(START)}" max="${iso(NOW)}" value="${iso(state.date)}"><button class="step" aria-label="Следующий период" ${b>NOW?'disabled':''} ${reg(()=>step(1))}>${ic('right')}</button></div><span class="periodlabel">${span}${end>NOW?' · по 18:00 МСК':''}</span></div>`;
+}
+function select(key,label,options){return `<label class="filter">${label}<select data-select="${key}">${options.map(([v,n])=>`<option value="${esc(v)}" ${state[key]===v?'selected':''}>${esc(n)}</option>`).join('')}</select></label>`}
+document.addEventListener('change',e=>{if(e.target.id==='anchor'){const t=Date.parse(e.target.value+'T00:00:00Z');if(t>=START&&t<=NOW)state.date=t;render()}else if(e.target.dataset.select){state[e.target.dataset.select]=e.target.value;render()}});
+function metric(name,value,sub,fn,tone=''){return `<button class="metric" ${reg(fn)}><span>${name}</span><strong class="${tone}">${value}</strong><small>${sub}</small></button>`}
+const panel=(title,desc,body)=>`<section class="panel"><h2>${title}</h2>${desc?`<p class="note">${desc}</p>`:''}${body}</section>`;
+const info=(label,body)=>`<details><summary>${label}</summary><p>${body}</p></details>`;
+function stats(rows,cut){return [rows,rows.filter(d=>targetAt(d,cut)),rows.filter(d=>qualAt(d,cut)),rows.filter(d=>outcome(d,cut)==='Успех'),rows.filter(d=>outcome(d,cut)==='Провал')]}
+const statNames=['Все заявки','Целевые','Квалы','Успех','Провал'];
+function general(){
+ const marketing=state.mode==='created',cut=period().cut,basis=marketing?'created':'closed';
+ const rows=cohort(basis,state.touch,marketing?state.source:'*'),groups=stats(rows,cut),den=[rows.length,rows.length,groups[1].length,rows.length,rows.length],suffix=['','от всех','от целевых','от всех','от всех'];
+ let html=`<div class="filterbar">${segment('mode',[['closed','Результаты'],['created','Источники']])}${select('touch','Касание в интернете',[['*','Все заявки'],['yes','С касанием'],['no','Без касания']])}${marketing?select('source','Источник',[['*','Все источники'],...SOURCES.map(s=>[s,s])]):''}</div><p class="hintline">${marketing?'По дате создания. Видно, какого качества обращения привёл каждый источник и чем они стали к концу периода.':'По дате завершения. Видно, чем закончились сделки, закрытые за выбранный период.'}</p>`;
+ html+=`<div class="metrics">${groups.map((g,i)=>metric(statNames[i],fmt(g.length),i?percent(g.length,den[i])+' '+suffix[i]:marketing?'создано за период':'завершено за период',()=>list(statNames[i],g,'Состав показателя за выбранный период.',cut),i===3?'accent':i===4?'bad':'')).join('')}</div>`;
+ if(marketing){const sources=state.source==='*'?SOURCES:[state.source];
+  const ranked=sources.map(s=>[s,stats(rows.filter(d=>d.source===s),cut)]).sort((a,b)=>b[1][0].length-a[1][0].length);
+  html+=panel('Что дал каждый источник?','Количество и конверсия на конец периода. Нажми на число, чтобы увидеть заявки.',`<div class="tablewrap source-table"><table><thead><tr><th>Источник</th>${statNames.map(n=>`<th>${n}</th>`).join('')}</tr></thead><tbody>${ranked.map(([s,g])=>`<tr><td>${s}</td>${g.map((rs,i)=>`<td><button aria-label="${esc(s+' · '+statNames[i]+' · '+rs.length)}" ${reg(()=>list(s+' · '+statNames[i],rs,'Заявки этого источника.',cut))}><span class="source-label">${statNames[i]}</span>${rs.length}${i?`<small>${percent(rs.length,(i===2?g[1]:g[0]).length)}</small>`:''}</button></td>`).join('')}</tr>`).join('')}</tbody></table></div>`);
+ }else{
+  const fail=groups[4],reasons=[...new Set(fail.map(d=>d.reason))].map(r=>[r,fail.filter(d=>d.reason===r)]).sort((a,b)=>b[1].length-a[1].length);
+  html+=panel('Почему сделки закрыли в провал?','Доля от всех провалов в выбранном периоде.',reasons.length?`<div class="stack">${reasons.map(([r,g])=>barRow(r,g.length,fail.length,()=>list(r,g,'Причина, указанная при закрытии.',cut))).join('')}</div>`:empty('Провалов за период нет.'));
+ }
+ return html+info('Как определяются целевые, квалы и касание?','Успех автоматически считается и целевым, и квалом. У остальных заявок учитываются отдельные отметки. Без касания в интернете — сделка, которую консультант впервые создал при успехе или провале; остальные — с касанием.');
+}
+function barRow(label,n,den,fn,sub=''){return `<button class="stage" ${reg(fn)}><span>${esc(label)}${sub?`<small>${esc(sub)}</small>`:''}</span><span class="track"><i style="width:${den?100*n/den:0}%"></i></span><span class="alignr"><b>${n}</b><small>${percent(n,den)}</small></span></button>`}
+
+
+function qualityReport(){
+ const q=quality(cohort()),mean=q.responses.length?q.responses.reduce((n,r)=>n+r.e.minutes,0)/q.responses.length:null;
+ const sections=[
+ ['Среднее время ответа',mean===null?'—':fmt(mean)+' мин',q.responses.length+' измерений',q.responses,'Время от входящего сообщения до первого ответа. В примерах оба события в рабочие часы.'],
+ ['Просроченные задачи',q.tasks.length,'задач со сроком',q.tasks,'Задача оставалась открытой после срока исполнения.'],
+ ['Просроченные этапы',q.stages.length,'выходов после срока',q.stages,'Для каждого пребывания сопоставлены срок и фактический выход с этапа.'],
+ ['Пропущенные звонки',q.misses.length,'входящих без ответа',q.misses,'Каждая запись — отдельный пропущенный входящий.'],
+ ['Перезвонили',q.callbacks.length,percent(q.callbacks.length,q.misses.length)+' от пропущенных',q.callbacks,'Пропущенные входящие со связанным обратным звонком. На один пропущенный засчитывается максимум один перезвон.']
+ ];
+ function grouped(title,arr,label){const groups=[...new Set(arr.map(label))].map(k=>[k,arr.filter(r=>label(r)===k)]).sort((a,b)=>b[1].length-a[1].length);return panel(title,'Открой строку, чтобы увидеть сроки и заявки.',groups.length?`<div class="stack">${groups.map(([k,rs])=>barRow(k,rs.length,arr.length,()=>list(k,rs,'Записи, вошедшие в показатель.'))).join('')}</div>`:empty())}
+ return `<p class="hintline">По дате завершения заявки. Показаны события за историю сделок, закрытых в выбранный период.</p><div class="metrics">${sections.map(([n,v,s,rs,desc],i)=>metric(n,v,s,()=>list(n,rs,desc),i===4?'accent':'')).join('')}</div><div class="double">${grouped('Какие задачи просрочили?',q.tasks,r=>r.e.name)}${grouped('На каких этапах задержались?',q.stages,r=>r.e.s)}</div>`+
+ panel('Как проверить срок?', 'Два примера из обсуждения правил. Это иллюстрации для согласования времени задач и уведомлений.',`<div class="stack"><button class="item" ${reg(()=>detail(byId.get('П-101')))}><span>Хочет прийти<small>Пример задачи за два дня до планового визита</small></span>${ic('right')}</button><button class="item" ${reg(()=>detail(byId.get('П-102')))}><span>Сертификат оплачен<small>Срок этапа по дате окончания действия сертификата</small></span>${ic('right')}</button></div>`);
+}
+function funnel(log){
+ const lane=state.lane,steps=(log?logistics:paths)[lane],goal=steps.at(-1),rows=cohort().filter(d=>d.lane===lane),cut=period().cut;
+ const analysis=steps.map(s=>{const visited=rows.filter(d=>was(d,s)),hit=visited.filter(d=>reached(d,s,goal));return {s,visited,hit}});
+ function stageDetail(item){
+  const {s,visited,hit}=item,miss=visited.filter(d=>!hit.includes(d));
+  const byReason=new Map();
+  for(const d of miss){const reason=d.result==='Провал'?(d.reason||'Причина не указана'):'Успех без этого этапа';byReason.set(reason,(byReason.get(reason)||0)+1)}
+  const why=byReason.size?`<h3 class="sectiontitle">Исходы заявок, не дошедших до цели</h3><ul class="reasonlist">${[...byReason].sort((a,b)=>b[1]-a[1]).map(([name,n])=>`<li>${esc(name)} · ${n}</li>`).join('')}</ul>`:'';
+  dialogActions.clear();
+  show(s,'Цель · '+goal,`<p class="note">Из ${visited.length} заявок, которые побывали на этапе, до цели дошли ${hit.length} (${percent(hit.length,visited.length)}).</p><div class="stack">${[['Побывали на этапе',visited],['Дошли до цели',hit],['Не дошли до цели',miss]].map(([name,g])=>`<button class="item" ${reg(()=>list(name,g,'Этап «'+s+'». Цель «'+goal+'».',cut),true)}><span>${name}</span><strong>${g.length}</strong></button>`).join('')}</div>${why}`);
+ }
+ const header=`<div class="filterbar">${segment('lane',[['off','Офлайн'],['on','Онлайн']])}<span class="periodlabel">По дате завершения</span></div>`;
+ const rowsHtml=analysis.map(o=>`<button class="stage" ${reg(()=>stageDetail(o))}><span><strong>${o.s}</strong><small>Побывали · ${o.visited.length}</small></span><span class="track"><i style="width:${o.visited.length?100*o.hit.length/o.visited.length:0}%"></i></span><span class="alignr"><b>${o.hit.length}</b> до цели<small>${percent(o.hit.length,o.visited.length)} от этапа</small></span></button>`).join('');
+ const extra=log?logSpeed(rows,steps,goal):'';
+ return header+panel('Цель · '+goal,'Для каждого этапа показано, сколько заявок его посетило и сколько из них затем достигло цели.',`<div class="stack">${rowsHtml}</div>`)+extra+info('Как считается достижение цели?','Смотрим историю одной сделки. Повторный вход не увеличивает число заявок. Для каждого этапа конверсия равна числу дошедших до цели, делённому на число побывавших именно на этом этапе.');
+}
+function logSpeed(rows,steps,goal){
+ const start=steps[0],pairs=rows.flatMap(d=>{const a=d.history.find(e=>e.s===start),b=a&&d.history.find(e=>e.s===goal&&e.t>=a.t);return b?[{d,h:(b.t-a.t)/3600000}]:[]});
+ pairs.sort((a,b)=>a.h-b.h);const n=pairs.length,median=n?(pairs[Math.floor((n-1)/2)].h+pairs[Math.floor(n/2)].h)/2:null;
+ return panel('Сколько времени занимает путь?',`От этапа «${start}» до «${goal}». Берём сделки, у которых есть оба события в нужном порядке.`, `<button class="item" ${reg(()=>{dialogActions.clear();show('Время до цели',n+' завершённых путей',n?`<div class="stack">${pairs.map(p=>`<button class="item" ${reg(()=>detail(p.d,period().cut),true)}><span>${p.d.id}</span><strong>${fmt(p.h)} ч</strong></button>`).join('')}</div>`:empty())})}><span>Медианное время<small>${n} заявок с полным путём</small></span><strong>${median===null?'—':fmt(median)+' ч'}</strong></button>`);
+}
+function queue(){
+ const hist=snapshots.slice(-14),max=Math.max(...hist.map(x=>x.ids.length),1),byStage=[...new Set(snapshot.map(d=>stageAt(d,NOW)))].map(s=>[s,snapshot.filter(d=>stageAt(d,NOW)===s)]).sort((a,b)=>b[1].length-a[1].length);
+ const total=metric('Открытые заявки',snapshot.length,'на 19 ноября, 18:00 МСК',()=>list('Все открытые заявки',snapshot.slice().sort((a,b)=>a.created-b.created),'Сначала самые ранние. Дата под номером — дата открытия.'));
+ return `<p class="hintline">Срез на 19 ноября 2026, 18:00 МСК. Здесь собраны все открытые заявки независимо от периода, источника и касания.</p><div class="double"><div>${total}</div><div>${panel('Очередь на конец дня','Последние 14 полных дней. Нажми на столбец, чтобы открыть состав очереди на ту дату.',`<div class="chart">${hist.map(x=>`<button title="${dateFmt(x.t)} · ${x.ids.length}" aria-label="${dateFmt(x.t)}: ${x.ids.length} в работе" ${reg(()=>list('В работе · '+dateFmt(x.t),x.ids.map(k=>byId.get(k)),'Состояние сделок на конец выбранного дня.',x.t))}><i style="height:${Math.max(2,100*x.ids.length/max)}%"></i></button>`).join('')}</div><div class="axis"><span>${dateFmt(hist[0].t)} · ${hist[0].ids.length}</span><span>${dateFmt(hist.at(-1).t)} · ${hist.at(-1).ids.length}</span></div>`)}</div></div>`+
+ panel('На каких этапах накопились заявки?','Количество и доля от всей очереди сейчас. Внутри — даты открытия и пройденные этапы.',`<div class="stack">${byStage.map(([s,g])=>barRow(s,g.length,snapshot.length,()=>list(s,g.slice().sort((a,b)=>a.created-b.created),'Открытые заявки на этом этапе.'))).join('')}</div>`);
+}
+function review(){
+ const checks=[
+ ['quality','Сроки и звонки','Открой просроченную задачу, затем примеры визита и сертификата. Удобно ли по карточке понять причину? Для отчёта качества нужно подтвердить дату учёта звонков и просрочек: по закрытию заявки или по самому событию.'],
+ ['general','Период и источники','Сравни «Результаты» и «Источники» за одну неделю. В первом отчёте считаются закрытые сделки, во втором — новые обращения и их исход на конец периода.'],
+ ['queue','Очередь и история','Открой этап, затем конкретную заявку. Проверь дату открытия и историю. Нажми на столбец графика, чтобы увидеть состав очереди именно на конец того дня.']
+ ];
+ return checks.map(([p,n,b])=>panel(n,b,openButton(p,'pill','Открыть отчёт'))).join('')+info('Что будет после согласования?','Данные из amoCRM и кассы, рабочие сроки этапов и связку звонков с заявками нужно сверить на реальных примерах до расчёта показателей сотрудников.');
+}
+function render(){
+ actions.clear();const inCRM=['quality','general','effect'].includes(page),report=inCRM||page==='log';
+ const crumbs=`<nav class="crumbs" aria-label="Путь раздела"><span>Касса</span>${ic('right')}${page==='home'?'<b>Статистика</b>':`<button data-page="home">Статистика</button>${ic('right')}${inCRM?`<button data-page="crm">CRM</button>${ic('right')}`:''}<b>${titles[page]}</b>`}</nav>`;
+ const content=({home,crm,quality:qualityReport,general,effect:()=>funnel(false),log:()=>funnel(true),queue,review})[page];
+ app.innerHTML=crumbs+`<header class="intro"><h1>${titles[page]}</h1><p>${intro[page]}</p></header>`+
+ (inCRM?`<nav class="subnav" aria-label="Отчёты CRM">${[['quality','Качество'],['general','Общая статистика'],['effect','Эффективность']].map(([k,n])=>`<button data-page="${k}" ${page===k?'aria-current="page"':''}>${n}</button>`).join('')}</nav>`:'')+
+ (report?toolbar():'')+content()+`<footer class="footer"><span>Демоданные · 19 ноября 2026, 18:00 МСК</span><div class="flex"><button class="link" data-page="review">Что проверить в прототипе</button><button class="link" ${reg(methodology)}>Как читать статистику</button></div></footer>`;
+ document.title=titles[page]+' · MANSBAND';
+}
+render();
+</script></body></html>
+

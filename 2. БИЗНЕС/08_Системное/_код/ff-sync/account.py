@@ -492,27 +492,34 @@ def calendar(*args, **kwargs):
 
 def ledger_status(client_id=None):
     import json
-    from db import get_setting
-    error = get_setting('ledger:last_error') or ''
-    last = get_setting('ledger:last_success') or ''
+    from contextlib import closing
+    from db import connect
+    scope_key = 'ledger:scope:%s' % int(client_id or 0)
+    with closing(connect()) as conn:
+        settings = dict(conn.execute(
+            "SELECT key,value FROM settings WHERE key IN ('ledger:last_error','ledger:last_success','ledger:last_attempt','ledger:enabled',?)",
+            (scope_key,)))
+    error = settings.get('ledger:last_error') or ''
+    last = settings.get('ledger:last_success') or ''
     if error and client_id:
-        proof = json.loads(get_setting('ledger:scope:%s' % int(client_id)) or '{}')
-        if (proof.get('attempt') == get_setting('ledger:last_attempt')
-                and proof.get('global_error') == error and proof.get('last_success')):
-            last, error = proof['last_success'], ''
+        proof = json.loads(settings.get(scope_key) or '{}')
+        if proof.get('attempt') and proof['attempt'] == settings.get('ledger:last_attempt'):
+            if proof.get('error'):
+                error = proof['error']
+            elif proof.get('global_error') == error and proof.get('last_success'):
+                last, error = proof['last_success'], ''
+    if not error and settings.get('ledger:enabled') == '1':
+        if not last or (datetime.now(MSK) - datetime.fromisoformat(last)).total_seconds() > 1800:
+            error = 'Данные учёта требуют обновления. Нажми «Обновить учёт».'
     return {'last_sync': last, 'sync_error': error}
 
 
 def require_current_ledger(client_id=None):
     from db import get_setting
-    if get_setting('ledger:enabled') != '1':
-        return
-    status = ledger_status(client_id)
-    if status['sync_error']:
-        raise ValueError('Счёт заблокирован: ' + status['sync_error'])
-    raw = status['last_sync']
-    if not raw or (datetime.now(MSK) - datetime.fromisoformat(raw)).total_seconds() > 1800:
-        raise ValueError('Данные учёта требуют обновления. Нажми «Обновить учёт».')
+    if get_setting('ledger:enabled') == '1':
+        error = ledger_status(client_id)['sync_error']
+        if error:
+            raise ValueError('Счёт заблокирован: ' + error)
 
 
 PRODUCT_FIELDS = {
@@ -571,8 +578,9 @@ def lot_product(lot_id):
 
 def save_lot_product(lot_id, data, actor):
     """Обновить только введённые допполя; пересчитать весь источник под замками."""
-    from accept import apply_plan, build_plan, canonical, fetch_snapshot, ms_get, number, stamp
-    from db import get_setting, run_lock, set_setting
+    from accept import canonical, configured_snapshot, ms_get, number, reconcile_snapshot, set_ledger_failure
+    from db import connect, get_setting, pending_invoices, run_lock
+    from contextlib import closing
     from ms import attr_value
     from net import MS_BASE, ms_headers, req
     from intake import parse_liters
@@ -597,9 +605,12 @@ def save_lot_product(lot_id, data, actor):
     if not desired:
         raise ValueError('Введи литраж или стоимость сборки.')
     with run_lock('ledger', blocking=False), run_lock('billing', blocking=False):
-        if json.loads(get_setting('billing:pending') or 'null'):
-            raise ValueError('Есть неподтверждённый счёт. Сначала заверши его, затем изменяй товар.')
         pid = _product_for_lot(lot_id)
+        with closing(connect()) as conn:
+            pending = pending_invoices(conn)
+            affected = {r[0] for r in conn.execute("SELECT DISTINCT client_id FROM lots WHERE ms_product_id=?", (pid,))}
+        if not affected.isdisjoint(pending):
+            raise ValueError('Есть неподтверждённый счёт по клиенту этого товара. Сначала заверши его.')
         current = _product_card(pid)
         if data.get('revision') != current['revision']:
             raise ValueError('Карточка изменилась после открытия. Закрой окно и открой товар заново.')
@@ -615,7 +626,7 @@ def save_lot_product(lot_id, data, actor):
                     raise ValueError('Не найдено числовое допполе МойСклад «%s».' % name)
                 attrs.append(attr_value('product', name, setting, value))
             # Если процесс прервётся после записи, счета останутся заблокированы до сверки.
-            set_setting('ledger:last_error', 'Обновляется карточка товара. Требуется завершить сверку учёта.')
+            set_ledger_failure('Обновляется карточка товара. Требуется завершить сверку учёта.')
             try:
                 response = req('PUT', MS_BASE + '/entity/product/' + pid, headers=ms_headers(),
                                json={'attributes': attrs}, retry_safe=False)
@@ -630,43 +641,19 @@ def save_lot_product(lot_id, data, actor):
             if any(current[key] != value for key, value in changed.items()):
                 raise ValueError('МойСклад не сохранил введённые значения. Открой товар заново и проверь карточку.')
             print('Учёт: допполя товара %s, пользователь %s, %s' % (pid, actor, canonical(changed)))
-        snapshot = None
-        snapshot_verified = False
         try:
-            groups = json.loads(get_setting('ledger:groups') or '[]')
-            if not groups:
-                raise ValueError('Не настроены подтверждённые группы контрагентов для учёта.')
-            set_setting('ledger:last_attempt', stamp())
-            snapshot = fetch_snapshot()
-            snapshot['receipt_transfers'] = json.loads(get_setting('ledger:receipt_transfers') or '[]')
-            snapshot['late_receipts'] = json.loads(get_setting('ledger:late_receipts') or '[]')
-            snapshot['independent_scopes'] = json.loads(get_setting('ledger:independent_scopes') or '[]')
+            snapshot, groups = configured_snapshot()
             if any(snapshot['products'][pid][key] != value for key, value in desired.items()):
                 raise ValueError('Карточка изменилась во время сверки. Проверь её значения.')
-            snapshot_verified = True
-            result = apply_plan(snapshot, build_plan(snapshot, groups), groups)
+            result = reconcile_snapshot(snapshot, groups)
         except Exception as exc:
-            set_setting('ledger:last_error', str(exc)[:500])
-            if snapshot_verified:
-                from accept import sync_transfer_scope, independent_scopes
-                from db import get_lot
-                party = get_client_by_id(get_lot(lot_id)['client_id'])['ms_counterparty_id']
-                current_result = None
-                current_error = None
-                for scope in independent_scopes(snapshot):
-                    try:
-                        result = sync_transfer_scope(snapshot, groups, set(scope), billing_locked=True)
-                        if party in scope:
-                            current_result = result
-                    except Exception as scope_exc:
-                        if party in scope:
-                            current_error = str(scope_exc)
-                if current_error:
-                    return {'ok': True, 'saved': True, 'synced': False, 'product': current,
-                            'msg': 'Данные сохранены. Счёт пока недоступен: ' + current_error}
-                if current_result:
-                    return {'ok': True, 'saved': True, 'synced': True, 'product': current,
-                            'last_sync': current_result['last_sync']}
+            set_ledger_failure(exc)
             return {'ok': True, 'saved': True, 'synced': False, 'product': current,
                     'msg': 'Данные карточки сохранены в МойСклад. Учёт требует обновления: ' + str(exc)}
+        if result.get('partial'):
+            from db import get_lot
+            status = ledger_status(get_lot(lot_id)['client_id'])
+            if status['sync_error']:
+                return {'ok': True, 'saved': True, 'synced': False, 'product': current,
+                        'msg': 'Данные сохранены. Счёт пока недоступен: ' + status['sync_error']}
         return {'ok': True, 'saved': True, 'synced': True, 'product': current, 'last_sync': result['last_sync']}

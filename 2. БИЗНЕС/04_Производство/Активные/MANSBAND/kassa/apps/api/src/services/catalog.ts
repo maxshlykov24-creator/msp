@@ -5,6 +5,7 @@ import {
   CDEK_LOCATION,
   CDEK_WAREHOUSE_ID,
   catalogSearchTerms,
+  matchesCatalogTerms,
   CODE_CYRILLIC, CODE_LATIN, CODE_SEPARATORS, SEARCH_PUNCTUATION, SEARCH_PUNCTUATION_ASCII,
   STORE_TO_WAREHOUSE,
   classifyHall,
@@ -150,6 +151,7 @@ function compactCode(value: SQL) {
 function catalogTextQuery(query: string) {
   const terms = catalogSearchTerms(query);
   if (!terms.length) return { condition: undefined, rank: sql`0` };
+  if (terms.some(t => t.invalid)) return { condition: sql`false`, rank: sql`0::integer` };
   const p = products;
   const text = normalizedText(sql`concat_ws(' ', ${p.name}, ${p.category}, ${p.color}, ${p.pattern}, ${p.fit},
     ${p.size}, ${p.height}, concat_ws('/', ${p.size}, ${p.height}), ${p.variation}, ${p.article}, ${p.code}, ${p.barcode})`);
@@ -188,11 +190,13 @@ function notBareParentSql() {
   return sql`NOT (
     ${products.msType} = 'product'
     AND (
-      EXISTS (
-        SELECT 1
-        FROM products AS variant_child
-        WHERE variant_child.ms_type = 'variant'
-          AND variant_child.name LIKE ${products.name} || ' (%'
+      ${products.name} IN (
+        SELECT DISTINCT parent.name
+        FROM products parent
+        JOIN products child
+          ON split_part(child.name, ' (', 1) = split_part(parent.name, ' (', 1)
+         AND starts_with(child.name, parent.name || ' (')
+        WHERE parent.ms_type = 'product' AND child.ms_type = 'variant'
       )
       OR (
         ${products.category} ILIKE '1. Костюмы%'
@@ -844,12 +848,21 @@ export async function browseCatalogPaged(query: CatalogBrowseQuery): Promise<Cat
   const warehouseName = query.warehouse?.trim() ||
     (Object.hasOwn(STORE_TO_WAREHOUSE, store) ? STORE_TO_WAREHOUSE[store as keyof typeof STORE_TO_WAREHOUSE] : store);
 
+  // Название комплекта строится в кассе. Остальные слова есть в исходных
+  // позициях. Сначала отбираем вариации, потом грузим все их части и остатки.
+  const suitAnchor = wantSuits && catalogSearchTerms(query.q ?? "")
+    .filter(t => !matchesCatalogTerms([t], ["костюм двойка тройка смокинг пиджак брюки жилет"]))
+    .sort((a, b) => b.text.length - a.text.length)[0];
+  const candidateVariations = suitAnchor ? inArray(products.variation, db
+    .selectDistinct({ variation: products.variation }).from(products)
+    .where(and(sql`${products.suitPart} IS NOT NULL`, catalogTextQuery(suitAnchor.text).condition))) : undefined;
   const suits: CatalogSuitModel[] = !wantSuits
     ? []
     : (
         await catalogSuitModels({
           q: query.q,
           warehouse: warehouseName || undefined,
+          candidateVariations,
         })
       ).models.filter((m) => {
           if (query.suitFamily && suitFamilyOf(m) !== query.suitFamily) return false;

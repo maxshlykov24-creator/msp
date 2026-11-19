@@ -10,6 +10,8 @@ from datetime import datetime, timedelta, timezone
 
 from account import accepted_day, as_day, calculation_end, money, row_of, today, group_rows
 from db import (
+    connect,
+    pending_invoices,
     get_setting,
     set_setting,
     save_invoice_snapshot,
@@ -178,12 +180,18 @@ def create(lot_ids, author="", date_to=""):
 
 def _create(lot_ids, author="", date_to=""):
     # A lost HTTP response must recover the same document and the same calculation.
-    pending = json.loads(get_setting("billing:pending") or "null")
+    from contextlib import closing
+    with closing(connect()) as conn:
+        unresolved = pending_invoices(conn)
     request_key = {"lots": sorted(set(int(x) for x in lot_ids)), "to": calculation_end(date_to).isoformat()}
-    if pending:
-        if pending["request"] != request_key:
+    if unresolved:
+        for key, pending in unresolved.values():
+            if pending['request'] == request_key:
+                return _send_pending(pending, key)
+        selected_clients = {row['client_id'] for lot_id in request_key['lots'] if (row := get_lot(lot_id))}
+        for cid in selected_clients.intersection(unresolved):
+            pending = unresolved[cid][1]
             raise ValueError("предыдущий счёт ещё не подтверждён. Повтори создание для тех же партий и даты: %s" % pending["request"]["to"])
-        return _send_pending(pending)
     client, detail, parts, end = collect(lot_ids, date_to)
     if parts["total"] <= 0:
         raise ValueError("по выбранным позициям нечего выставлять")
@@ -215,19 +223,20 @@ def _create(lot_ids, author="", date_to=""):
     pending = {"request": request_key, "client_id": client["id"], "client": client["name"],
                "payload": payload, "parts": parts, "detail": [(dict(l), c) for l, c in detail],
                "start": start, "stop": stop, "author": author, "now": datetime.now(MSK).isoformat(), "document": profile}
-    set_setting("billing:pending", json.dumps(pending, ensure_ascii=False))
-    return _send_pending(pending)
+    key = "billing:pending:%s" % client["id"]
+    set_setting(key, json.dumps(pending, ensure_ascii=False))
+    return _send_pending(pending, key)
 
 
-def _send_pending(pending):
+def _send_pending(pending, key):
     if not pending.get("document"):
         # Совместимость с незавершённым запросом прежней версии.
         pending["document"] = client_invoice_profile(get_client_by_id(pending["client_id"]))
-        set_setting("billing:pending", json.dumps(pending, ensure_ascii=False))
+        set_setting(key, json.dumps(pending, ensure_ascii=False))
     r = req("POST", MS_BASE + "/entity/invoiceout", headers=ms_headers(), json=pending["payload"], retry_safe=False)
     if r.status_code not in (200, 201):
         if 400 <= r.status_code < 500 and r.status_code not in (408, 409, 429):
-            set_setting("billing:pending", "null")
+            set_setting(key, "null")
         raise RuntimeError("МойСклад не подтвердил счёт (HTTP %s). Повтори с теми же партиями и датой." % r.status_code)
     data = r.json()
     if not data.get("id"):
@@ -235,7 +244,7 @@ def _send_pending(pending):
     if "sum" in data and round(float(data["sum"]) / 100, 2) != pending["parts"]["total"]:
         raise RuntimeError("сумма МойСклад отличается от расчёта. Нужна сверка счёта, период не закрыт.")
     iid = save_invoice_snapshot(pending["client_id"], data, pending["parts"], pending["detail"], pending["start"], pending["stop"], pending["author"], pending["now"], document=pending["document"])
-    set_setting("billing:pending", "null")
+    set_setting(key, "null")
     return {"id": iid, "ms_id": data["id"], "number": data.get("name") or "", "client": pending["client"],
             "total": pending["parts"]["total"], "period_from": pending["start"], "period_to": pending["stop"], "positions": len(group_rows([c for _l, c in pending["detail"]])),
             "download_url": "/api/invoices/%s/document.xlsx" % iid}

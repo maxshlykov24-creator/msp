@@ -249,6 +249,12 @@ export function Dashboard() {
         <h1 className="text-2xl font-extrabold text-white">Статистика</h1>
         {loading && <Loader2 size={16} className="text-mute animate-spin" />}
       </div>
+      {user?.role === "admin" && (
+        <a href="#crm-analytics" className="card mb-4 flex items-center justify-between gap-3 p-4 text-white hover:border-gold/50">
+          <span><strong>Аналитика CRM и логистики</strong><span className="block text-sm text-mute-soft">Прототип · демонстрационные данные</span></span>
+          <ChevronRight size={18} aria-hidden="true" />
+        </a>
+      )}
       <Hint>
         {ownOnly ? "Только твои заявки. " : ""}
         Формулы сводки: средний чек = выручка / клиенты. Конверсия = успехи / (клиенты − не-сливы −

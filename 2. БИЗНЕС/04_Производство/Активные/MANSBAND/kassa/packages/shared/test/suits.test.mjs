@@ -50,6 +50,7 @@ test("catalogue search finds inner code fragments and unordered attributes on th
   const withoutSlash = ["M03642MB3"];
   assert.equal(matchesCatalogTerms(catalogSearchTerms("03/"), [], withoutSlash), false);
   assert.equal(matchesCatalogTerms(catalogSearchTerms("1234"), [], ["A12", "34B"]), false);
+  assert.equal(matchesCatalogTerms(catalogSearchTerms(","), ["Пиджак (48, 6)"]), false);
   assert.equal(matchesCatalogTerms(catalogSearchTerms("44"), ["Брюки"], ["444"]), true);
 });
 

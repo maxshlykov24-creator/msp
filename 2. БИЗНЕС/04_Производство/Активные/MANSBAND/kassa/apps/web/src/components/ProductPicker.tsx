@@ -29,9 +29,9 @@ import { MovementModal } from "./MovementModal";
 
 const SEARCH_PAGE_SIZE = 30;
 
-function matchesSavedProduct(query: string, name: string, sku: string) {
+function matchesSavedProduct(terms: ReturnType<typeof catalogSearchTerms>, name: string, sku: string) {
   const modifiers = name.match(/\(([^()]*)\)\s*$/)?.[1]?.split(",").map(s => s.trim()) ?? [];
-  return matchesCatalogTerms(catalogSearchTerms(query), [name], [sku, ...modifiers]);
+  return matchesCatalogTerms(terms, [name], [sku, ...modifiers]);
 }
 
 function itemKey(it: CartItem): string {
@@ -484,10 +484,11 @@ export function ProductPicker({
     setHasMore(false);
     setLoadingMore(false);
     setSearchError("");
+    const terms = catalogSearchTerms(q);
     if (allowedMap) {
       setLoading(false);
       const list = allowedList
-        .filter(it => matchesSavedProduct(q, it.name, it.productId))
+        .filter(it => matchesSavedProduct(terms, it.name, it.productId))
         .map(
           (it): Product => ({
             id: it.productId,
@@ -509,7 +510,7 @@ export function ProductPicker({
     }
     if (USE_MOCK) {
       setLoading(false);
-      setFound(PRODUCTS.filter(p => matchesSavedProduct(q, p.name, p.sku)));
+      setFound(PRODUCTS.filter(p => matchesSavedProduct(terms, p.name, p.sku)));
       return;
     }
     setFound([]);
