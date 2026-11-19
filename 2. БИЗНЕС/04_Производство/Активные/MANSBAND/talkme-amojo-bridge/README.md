@@ -1441,4 +1441,6 @@ CRM_DIGEST_MODE=live, первая сводка 2199 по-прежнему sent.
 
 Резервная копия и подтверждение на сервере находятся в `/root/shift-handoff-deploy-20261119-hsM8aP/`. Файл `compose.before` содержит предыдущую конфигурацию, `before.json` — исходные назначения, `resume.log` — результат возобновления, `verification.json` — независимый результат чтения. Для остановки дальнейшей передачи достаточно остановить сервис `shift-handoff`.
 
-После установки команда просмотра из корня проекта — `docker compose --profile shifts run --rm --no-deps shift-handoff python -B -m app.shift_handoff`. Статус и журнал — `docker compose --profile shifts ps shift-handoff` и `docker compose --profile shifts logs shift-handoff`. Остановка дальнейших передач — `docker compose --profile shifts stop shift-handoff`. При адресном возврате назначений сверять снимок и последующие изменения карточки.
+В 15:10 МСК контейнер самостоятельно проверил 100 открытых сделок и 64 беседы. Остаток повторно равен нулю по каждому типу. Результат сохранён в `automatic-check.json`. Контейнер работает с политикой перезапуска `unless-stopped`, перезапусков после установки 0. ID четырёх соседних контейнеров совпали с данными до выкладки.
+
+Команда просмотра из корня проекта — `docker compose --profile shifts run --rm --no-deps shift-handoff python -B -m app.shift_handoff`. Статус и журнал — `docker compose --profile shifts ps shift-handoff` и `docker compose --profile shifts logs shift-handoff`. При адресном возврате назначений сверять снимок и последующие изменения карточки.

@@ -147,7 +147,7 @@ export function Layout({
             <UserMenu
               active={activeConsultant}
               consultants={CONSULTANTS.filter(
-                (c) => c.role === "consultant" || c.role === "callmanager"
+                (c) => c.role === "consultant" || c.role === "callmanager" || c.role === "admin"
               ).map((c) => c.name)}
               onPick={setActiveConsultant}
               onNavigate={setRoute}

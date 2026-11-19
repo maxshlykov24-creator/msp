@@ -1,6 +1,9 @@
 import { BarChart3, Store, Headset } from "lucide-react";
 import { StatTile, Card } from "../components/ui";
 import { moneyPlain } from "../lib/format";
+import { useStore } from "../store";
+import { CONSULTANTS as users } from "../data/mock";
+import analyticsPrototype from "./Статистика MANSBAND.html?raw";
 
 const CONSULTANTS = [
   { name: "Матвей", deals: 48, conv: 71, revenue: 1290000 },
@@ -19,6 +22,11 @@ function Bar({ value, max, tone = "bg-gold" }: { value: number; max: number; ton
 }
 
 export function Dashboard() {
+  const { activeConsultant } = useStore();
+  if (users.some((user) => user.name === activeConsultant && user.role === "admin")) {
+    return <iframe title="Управленческая статистика MANSBAND" srcDoc={analyticsPrototype}
+      className="w-full rounded-xl border-0" style={{ height: "calc(100dvh - 165px)", minHeight: 450 }} />;
+  }
   const maxRev = Math.max(...CONSULTANTS.map((c) => c.revenue));
   return (
     <div>

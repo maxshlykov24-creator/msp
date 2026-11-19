@@ -228,3 +228,53 @@ function general(){
 }
 function barRow(label,n,den,fn,sub=''){return `<button class="stage" ${reg(fn)}><span>${esc(label)}${sub?`<small>${esc(sub)}</small>`:''}</span><span class="track"><i style="width:${den?100*n/den:0}%"></i></span><span class="alignr"><b>${n}</b><small>${percent(n,den)}</small></span></button>`}
 
+
+function qualityReport(){
+ const q=quality(cohort()),mean=q.responses.length?q.responses.reduce((n,r)=>n+r.e.minutes,0)/q.responses.length:null;
+ const sections=[
+ ['Среднее время ответа',mean===null?'—':fmt(mean)+' мин',q.responses.length+' измерений',q.responses,'Время от входящего сообщения до первого ответа. В примерах оба события в рабочие часы.'],
+ ['Просроченные задачи',q.tasks.length,'задач со сроком',q.tasks,'Задача оставалась открытой после срока исполнения.'],
+ ['Просроченные этапы',q.stages.length,'выходов после срока',q.stages,'Для каждого пребывания сопоставлены срок и фактический выход с этапа.'],
+ ['Пропущенные звонки',q.misses.length,'входящих без ответа',q.misses,'Каждая запись — отдельный пропущенный входящий.'],
+ ['Перезвонили',q.callbacks.length,percent(q.callbacks.length,q.misses.length)+' от пропущенных',q.callbacks,'Пропущенные входящие со связанным обратным звонком. На один пропущенный засчитывается максимум один перезвон.']
+ ];
+ function grouped(title,arr,label){const groups=[...new Set(arr.map(label))].map(k=>[k,arr.filter(r=>label(r)===k)]).sort((a,b)=>b[1].length-a[1].length);return panel(title,'Открой строку, чтобы увидеть сроки и заявки.',groups.length?`<div class="stack">${groups.map(([k,rs])=>barRow(k,rs.length,arr.length,()=>list(k,rs,'Записи, вошедшие в показатель.'))).join('')}</div>`:empty())}
+ return `<p class="hintline">По дате завершения заявки. Показаны события за историю сделок, закрытых в выбранный период.</p><div class="metrics">${sections.map(([n,v,s,rs,desc],i)=>metric(n,v,s,()=>list(n,rs,desc),i===4?'accent':'')).join('')}</div><div class="double">${grouped('Какие задачи просрочили?',q.tasks,r=>r.e.name)}${grouped('На каких этапах задержались?',q.stages,r=>r.e.s)}</div>`+
+ panel('Как проверить срок?', 'Два примера из обсуждения правил. Это иллюстрации для согласования времени задач и уведомлений.',`<div class="stack"><button class="item" ${reg(()=>detail(byId.get('П-101')))}><span>Хочет прийти<small>Пример задачи за два дня до планового визита</small></span>${ic('right')}</button><button class="item" ${reg(()=>detail(byId.get('П-102')))}><span>Сертификат оплачен<small>Срок этапа по дате окончания действия сертификата</small></span>${ic('right')}</button></div>`);
+}
+function funnel(log){
+ const lane=state.lane,steps=(log?logistics:paths)[lane],goal=steps.at(-1),rows=cohort().filter(d=>d.lane===lane),cut=period().cut;
+ const analysis=steps.map(s=>{const visited=rows.filter(d=>was(d,s)),hit=visited.filter(d=>reached(d,s,goal));return {s,visited,hit}});
+ function stageDetail(item){
+  const {s,visited,hit}=item,miss=visited.filter(d=>!hit.includes(d));
+  dialogActions.clear();
+  show(s,'Цель · '+goal,`<p class="note">Из ${visited.length} заявок, которые побывали на этапе, до цели дошли ${hit.length} (${percent(hit.length,visited.length)}).</p><div class="stack">${[['Побывали на этапе',visited],['Дошли до цели',hit],['Не дошли до цели',miss]].map(([name,g])=>`<button class="item" ${reg(()=>list(name,g,'Этап «'+s+'». Цель «'+goal+'».',cut),true)}><span>${name}</span><strong>${g.length}</strong></button>`).join('')}</div>`);
+ }
+ const header=`<div class="filterbar">${segment('lane',[['off','Офлайн'],['on','Онлайн']])}<span class="periodlabel">По дате завершения</span></div>`;
+ const rowsHtml=analysis.map(o=>`<button class="stage" ${reg(()=>stageDetail(o))}><span><strong>${o.s}</strong><small>Побывали · ${o.visited.length}</small></span><span class="track"><i style="width:${o.visited.length?100*o.hit.length/o.visited.length:0}%"></i></span><span class="alignr"><b>${o.hit.length}</b> до цели<small>${percent(o.hit.length,o.visited.length)} от этапа</small></span></button>`).join('');
+ const extra=log?logSpeed(rows,steps,goal):'';
+ return header+panel('Цель · '+goal,'Для каждого этапа показано, сколько заявок его посетило и сколько из них затем достигло цели.',`<div class="stack">${rowsHtml}</div>`)+extra+info('Как считается достижение цели?','Смотрим историю одной сделки. Повторный вход не увеличивает число заявок. Для каждого этапа конверсия равна числу дошедших до цели, делённому на число побывавших именно на этом этапе.');
+}
+function logSpeed(rows,steps,goal){
+ const start=steps[0],pairs=rows.flatMap(d=>{const a=d.history.find(e=>e.s===start),b=a&&d.history.find(e=>e.s===goal&&e.t>=a.t);return b?[{d,h:(b.t-a.t)/3600000}]:[]});
+ pairs.sort((a,b)=>a.h-b.h);const n=pairs.length,median=n?(pairs[Math.floor((n-1)/2)].h+pairs[Math.floor(n/2)].h)/2:null;
+ return panel('Сколько времени занимает путь?',`От этапа «${start}» до «${goal}». Берём сделки, у которых есть оба события в нужном порядке.`, `<button class="item" ${reg(()=>{dialogActions.clear();show('Время до цели',n+' завершённых путей',n?`<div class="stack">${pairs.map(p=>`<button class="item" ${reg(()=>detail(p.d,period().cut),true)}><span>${p.d.id}</span><strong>${fmt(p.h)} ч</strong></button>`).join('')}</div>`:empty())})}><span>Медианное время<small>${n} заявок с полным путём</small></span><strong>${median===null?'—':fmt(median)+' ч'}</strong></button>`);
+}
+function queue(){
+ const hist=snapshots.slice(-14),max=Math.max(...hist.map(x=>x.ids.length),1),byStage=[...new Set(snapshot.map(d=>stageAt(d,NOW)))].map(s=>[s,snapshot.filter(d=>stageAt(d,NOW)===s)]).sort((a,b)=>b[1].length-a[1].length);
+ const total=metric('Открытые заявки',snapshot.length,'на 19 ноября, 18:00 МСК',()=>list('Все открытые заявки',snapshot.slice().sort((a,b)=>a.created-b.created),'Сначала самые ранние. Дата под номером — дата открытия.'));
+ return `<p class="hintline">Срез на 19 ноября 2026, 18:00 МСК. Здесь собраны все открытые заявки независимо от периода, источника и касания.</p><div class="double"><div>${total}</div><div>${panel('Очередь на конец дня','Последние 14 полных дней. Нажми на столбец, чтобы открыть состав очереди на ту дату.',`<div class="chart">${hist.map(x=>`<button title="${dateFmt(x.t)} · ${x.ids.length}" aria-label="${dateFmt(x.t)}: ${x.ids.length} в работе" ${reg(()=>list('В работе · '+dateFmt(x.t),x.ids.map(k=>byId.get(k)),'Состояние сделок на конец выбранного дня.',x.t))}><i style="height:${Math.max(2,100*x.ids.length/max)}%"></i></button>`).join('')}</div><div class="axis"><span>${dateFmt(hist[0].t)} · ${hist[0].ids.length}</span><span>${dateFmt(hist.at(-1).t)} · ${hist.at(-1).ids.length}</span></div>`)}</div></div>`+
+ panel('На каких этапах накопились заявки?','Количество и доля от всей очереди сейчас. Внутри — даты открытия и пройденные этапы.',`<div class="stack">${byStage.map(([s,g])=>barRow(s,g.length,snapshot.length,()=>list(s,g.slice().sort((a,b)=>a.created-b.created),'Открытые заявки на этом этапе.'))).join('')}</div>`);
+}
+function render(){
+ actions.clear();const inCRM=['quality','general','effect'].includes(page),report=inCRM||page==='log';
+ const crumbs=`<nav class="crumbs" aria-label="Путь раздела"><span>Касса</span>${ic('right')}${page==='home'?'<b>Статистика</b>':`<button data-page="home">Статистика</button>${ic('right')}${inCRM?`<button data-page="crm">CRM</button>${ic('right')}`:''}<b>${titles[page]}</b>`}</nav>`;
+ const content=({home,crm,quality:qualityReport,general,effect:()=>funnel(false),log:()=>funnel(true),queue})[page];
+ app.innerHTML=crumbs+`<header class="intro"><h1>${titles[page]}</h1><p>${intro[page]}</p></header>`+
+ (inCRM?`<nav class="subnav" aria-label="Отчёты CRM">${[['quality','Качество'],['general','Общая статистика'],['effect','Эффективность']].map(([k,n])=>`<button data-page="${k}" ${page===k?'aria-current="page"':''}>${n}</button>`).join('')}</nav>`:'')+
+ (report?toolbar():'')+content()+`<footer class="footer"><span>Демоданные · 19 ноября 2026, 18:00 МСК</span><button class="link" ${reg(methodology)}>Как читать статистику</button></footer>`;
+ document.title=titles[page]+' · MANSBAND';
+}
+render();
+</script></body></html>
+

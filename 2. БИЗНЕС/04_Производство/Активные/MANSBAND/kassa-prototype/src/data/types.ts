@@ -62,7 +62,7 @@ export interface CartItem {
 export interface Consultant {
   id: string;
   name: string;
-  role: "consultant" | "callmanager" | "supply" | "rop" | "finance";
+  role: "consultant" | "callmanager" | "supply" | "rop" | "finance" | "admin";
 }
 
 export type ChangeStatus = "issued" | "pending";

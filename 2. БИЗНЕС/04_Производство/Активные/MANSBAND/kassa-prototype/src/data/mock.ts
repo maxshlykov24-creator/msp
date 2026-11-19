@@ -22,6 +22,7 @@ export const STORE_ADDRESS: Record<Store, string> = {
 };
 
 export const CONSULTANTS: Consultant[] = [
+  { id: "admin-demo", name: "Администратор (демо)", role: "admin" },
   { id: "c1", name: "Матвей", role: "consultant" },
   { id: "c2", name: "Женя", role: "consultant" },
   { id: "c3", name: "Гриша", role: "consultant" },
