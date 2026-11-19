@@ -54,7 +54,7 @@ def collect(lot_ids, date_to=""):
         raise ValueError("позиции ещё не приняты на склад: их %s. Убери их из выбора." % waiting)
     if not lots:
         raise ValueError("не выбрано ни одной позиции")
-    require_current_ledger(client['id'])
+    require_current_ledger(client['id'], end)
     moves = moves_by_day()
     detail = []
     storage = 0.0

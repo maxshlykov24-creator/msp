@@ -550,9 +550,9 @@ def lots(client_id: int = 0, q: str = "", marked: str = "", date_to: str = "", f
     with run_lock('billing'):
         rows = group_rows(_lot_rows(client_id=client_id or None, query=q,
                                     marked=marked_flag(marked), date_to=checked_day(date_to)))
-        status = ledger_status(client_id)
+        status = ledger_status(client_id, date_to)
         client_errors = {} if client_id else {
-            cid: ledger_status(cid)['sync_error'] for cid in {r['client_id'] for r in rows}}
+            cid: ledger_status(cid, date_to)['sync_error'] for cid in {r['client_id'] for r in rows}}
     return {"rows": rows, "totals": totals(rows), "client_errors": client_errors, **status}
 
 

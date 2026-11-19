@@ -402,6 +402,7 @@ def group_rows(rows):
 def _calendar(client_id=None, query="", date_from=None, date_to=None):
     """Сетка как в таблице Глеба: строка — позиция, колонка — сутки."""
     end = date_to or today()
+    require_current_ledger(client_id, end)
     start = date_from or (end - timedelta(days=13))
     if start > end:
         raise ValueError("конец периода раньше начала")
@@ -490,7 +491,7 @@ def calendar(*args, **kwargs):
         return _calendar(*args, **kwargs)
 
 
-def ledger_status(client_id=None):
+def ledger_status(client_id=None, date_to=None):
     import json
     from contextlib import closing
     from db import connect
@@ -508,16 +509,19 @@ def ledger_status(client_id=None):
                 error = proof['error']
             elif proof.get('global_error') == error and proof.get('last_success'):
                 last, error = proof['last_success'], ''
+                through = proof.get('verified_through')
+                if through and (as_day(date_to) or today()).isoformat() > through:
+                    error = 'Учёт сверен по %s. %s' % (date.fromisoformat(through).strftime('%d.%m.%Y'), proof['later_error'])
     if not error and settings.get('ledger:enabled') == '1':
         if not last or (datetime.now(MSK) - datetime.fromisoformat(last)).total_seconds() > 1800:
             error = 'Данные учёта требуют обновления. Нажми «Обновить учёт».'
     return {'last_sync': last, 'sync_error': error}
 
 
-def require_current_ledger(client_id=None):
+def require_current_ledger(client_id=None, date_to=None):
     from db import get_setting
     if get_setting('ledger:enabled') == '1':
-        error = ledger_status(client_id)['sync_error']
+        error = ledger_status(client_id, date_to)['sync_error']
         if error:
             raise ValueError('Счёт заблокирован: ' + error)
 

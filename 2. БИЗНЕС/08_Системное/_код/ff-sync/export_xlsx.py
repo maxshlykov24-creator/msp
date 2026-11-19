@@ -602,7 +602,7 @@ def build_client_stock(ids, date_to=None):
         raise ValueError("часть выбранных партий не найдена")
     if len({r["client_id"] for r in rows}) != 1:
         raise ValueError("в отчёте для клиента должны быть позиции одного контрагента")
-    require_current_ledger(rows[0]['client_id'])
+    require_current_ledger(rows[0]['client_id'], date_to)
     rows.sort(key=lambda r: order.get(r["id"], 0))
     rows = group_rows(rows)
     wb, ws = _new_sheet("Остаток", CLIENT_STOCK_COLUMNS)

@@ -332,7 +332,16 @@ def transfer_documents(snapshot):
         by_id[current['id']]['positions'] = deepcopy(old['positions'])
         by_id[target['id']]['transfer_from'] = {'party': old['party'], 'store': old['store'],
                                                'received_at': old['moment'], 'name': old['name']}
+        if rule.get('from_original_receipt'):
+            by_id[target['id']]['transfer_from']['receipt_id'] = old['id']
     return docs
+
+
+class ReceiptShortage(ValueError):
+    def __init__(self, document, product, quantity):
+        self.day = datetime.fromisoformat(document['moment']).date()
+        super().__init__('Отгрузка №%s от %s: не хватает приёмки товара %s (%g). Проверь документы и склад.'
+                         % (document['name'], self.day.strftime('%d.%m.%Y'), product, quantity))
 
 
 def build_plan(snapshot, groups):
@@ -344,6 +353,7 @@ def build_plan(snapshot, groups):
                 raise ValueError('Контрагент указан в нескольких группах')
             membership[party] = 'group:%s' % n
     buckets, lots, moves, balance = defaultdict(list), {}, {}, defaultdict(float)
+    closing_transfers = set()
     for doc in sorted(transfer_documents(snapshot), key=lambda d: (d['moment'], d['kind'] not in ('supply', 'salesreturn'), d['id'])):
         for pos in doc['positions']:
             qty, pid = pos['qty'], pos['product']
@@ -366,6 +376,8 @@ def build_plan(snapshot, groups):
                 left = qty
                 for receipt_key in buckets[source_bucket]:
                     receipt = lots[receipt_key]
+                    if transfer.get('receipt_id') and receipt['ms_supply_id'] != transfer['receipt_id']:
+                        continue
                     take = min(left, receipt['qty_left'])
                     if take <= 0:
                         continue
@@ -381,6 +393,8 @@ def build_plan(snapshot, groups):
                 # storage begins next morning; physical intake date is retained.
                 base['received_at'] = transfer['received_at']
                 base['source_document'] = 'Перенос №%s из Приёмки №%s' % (doc['name'], transfer['name'])
+                if transfer.get('receipt_id') and doc['moment'][11:19] == '23:59:00':
+                    closing_transfers.add(key)
                 balance[pid] -= qty
             balance[pid] += qty if doc['kind'] in ('supply', 'salesreturn') else -qty
             if doc['kind'] in ('supply', 'salesreturn'):
@@ -402,7 +416,7 @@ def build_plan(snapshot, groups):
                     if left < 1e-7:
                         break
                 if left > 1e-7:
-                    raise ValueError('Отгрузка №%s: не хватает приёмки товара %s (%g). Проверь документы и склад.' % (doc['name'], p['article'] or pid, left))
+                    raise ReceiptShortage(doc, p['article'] or pid, left)
     mismatches = [p for p in set(balance) | set(snapshot['stock']) if abs(balance[p]-snapshot['stock'].get(p,0)) > 1e-6]
     if mismatches:
         raise ValueError('Документы расходятся с остатками МойСклад по %s товарам. Учёт не изменён.' % len(mismatches))
@@ -420,7 +434,7 @@ def build_plan(snapshot, groups):
         lot['storage_from'] = start.isoformat()
         approved[key] = rule['closed_through']
     return {'lots': lots, 'moves': moves, 'qty': round(sum(x['qty_left'] for x in lots.values()), 3),
-            'late_receipt_keys': approved}
+            'late_receipt_keys': approved, 'closing_transfers': closing_transfers}
 
 
 CORRECTION_FIELDS = ('id', 'client_id', 'source_key', 'ms_product_id', 'qty_in',
@@ -522,14 +536,30 @@ def apply_plan(snapshot, plan, groups, scope_parties=None):
                         old, before, [], corrections.get(key), retired=True,
                         invoiced=bool(conn.execute('SELECT 1 FROM invoice_lots WHERE lot_id=? LIMIT 1', (old['id'],)).fetchone())):
                     continue
-                if not new or clients.get(new['party']) != old['client_id'] or any(new.get(k) != old.get(k) for k in ('ms_product_id','qty_in','accepted_at','ledger_kind','storage_from')):
-                    raise ValueError('%s, %s: изменилась партия %s, уже учтённая по %s. Сверь изменение с выставленным счётом.' % (old['source_document'], old['article'] or old['name'], old['id'], closed))
+                changed = not new or clients.get(new['party']) != old['client_id'] or any(
+                    new.get(k) != old.get(k) for k in ('ms_product_id','qty_in','accepted_at','ledger_kind','storage_from'))
+                if changed:
+                    rule = corrections.get(key) or {}
+                    # Applies only once, to a reviewed receipt and exact before/after values.
+                    revision = ('accepted_at', 'qty_in')
+                    approved_revision = (new and old['ledger_kind'] == new['ledger_kind'] == 'receipt'
+                        and rule.get('mode') == 'revise_closed_receipt' and rule.get('reason')
+                        and len(rule.get('source_sha256', '')) == 64
+                        and rule.get('lot') == {f: old.get(f) for f in CORRECTION_FIELDS}
+                        and rule.get('revision') == {f: new[f] for f in revision}
+                        and clients.get(new['party']) == old['client_id']
+                        and all(old.get(f) == new.get(f) for f in ('ms_product_id','ms_store_id','storage_from')))
+                    if not approved_revision:
+                        raise ValueError('%s, %s: изменилась партия %s, уже учтённая по %s. Сверь изменение с выставленным счётом.' % (old['source_document'], old['article'] or old['name'], old['id'], closed))
                 after = sorted((m['created_at'],m['kind'],m['qty']) for m in plan['moves'].values() if m['lot_key']==key and m['created_at'][:10] <= closed)
                 if before != after and not approved_closed_correction(old, before, after, corrections.get(key)):
                     raise ValueError('Изменены движения закрытого периода партии %s. Нужна корректировка.' % old['id'])
             for key, new in plan['lots'].items():
                 if key not in old_lots and new['party'] in clients and new['accepted_at'][:10] <= cutoffs.get(clients[new['party']], ''):
-                    if plan.get('late_receipt_keys', {}).get(key) != cutoffs.get(clients[new['party']]):
+                    cutoff = cutoffs[clients[new['party']]]
+                    # A verified transfer at closing has zero storage or assembly for its destination that day.
+                    at_close = key in plan.get('closing_transfers', ()) and new['accepted_at'][:10] == cutoff
+                    if not at_close and plan.get('late_receipt_keys', {}).get(key) != cutoff:
                         raise ValueError('Новый документ попал в уже выставленный период. Нужна сверка корректировки.')
             clause = '' if scope_ids is None else ' WHERE client_id IN ('+','.join('?' for _ in scope_ids)+')'
             args = [] if scope_ids is None else sorted(scope_ids)
@@ -570,6 +600,11 @@ def apply_plan(snapshot, plan, groups, scope_parties=None):
             if scope_ids is not None:
                 proof = canonical({'last_success': now, 'attempt': get_setting('ledger:last_attempt'),
                                    'global_error': get_setting('ledger:last_error')})
+                if snapshot.get('verified_through'):
+                    if any(cutoffs.get(cid, '') > snapshot['verified_through'] for cid in scope_ids):
+                        raise ValueError('Расхождение затрагивает уже выставленный период. Требуется сверка документов.')
+                    proof = canonical(dict(json.loads(proof), verified_through=snapshot['verified_through'],
+                                           later_error=snapshot['later_error']))
                 settings = {'ledger:scope:%s' % cid: proof for cid in scope_ids}
             for k,v in settings.items():
                 conn.execute('INSERT OR REPLACE INTO settings(key,value) VALUES (?,?)',(k,v))
@@ -703,7 +738,16 @@ def reconcile_snapshot(snapshot, groups):
             if disputed:
                 labels = [snapshot['products'].get(p, {}).get('article') or p for p in disputed]
                 raise ValueError('Документы расходятся с остатками МойСклад по товарам: ' + ', '.join(labels))
-            apply_scope(snapshot, groups, parties, docs)
+            try:
+                apply_scope(snapshot, groups, parties, docs)
+            except ReceiptShortage as shortage:
+                # Raw stock was checked above. Rebuild and validate the whole history
+                # through the previous evening; never extrapolate it past that date.
+                through = (shortage.day - timedelta(days=1)).isoformat()
+                bounded = dict(snapshot, verified_through=through, later_error=str(shortage))
+                apply_scope(bounded, groups, parties, [d for d in docs if d['moment'][:10] <= through])
+                for party in group:
+                    errors[party] = str(shortage)
             completed.extend(group)
         except ValueError as exc:
             message = str(exc)
