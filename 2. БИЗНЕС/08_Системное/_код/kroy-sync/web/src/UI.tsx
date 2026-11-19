@@ -4,6 +4,7 @@ import {createPortal,flushSync} from 'react-dom';
 const paths:Record<string,React.ReactNode>={
  search:<><circle cx="11" cy="11" r="7"/><path d="m16 16 4 4"/></>,
  chevron:<path d="m9 5 7 7-7 7"/>,down:<path d="m6 9 6 6 6-6"/>,
+ calendar:<><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M7 3v4m10-4v4M3 10h18m-13 5h2m4 0h2"/></>,
  catalog:<><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></>,
  tasks:<><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="m8 8 13 13M8 16 21 3M14 14l-3-3"/></>,
  freeze:<><path d="M12 2v20M3.3 7l17.4 10M3.3 17 20.7 7M8 4l4 4 4-4M8 20l4-4 4 4"/></>,
@@ -40,47 +41,296 @@ function revealTheme(next:string,current:string,setTheme:(value:string)=>void,or
 }
 export function ThemeToggle({theme,setTheme}:{theme:string;setTheme:(value:string)=>void}){return <div className="theme-pill" role="group" aria-label="Тема">{['light','dark'].map(t=><button key={t} aria-label={t==='light'?'Светлая тема':'Тёмная тема'} aria-pressed={theme===t} className={theme===t?'is-on':''} onClick={e=>revealTheme(t,theme,setTheme,e.currentTarget)}><Icon name={t==='light'?'sun':'moon'} size={17}/></button>)}</div>}
 
-type SelectOption={value:string;label:string;disabled?:boolean};
-export function Select({value,onChange,options,label,disabled=false,required=false}:{value:string;onChange:(value:string)=>void;options:SelectOption[];label:string;disabled?:boolean;required?:boolean}){
- const[open,setOpen]=useState(false),[query,setQuery]=useState(''),[active,setActive]=useState(0),[box,setBox]=useState({top:0,left:0,width:240,height:360});
- const trigger=useRef<HTMLButtonElement>(null),menu=useRef<HTMLDivElement>(null),input=useRef<HTMLInputElement>(null),id=useId();
- const filtered=options.filter(o=>o.label.toLocaleLowerCase('ru').includes(query.toLocaleLowerCase('ru')));
- function close(){setOpen(false);setQuery('')}
- function pick(v:string){if(disabled||trigger.current?.matches(':disabled')||options.find(o=>o.value===v)?.disabled)return;onChange(v);close();trigger.current?.focus()}
- useLayoutEffect(()=>{if(open&&(disabled||trigger.current?.matches(':disabled')))close()});
- useLayoutEffect(()=>{if(!open)return;function place(){const r=trigger.current!.getBoundingClientRect(),v=window.visualViewport,bottom=v?v.height+v.offsetTop:innerHeight,top=v?.offsetTop||0,width=Math.min(Math.max(r.width,280),innerWidth-24),below=bottom-r.bottom-20,above=r.top-top-20,up=below<260&&above>below,height=Math.min(360,Math.max(48,up?above:below));setBox({left:Math.max(12,Math.min(r.left,innerWidth-width-12)),top:Math.max(top+12,up?r.top-height-8:r.bottom+8),width,height})}place();window.addEventListener('resize',place);window.addEventListener('scroll',place,true);window.visualViewport?.addEventListener('resize',place);return()=>{window.removeEventListener('resize',place);window.removeEventListener('scroll',place,true);window.visualViewport?.removeEventListener('resize',place)}},[open]);
- useEffect(()=>{if(!open)return;setActive(Math.max(0,filtered.findIndex(o=>o.value===value&&!o.disabled)));input.current?.focus();function outside(e:PointerEvent){if(!trigger.current?.contains(e.target as Node)&&!menu.current?.contains(e.target as Node))close()}document.addEventListener('pointerdown',outside,true);return()=>document.removeEventListener('pointerdown',outside,true)},[open]);
- useEffect(()=>{if(open)menu.current?.querySelector('[data-active="true"]')?.scrollIntoView({block:'nearest'})},[active,open]);
- function keydown(e:React.KeyboardEvent){if(e.key==='Escape'){e.preventDefault();e.stopPropagation();close();trigger.current?.focus()}if(['ArrowDown','ArrowUp','Home','End'].includes(e.key)){e.preventDefault();const enabled=filtered.map((o,i)=>o.disabled?-1:i).filter(i=>i>=0);setActive(current=>{if(e.key==='Home')return enabled[0]??0;if(e.key==='End')return enabled.at(-1)??0;return (e.key==='ArrowDown'?enabled.find(i=>i>current):enabled.slice().reverse().find(i=>i<current))??current})}if(e.key==='Enter'){e.preventDefault();if(filtered[active])pick(filtered[active].value)}if(e.key==='Tab')close()}
- return <div className="select"><button type="button" ref={trigger} disabled={disabled} className="select-trigger" aria-label={label} aria-required={required||undefined} aria-haspopup="listbox" aria-expanded={open} aria-controls={open?id:undefined} onClick={()=>open?close():setOpen(true)} onKeyDown={e=>{if(['ArrowDown','ArrowUp'].includes(e.key)){e.preventDefault();setOpen(true)}}}><span>{options.find(o=>o.value===value)?.label||label}</span><Icon name="down" size={16}/></button>{open&&createPortal(<div className="select-menu" ref={menu} style={{position:'fixed',top:box.top,left:box.left,width:box.width,maxHeight:box.height}} onKeyDown={keydown}><div className="select-search"><Icon name="search" size={16}/><input ref={input} aria-label={'Найти: '+label} placeholder="Найти…" value={query} onChange={e=>{setQuery(e.target.value);setActive(0)}} role="combobox" aria-expanded="true" aria-controls={id} aria-activedescendant={filtered[active]?id+'-'+active:undefined}/></div><div id={id} role="listbox" aria-label={label} className="select-options">{filtered.map((o,n)=><button id={id+'-'+n} key={o.value} type="button" role="option" disabled={o.disabled} aria-selected={o.value===value} data-active={n===active} onMouseEnter={()=>setActive(n)} onClick={()=>pick(o.value)}><span>{o.label}</span>{o.value===value&&<Icon name="check" size={16}/>}</button>)}{!filtered.length&&<p className="select-empty">Ничего не найдено</p>}</div></div>,document.body)}</div>
+type PopupSize = { width: number; height: number; stretch?: boolean; align?: 'start' | 'end' };
+
+export function useAnchoredPopup(
+  open: boolean,
+  trigger: React.RefObject<HTMLElement | null>,
+  popup: React.RefObject<HTMLElement | null>,
+  { width, height, stretch, align = 'start' }: PopupSize,
+  onDismiss: () => void,
+) {
+  const [position, setPosition] = useState<React.CSSProperties>({ position: 'fixed', top: 0, left: 0 });
+  useLayoutEffect(() => {
+    if (!open) return;
+    const viewport = window.visualViewport;
+    function place(event?: Event) {
+      if (event?.target instanceof Node && popup.current?.contains(event.target)) return;
+      const anchor = trigger.current?.getBoundingClientRect();
+      if (!anchor) return;
+      const margin = 12, gap = 6;
+      const left = (viewport?.offsetLeft ?? 0) + margin;
+      const right = left + (viewport?.width ?? innerWidth) - 2 * margin;
+      const top = (viewport?.offsetTop ?? 0) + margin;
+      const bottom = top + (viewport?.height ?? innerHeight) - 2 * margin;
+      const popupWidth = Math.min(stretch ? Math.max(width, anchor.width) : width, right - left);
+      const desiredLeft = align === 'end' ? anchor.right - popupWidth : anchor.left;
+      const belowTop = Math.max(top, Math.min(bottom, anchor.bottom + gap));
+      const aboveBottom = Math.max(top, Math.min(bottom, anchor.top - gap));
+      const below = bottom - belowTop, above = aboveBottom - top;
+      const upwards = below < height && above > below;
+      const room = upwards ? above : below;
+      const horizontal = { position: 'fixed' as const, left: Math.max(left, Math.min(desiredLeft, right - popupWidth)), width: popupWidth };
+      if (room < Math.min(height, 210)) {
+        const popupHeight = Math.min(height, bottom - top);
+        setPosition({ ...horizontal, top: Math.min(belowTop, bottom - popupHeight), maxHeight: popupHeight });
+      } else {
+        const side = upwards ? { bottom: innerHeight - aboveBottom } : { top: belowTop };
+        setPosition({ ...horizontal, ...side, maxHeight: Math.min(height, room) });
+      }
+    }
+    place();
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    viewport?.addEventListener('resize', place);
+    viewport?.addEventListener('scroll', place);
+    return () => {
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', place, true);
+      viewport?.removeEventListener('resize', place);
+      viewport?.removeEventListener('scroll', place);
+    };
+  }, [open, trigger, popup, width, height, stretch, align]);
+  useEffect(() => {
+    if (!open) return;
+    function outside(event: PointerEvent) {
+      if (!(event.target instanceof Node)) return;
+      if (!trigger.current?.contains(event.target) && !popup.current?.contains(event.target)) onDismiss();
+    }
+    document.addEventListener('pointerdown', outside, true);
+    return () => document.removeEventListener('pointerdown', outside, true);
+  }, [open, trigger, popup, onDismiss]);
+  return position;
 }
 
-// Same control for document forms. Keep native option values and form validation.
-export function Choice({children,value,defaultValue='',onChange,label,disabled=false,required=false,name,id}: {children:React.ReactNode;value?:string;defaultValue?:string;onChange:(event:{target:{value:string}})=>void;label:string;disabled?:boolean;required?:boolean;name?:string;id?:string;'aria-label'?:string}){
- const[local,setLocal]=useState(defaultValue);const native=useRef<HTMLSelectElement>(null);
- const options=React.Children.toArray(children).filter(React.isValidElement).map(child=>{const p=(child as React.ReactElement<{value?:string;children:React.ReactNode;disabled?:boolean}>).props;const text=React.Children.toArray(p.children).join('');return {value:String(p.value??text),label:text,disabled:p.disabled}});
- const selected=value??local;
- return <div className="choice"><select hidden ref={native} id={id} name={name} className="select-validation" tabIndex={-1} aria-hidden="true" disabled={disabled} required={required} value={selected} onChange={()=>{}} onInvalid={e=>{e.preventDefault();native.current?.parentElement?.querySelector<HTMLButtonElement>('.select-trigger')?.focus()}}>{children}</select><Select label={label} value={selected} options={options} disabled={disabled} required={required} onChange={v=>{setLocal(v);onChange({target:{value:v}})}}/></div>
+export function isLastPopupTab(event: React.KeyboardEvent, popup: HTMLElement) {
+  if (event.key !== 'Tab') return false;
+  const stops = Array.from(popup.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled)'))
+    .filter(element => element.tabIndex >= 0 && element.getClientRects().length > 0);
+  return event.target === (event.shiftKey ? stops[0] : stops.at(-1));
+}
+
+export function scrollWithin(container: HTMLElement, option: HTMLElement) {
+  const box = container.getBoundingClientRect(), row = option.getBoundingClientRect();
+  const margin = 4;
+  if (row.top < box.top + margin) container.scrollTop += row.top - box.top - margin;
+  else if (row.bottom > box.bottom - margin) container.scrollTop += row.bottom - box.bottom + margin;
+}
+
+type SelectOption = { value: string; label: string; disabled?: boolean };
+type SelectProps = {
+  value: string;
+  onChange: (value: string) => void;
+  options: SelectOption[];
+  label: string;
+  disabled?: boolean;
+  required?: boolean;
+  invalid?: boolean;
+  searchable?: boolean;
+};
+
+const matchesOption = (option: SelectOption, text: string) =>
+  option.label.toLocaleLowerCase('ru').includes(text.trim().toLocaleLowerCase('ru'));
+
+export function Select({ value, onChange, options, label, disabled, required, invalid, searchable = true }: SelectProps) {
+  const [open, setOpen] = useState(false), [query, setQuery] = useState(''), [active, setActive] = useState(-1);
+  const trigger = useRef<HTMLButtonElement>(null), menu = useRef<HTMLDivElement>(null), input = useRef<HTMLInputElement>(null);
+  const focusSearch = useRef(false), focusOption = useRef(false), id = useId();
+  const filtered = options.filter(option => matchesOption(option, query));
+  const position = useAnchoredPopup(open, trigger, menu, {
+    width: 244, height: Math.min(352, (searchable ? 57 : 14) + 43 * Math.max(1, filtered.length)), stretch: true,
+  }, () => setOpen(false));
+
+  function show(keyboard = false) {
+    const selected = options.findIndex(option => option.value === value && !option.disabled);
+    setQuery('');
+    setActive(selected >= 0 ? selected : options.findIndex(option => !option.disabled));
+    focusSearch.current = searchable && (keyboard || matchMedia('(pointer:fine)').matches);
+    focusOption.current = !focusSearch.current;
+    setOpen(true);
+  }
+  function close(restoreFocus = false) {
+    if (restoreFocus) trigger.current?.focus({ preventScroll: true });
+    setOpen(false);
+  }
+  function pick(option: SelectOption) {
+    if (disabled || trigger.current?.matches(':disabled') || option.disabled) return;
+    onChange(option.value);
+    close(true);
+  }
+  useLayoutEffect(() => {
+    if (open && trigger.current?.matches(':disabled')) close();
+  });
+  useLayoutEffect(() => {
+    if (open && focusSearch.current) input.current?.focus({ preventScroll: true });
+  }, [open]);
+  useLayoutEffect(() => {
+    if (!open || !menu.current) return;
+    const options = menu.current.querySelector<HTMLElement>('.select-options');
+    const option = options?.querySelector<HTMLElement>('[data-active="true"]');
+    if (focusOption.current) {
+      (option ?? options)?.focus({ preventScroll: true });
+      focusOption.current = false;
+    }
+    if (options && option) scrollWithin(options, option);
+  }, [open, active, query, position.maxHeight]);
+
+  function keydown(e: React.KeyboardEvent<HTMLDivElement>) {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      close(true);
+    } else if (e.key === 'Tab') {
+      if (!searchable || isLastPopupTab(e, e.currentTarget) || (e.target !== input.current && !e.shiftKey)) close(true);
+    } else if (e.key === 'Enter' && e.target === input.current) {
+      e.preventDefault();
+      if (filtered[active]) pick(filtered[active]);
+    } else if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) {
+      e.preventDefault();
+      const enabled = filtered.flatMap((option, index) => option.disabled ? [] : [index]);
+      const next = e.key === 'Home' ? enabled[0] : e.key === 'End' ? enabled.at(-1)
+        : e.key === 'ArrowDown' ? enabled.find(index => index > active) : enabled.filter(index => index < active).at(-1);
+      if (next === undefined || next === active) return;
+      focusOption.current = e.target !== input.current;
+      setActive(next);
+    }
+  }
+
+  return <div className="select">
+    <button type="button" ref={trigger} disabled={disabled} className="select-trigger"
+      aria-label={label} aria-describedby={id + '-value'} aria-required={required || undefined} aria-invalid={invalid || undefined}
+      aria-haspopup="listbox" aria-expanded={open} aria-controls={open ? id : undefined}
+      onClick={e => open ? close() : show(e.detail === 0)}
+      onKeyDown={e => { if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); show(true); } }}>
+      <span id={id + '-value'}>{options.find(option => option.value === value)?.label || label}</span><Icon name="down" size={16}/>
+    </button>
+    {open && createPortal(<div className="select-menu picker-popup" ref={menu} style={position} onKeyDown={keydown}>
+      {searchable && <div className="select-search"><Icon name="search" size={16}/>
+        <input ref={input} aria-label={'Найти: ' + label} placeholder="Найти…" value={query}
+          onChange={e => { const text = e.target.value; setQuery(text); setActive(options.filter(option => matchesOption(option, text)).findIndex(option => !option.disabled)); }}
+          role="combobox" aria-expanded="true" aria-controls={id} aria-activedescendant={filtered[active] ? id + '-' + active : undefined}/>
+      </div>}
+      <div id={id} role="listbox" aria-label={label} className="select-options" tabIndex={-1}>
+        {filtered.map((option, index) => <button id={id + '-' + index} key={option.value} type="button" role="option" tabIndex={-1}
+          disabled={option.disabled} aria-selected={option.value === value} data-active={index === active} onClick={() => pick(option)}>
+          <span>{option.label}</span>{option.value === value && <Icon name="check" size={16}/>}
+        </button>)}
+        {!filtered.length && <p className="select-empty">Ничего не найдено</p>}
+      </div>
+    </div>, document.body)}
+  </div>;
+}
+
+// Document fields keep the option values and required constraints on their form.
+export function Choice({ children, value, defaultValue = '', onChange, label, disabled, required, name, id }: {
+  children: React.ReactNode; value?: string; defaultValue?: string; onChange: (event: { target: { value: string } }) => void;
+  label: string; disabled?: boolean; required?: boolean; name?: string; id?: string; 'aria-label'?: string;
+}) {
+  const [local, setLocal] = useState(defaultValue), [invalid, setInvalid] = useState(false);
+  const options = React.Children.toArray(children).filter(React.isValidElement).map(child => {
+    const { value, children, disabled } = (child as React.ReactElement<{ value?: string; children: React.ReactNode; disabled?: boolean }>).props;
+    const text = React.Children.toArray(children).join('');
+    return { value: String(value ?? text), label: text, disabled };
+  });
+  const selected = value ?? local;
+  return <div className="choice">
+    <Select label={label} value={selected} options={options} disabled={disabled} required={required} invalid={invalid && !selected}
+      searchable={options.length > 7} onChange={next => { setInvalid(false); setLocal(next); onChange({ target: { value: next } }); }}/>
+    <select hidden id={id} name={name} className="select-validation" tabIndex={-1} aria-hidden="true"
+      disabled={disabled} required={required} value={selected} onChange={() => {}}
+      onInvalid={e => { e.preventDefault(); setInvalid(true); e.currentTarget.parentElement?.querySelector<HTMLButtonElement>('.select-trigger')?.focus(); }}>
+      {children}
+    </select>
+    {invalid && !selected && <span className="picker-error" role="alert">Выбери значение</span>}
+  </div>;
 }
 
 export function ActionMenu({label='Действия',children}:{label?:string;children:React.ReactNode}){
- const[open,setOpen]=useState(false),[pos,setPos]=useState({top:0,left:0,width:260}),button=useRef<HTMLButtonElement>(null),menu=useRef<HTMLDivElement>(null),id=useId();
- useLayoutEffect(()=>{if(!open)return;const place=()=>{const r=button.current!.getBoundingClientRect(),width=Math.min(280,innerWidth-24),height=menu.current?.offsetHeight||200;setPos({width,left:Math.max(12,Math.min(r.right-width,innerWidth-width-12)),top:r.bottom+height+16>innerHeight?Math.max(12,r.top-height-8):r.bottom+8})};place();window.addEventListener('resize',place);window.addEventListener('scroll',place,true);return()=>{window.removeEventListener('resize',place);window.removeEventListener('scroll',place,true)}},[open]);
- useEffect(()=>{if(!open)return;menu.current?.querySelector<HTMLButtonElement>('button')?.focus();const outside=(e:PointerEvent)=>{if(!menu.current?.contains(e.target as Node)&&!button.current?.contains(e.target as Node))setOpen(false)};document.addEventListener('pointerdown',outside,true);return()=>document.removeEventListener('pointerdown',outside,true)},[open]);
- return <><button ref={button} type="button" className="secondary action-menu-trigger" aria-expanded={open} aria-haspopup="menu" aria-controls={open?id:undefined} onClick={()=>setOpen(!open)}>{label}<Icon name="down" size={15}/></button>{open&&createPortal(<div id={id} role="menu" aria-label={label} ref={menu} className="action-menu" style={{position:'fixed',...pos}} onClick={e=>{if((e.target as HTMLElement).closest('button')){setOpen(false);button.current?.focus()}}} onKeyDown={e=>{const buttons=Array.from(menu.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')||[]),i=buttons.indexOf(document.activeElement as HTMLButtonElement);if(e.key==='Escape'){e.preventDefault();e.stopPropagation();setOpen(false);button.current?.focus()}if(['ArrowDown','ArrowUp','Home','End'].includes(e.key)){e.preventDefault();buttons[e.key==='Home'?0:e.key==='End'?buttons.length-1:(i+(e.key==='ArrowDown'?1:-1)+buttons.length)%buttons.length]?.focus()}if(e.key==='Tab')setOpen(false)}}>{React.Children.map(children,child=>React.isValidElement(child)?React.cloneElement(child as React.ReactElement<{role?:string}>,{role:'menuitem'}):child)}</div>,document.body)}</>
+ const [open, setOpen] = useState(false), button = useRef<HTMLButtonElement>(null), menu = useRef<HTMLDivElement>(null), id = useId();
+ const position = useAnchoredPopup(open, button, menu, { width: 272, height: 240, align: 'end' }, () => setOpen(false));
+ useLayoutEffect(() => { if (open) menu.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus({ preventScroll: true }); }, [open]);
+ function close() { button.current?.focus({ preventScroll: true }); setOpen(false); }
+ return <>
+   <button ref={button} type="button" className="secondary action-menu-trigger" aria-expanded={open} aria-haspopup="menu"
+     aria-controls={open ? id : undefined} onClick={() => setOpen(!open)}>{label}<Icon name="down" size={15}/></button>
+   {open && createPortal(<div id={id} role="menu" aria-label={label} ref={menu} className="action-menu picker-popup" style={position}
+     onClick={e => { if ((e.target as Element).closest('button')) close(); }}
+     onKeyDown={e => {
+       if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); return; }
+       if (e.key === 'Tab') { close(); return; }
+       if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) return;
+       const buttons = Array.from(e.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'));
+       if (!buttons.length) return;
+       const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+       e.preventDefault();
+       const next = e.key === 'Home' ? 0 : e.key === 'End' ? buttons.length - 1
+         : (index + (e.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length;
+       buttons[next].focus();
+     }}>
+     {React.Children.map(children, child => React.isValidElement(child)
+       ? React.cloneElement(child as React.ReactElement<{ role?: string }>, { role: 'menuitem' }) : child)}
+   </div>, document.body)}
+ </>;
 }
 
 export function ProfileMenu({name,role,links,nav,logout,theme,setTheme}:{name:string;role:string;theme:string;setTheme:(v:string)=>void;links:{id:string;label:string}[];nav:(id:string)=>void;logout:()=>void}){
- const[open,setOpen]=useState(false),ref=useRef<HTMLDivElement>(null),btn=useRef<HTMLButtonElement>(null),[pos,setPos]=useState({left:12,bottom:80});
- useEffect(()=>{if(!open)return;const place=()=>{const r=btn.current!.getBoundingClientRect();setPos({left:Math.max(12,Math.min(r.left,innerWidth-284)),bottom:innerHeight-r.top+10})};place();const outside=(e:PointerEvent)=>{if(!ref.current?.contains(e.target as Node)&&!btn.current?.contains(e.target as Node))setOpen(false)};const key=(e:KeyboardEvent)=>{if(e.key==='Escape'){setOpen(false);btn.current?.focus()}};document.addEventListener('pointerdown',outside,true);document.addEventListener('keydown',key);window.addEventListener('resize',place);return()=>{document.removeEventListener('pointerdown',outside,true);document.removeEventListener('keydown',key);window.removeEventListener('resize',place)}},[open]);
- return <><button ref={btn} className="profile-trigger" aria-label={'Профиль: '+name} aria-expanded={open} onClick={()=>setOpen(!open)}><span className="avatar">{name.slice(0,1)}</span><span className="profile-name"><b>{name}</b><small>{role}</small></span><Icon name="down" size={16}/></button>{open&&createPortal(<div ref={ref} className="profile-menu" style={{left:pos.left,bottom:pos.bottom}} role="dialog" aria-label="Меню профиля"><div className="profile-caption"><b>{name}</b><small>{role} · YUJI.CLO</small><ThemeToggle theme={theme} setTheme={setTheme}/></div>{links.map(l=><button key={l.id} onClick={()=>{nav(l.id);setOpen(false)}}><Icon name={l.id} size={18}/>{l.label}</button>)}<button className="logout" onClick={()=>{setOpen(false);logout()}}><Icon name="logout" size={18}/>Выйти</button></div>,document.body)}</>
+ const [open, setOpen] = useState(false), menu = useRef<HTMLDivElement>(null), button = useRef<HTMLButtonElement>(null), id = useId();
+ const position = useAnchoredPopup(open, button, menu, { width: 272, height: 410 }, () => setOpen(false));
+ useLayoutEffect(() => { if (open) menu.current?.querySelector<HTMLButtonElement>('button')?.focus({ preventScroll: true }); }, [open]);
+ return <>
+   <button ref={button} type="button" className="profile-trigger" aria-label={'Профиль: ' + name} aria-expanded={open} aria-haspopup="dialog"
+     aria-controls={open ? id : undefined} onClick={() => setOpen(!open)}>
+     <span className="avatar">{name.slice(0, 1)}</span><span className="profile-name"><b>{name}</b><small>{role}</small></span><Icon name="down" size={16}/>
+   </button>
+   {open && createPortal(<div id={id} ref={menu} className="profile-menu picker-popup" style={position} role="dialog" aria-label="Меню профиля"
+     onKeyDown={e => {
+       if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); }
+       else if (!isLastPopupTab(e, e.currentTarget)) return;
+       button.current?.focus({ preventScroll: true });
+       setOpen(false);
+     }}>
+     <div className="profile-caption"><b>{name}</b><small>{role} · YUJI.CLO</small><ThemeToggle theme={theme} setTheme={setTheme}/></div>
+     {links.map(link => <button key={link.id} type="button" onClick={() => { nav(link.id); setOpen(false); }}><Icon name={link.id} size={18}/>{link.label}</button>)}
+     <button type="button" className="logout" onClick={() => { setOpen(false); logout(); }}><Icon name="logout" size={18}/>Выйти</button>
+   </div>, document.body)}
+ </>;
 }
 
 // Shared application dialog: keyboard focus, Escape, restoration and scroll lock.
 export function DialogFrame({title,close,busy=false,children,className=''}:{title:string;close:()=>void;busy?:boolean;children:React.ReactNode;className?:string}){
  const ref=useRef<HTMLElement>(null),id=useId(),onClose=useRef(close);onClose.current=close;
- useEffect(()=>{const previous=document.activeElement as HTMLElement,overflow=document.body.style.overflow;document.body.style.overflow='hidden';const target=(ref.current?.querySelector<HTMLElement>('[autofocus],input:not([readonly]):not(:disabled)')||ref.current?.querySelector<HTMLElement>('button:not(:disabled)'));target?.focus();return()=>{document.body.style.overflow=overflow;if(previous?.isConnected)previous.focus()}},[]);
- useEffect(()=>{const key=(e:KeyboardEvent)=>{if(e.key==='Escape'&&!document.querySelector('.select-menu,.product-picker-menu,.photo-zoom')){e.preventDefault();e.stopPropagation();if(!busy)onClose.current()}if(e.key==='Tab'){const els=Array.from(ref.current?.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),textarea:not(:disabled),[tabindex="0"]')||[]).filter(el=>el.offsetParent!==null);if(!els.length){e.preventDefault();return}const first=els[0],last=els[els.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus()}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus()}}};document.addEventListener('keydown',key);return()=>document.removeEventListener('keydown',key)},[busy]);
+ useEffect(() => {
+   const previous = document.activeElement as HTMLElement, overflow = document.body.style.overflow;
+   const dialog = ref.current;
+   document.body.style.overflow = 'hidden';
+   const field = matchMedia('(pointer:fine)').matches
+     ? dialog?.querySelector<HTMLElement>('[autofocus],input:not([readonly]):not(:disabled):not(.select-validation)') : null;
+   (field ?? dialog?.querySelector<HTMLElement>('button:not(:disabled)'))?.focus({ preventScroll: true });
+   return () => {
+     document.body.style.overflow = overflow;
+     if (previous?.isConnected) previous.focus({ preventScroll: true });
+   };
+ }, []);
+ useEffect(() => {
+   function key(e: KeyboardEvent) {
+     if (e.defaultPrevented || Array.from(document.querySelectorAll('.app-dialog')).at(-1) !== ref.current) return;
+     if (e.key === 'Escape' && !document.querySelector('.picker-popup,.photo-zoom')) {
+       e.preventDefault();
+       if (!busy) onClose.current();
+     }
+     if (e.key === 'Tab') {
+       const stops = Array.from(ref.current?.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),textarea:not(:disabled),[tabindex="0"]') || [])
+         .filter(element => element.tabIndex >= 0 && element.getClientRects().length > 0);
+       const first = stops[0], last = stops.at(-1);
+       if (!first || document.activeElement === (e.shiftKey ? first : last)) {
+         e.preventDefault();
+         (e.shiftKey ? last : first)?.focus();
+       }
+     }
+   }
+   document.addEventListener('keydown', key);
+   return () => document.removeEventListener('keydown', key);
+ }, [busy]);
  return createPortal(<div className="overlay app-dialog-overlay" onMouseDown={e=>{if(e.target===e.currentTarget&&!busy)close()}}><section ref={ref} className={'modal app-dialog '+className} role="dialog" aria-modal="true" aria-labelledby={id}><header><h2 id={id}>{title}</h2><button type="button" className="dialog-close" aria-label="Закрыть окно" disabled={busy} onClick={close}><Icon name="close"/></button></header>{children}</section></div>,document.body)
 }
 let confirmPending=false;
