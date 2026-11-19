@@ -18,3 +18,11 @@
  .orders-dates label{display:grid;min-width:0;gap:6px}
  .orders-dates input{width:100%;min-width:0;box-sizing:border-box}
 }
+
+.orders-sync-note{display:block;margin-top:4px;padding:0;background:transparent;color:var(--muted);font-weight:400;text-align:left}
+.orders-sync-note:hover,.orders-sync-note:focus-visible{text-decoration:underline}
+@media(max-width:1100px){
+ .order-card-top{flex-wrap:wrap}
+ .order-card .order-mark{min-width:0;max-width:100%}
+ .order-card .order-mark-id strong{overflow-wrap:anywhere;min-width:0}
+}
