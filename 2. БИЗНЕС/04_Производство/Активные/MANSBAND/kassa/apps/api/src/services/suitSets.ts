@@ -66,6 +66,9 @@ async function loadCatalogSuitLines(): Promise<SuitStockLine[]> {
     .select({
       msId: products.msId,
       name: products.name,
+      article: products.article,
+      code: products.code,
+      barcode: products.barcode,
       category: products.category,
       variation: products.variation,
       size: products.size,
@@ -86,6 +89,9 @@ async function loadCatalogSuitLines(): Promise<SuitStockLine[]> {
     .map((r) => ({
       msId: r.msId,
       name: r.name ?? "",
+      article: r.article,
+      code: r.code,
+      barcode: r.barcode,
       category: r.category,
       variation: (r.variation ?? "").trim(),
       size: (r.size ?? "").trim(),

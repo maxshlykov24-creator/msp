@@ -1,4 +1,4 @@
-import { cartLineTotal } from "@kassa/shared";
+import { cartLineTotal, catalogSearchTerms, matchesCatalogTerms } from "@kassa/shared";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowRightLeft,
@@ -26,6 +26,13 @@ import { useStore } from "../store";
 import { BarcodeScannerModal } from "./BarcodeScanner";
 import { Modal } from "./ui";
 import { MovementModal } from "./MovementModal";
+
+const SEARCH_PAGE_SIZE = 30;
+
+function matchesSavedProduct(query: string, name: string, sku: string) {
+  const modifiers = name.match(/\(([^()]*)\)\s*$/)?.[1]?.split(",").map(s => s.trim()) ?? [];
+  return matchesCatalogTerms(catalogSearchTerms(query), [name], [sku, ...modifiers]);
+}
 
 function itemKey(it: CartItem): string {
   return it.lineId ?? it.productId;
@@ -387,10 +394,13 @@ export function ProductPicker({
   const [scannerOpen, setScannerOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [moveOpen, setMoveOpen] = useState(false);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchVersion = useRef(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [searchError, setSearchError] = useState("");
 
   const allowedMap = useMemo(() => {
-    if (!allowedFrom?.length) return null;
+    if (!allowedFrom) return null;
     const map = new Map<string, { maxQty: number; template: CartItem }>();
     for (const it of allowedFrom) {
       if (it.isReturn || it.price < 0) continue;
@@ -447,17 +457,37 @@ export function ProductPicker({
     return Math.max(0, max - used);
   }
 
+  async function fetchHits(offset: number, version: number) {
+    try {
+      const rows = await api.getQuery<Product[]>("/catalog/search", {
+        q: q.trim(), store: activeStore, limit: SEARCH_PAGE_SIZE + 1, offset,
+      });
+      if (version !== searchVersion.current) return;
+      const page = rows.slice(0, SEARCH_PAGE_SIZE);
+      setFound(prev => offset ? [...prev, ...page] : page);
+      setHasMore(rows.length > SEARCH_PAGE_SIZE);
+      setSearchError("");
+    } catch (error) {
+      if (version !== searchVersion.current) return;
+      setSearchError(error instanceof Error ? error.message : "Не удалось загрузить товары");
+    } finally {
+      if (version === searchVersion.current) {
+        setLoading(false);
+        setLoadingMore(false);
+      }
+    }
+  }
+
   // Поиск: при allowedFrom — только позиции исходной сделки; иначе каталог.
   useEffect(() => {
+    const version = ++searchVersion.current;
+    setHasMore(false);
+    setLoadingMore(false);
+    setSearchError("");
     if (allowedMap) {
       setLoading(false);
-      const tokens = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
       const list = allowedList
-        .filter((it) => {
-          if (!tokens.length) return true;
-          const hay = `${it.name} ${it.productId}`.toLowerCase();
-          return tokens.every((t) => hay.includes(t));
-        })
+        .filter(it => matchesSavedProduct(q, it.name, it.productId))
         .map(
           (it): Product => ({
             id: it.productId,
@@ -478,31 +508,16 @@ export function ProductPicker({
       return;
     }
     if (USE_MOCK) {
-      const tokens = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
-      setFound(
-        PRODUCTS.filter((p) => {
-          const hay = `${p.name} ${p.sku}`.toLowerCase();
-          return tokens.every((t) => hay.includes(t));
-        })
-      );
+      setLoading(false);
+      setFound(PRODUCTS.filter(p => matchesSavedProduct(q, p.name, p.sku)));
       return;
     }
-    if (debounceRef.current) clearTimeout(debounceRef.current);
+    setFound([]);
     setLoading(true);
-    debounceRef.current = setTimeout(async () => {
-      try {
-        const res = await api.get<Product[]>(
-          `/catalog/search?q=${encodeURIComponent(q.trim())}&store=${encodeURIComponent(activeStore)}&limit=30`
-        );
-        setFound(res);
-      } catch {
-        setFound([]);
-      } finally {
-        setLoading(false);
-      }
-    }, 300);
+    const timer = window.setTimeout(() => void fetchHits(0, version), 300);
     return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
+      ++searchVersion.current;
+      window.clearTimeout(timer);
     };
   }, [q, activeStore, allowedMap, allowedList, items]);
 
@@ -742,7 +757,7 @@ export function ProductPicker({
               placeholder={
                 allowedMap
                     ? "Поиск только среди позиций исходной сделки…"
-                    : "Вариация, артикул, цвет или штрихкод…"
+                    : "Часть вариации, артикул, цвет, размер или штрихкод…"
               }
               value={q}
               onFocus={() => setOpen(true)}
@@ -773,7 +788,8 @@ export function ProductPicker({
                 <Loader2 size={14} className="animate-spin" /> Поиск…
               </div>
             )}
-            {!loading && found.length === 0 && (
+            {searchError && <div role="alert" className="px-3 py-2 text-sm text-red-400">{searchError}</div>}
+            {!loading && !searchError && found.length === 0 && (
               <div className="px-3 py-3 text-mute text-sm">
                 {allowedMap ? "В исходной сделке нет подходящих позиций" : "Ничего не найдено"}
               </div>
@@ -797,6 +813,15 @@ export function ProductPicker({
                   </button>
                 </div>
               ))}
+            {hasMore && (
+              <button type="button" className="w-full py-2 text-sm text-gold-soft disabled:opacity-50"
+                disabled={loadingMore} onClick={() => {
+                  setLoadingMore(true);
+                  void fetchHits(found.length, searchVersion.current);
+                }}>
+                {loadingMore ? "Загрузка…" : "Показать ещё"}
+              </button>
+            )}
           </div>
         )}
       </div>}

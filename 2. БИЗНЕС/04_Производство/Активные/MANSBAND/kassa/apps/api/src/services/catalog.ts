@@ -1,9 +1,11 @@
-import { and, or, ilike, eq, inArray, asc, sql } from "drizzle-orm";
+import { and, or, ilike, eq, inArray, asc, sql, type SQL } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { products, stock, msRefs, productFolders } from "../db/schema.js";
 import {
   CDEK_LOCATION,
   CDEK_WAREHOUSE_ID,
+  catalogSearchTerms,
+  CODE_CYRILLIC, CODE_LATIN, CODE_SEPARATORS, SEARCH_PUNCTUATION, SEARCH_PUNCTUATION_ASCII,
   STORE_TO_WAREHOUSE,
   classifyHall,
   hallKeywordNeedsWordBoundary,
@@ -131,22 +133,49 @@ async function attachStock(rows: ProductRow[], storeName?: string): Promise<Prod
 // «Доступно» и разбивка по складам из локального кэша stock — без N запросов в МойСклад.
 // Live-детализация одного товара — getProductStockByWarehouses.
 
-function sanitizeToken(token: string) {
-  return token.replace(/[%_\\]/g, "");
+function normalizedText(value: SQL) {
+  return sql`translate(lower(${value}), ${SEARCH_PUNCTUATION}, ${SEARCH_PUNCTUATION_ASCII})`;
 }
 
-function tokenMatchesField(token: string) {
-  const safe = sanitizeToken(token);
-  if (!safe) return undefined;
-  const pattern = `%${safe}%`;
-  return or(
-    ilike(products.variation, pattern),
-    ilike(products.name, pattern),
-    ilike(products.article, pattern),
-    ilike(products.code, pattern),
-    eq(products.barcode, safe),
-    ilike(products.barcode, pattern)
-  );
+function foldedCode(value: SQL) {
+  return sql`translate(${normalizedText(value)}, ${CODE_CYRILLIC}, ${CODE_LATIN})`;
+}
+
+function compactCode(value: SQL) {
+  return sql`translate(${value}, ${CODE_SEPARATORS}, '')`;
+}
+
+// Оба маршрута ищут каждое слово в одной модификации. strpos воспринимает знаки
+// буквально. Уплотнять можно только каждый артикул отдельно, а не текст названия.
+function catalogTextQuery(query: string) {
+  const terms = catalogSearchTerms(query);
+  if (!terms.length) return { condition: undefined, rank: sql`0` };
+  const p = products;
+  const text = normalizedText(sql`concat_ws(' ', ${p.name}, ${p.category}, ${p.color}, ${p.pattern}, ${p.fit},
+    ${p.size}, ${p.height}, concat_ws('/', ${p.size}, ${p.height}), ${p.variation}, ${p.article}, ${p.code}, ${p.barcode})`);
+  const codes = foldedCode(sql`concat_ws(chr(31), ${p.variation}, ${p.article}, ${p.code}, ${p.barcode})`);
+  const variation = foldedCode(sql`trim(${p.variation})`);
+  const condition = and(...terms.map(t => or(
+    sql`strpos(${text}, ${t.text}) > 0`,
+    t.color ? sql`strpos(${text}, ${t.color}) > 0` : undefined,
+    t.code ? sql`strpos(${codes}, ${t.code}) > 0` : undefined,
+    t.compact ? sql`strpos(${compactCode(codes)}, ${t.compact}) > 0` : undefined,
+  )));
+
+  const scores = terms.map(t => sql`CASE
+    WHEN ${p.barcode} = ${t.text} THEN 0
+    WHEN ${variation} = ${t.code ?? t.text} THEN 1
+    ${t.compact ? sql`WHEN ${compactCode(variation)} = ${t.compact} THEN 2` : sql``}
+    WHEN lower(${p.article}) = ${t.text} OR lower(${p.code}) = ${t.text} THEN 3
+    WHEN ${or(sql`strpos(${variation}, ${t.code ?? t.text}) > 0`,
+      t.compact ? sql`strpos(${compactCode(variation)}, ${t.compact}) > 0` : undefined)} THEN 4
+    ELSE 5 END`);
+  // Числа внутри артикула остаются доступны, точные размер и рост идут первыми при уточнении.
+  const dimensions = terms.filter(t => /^(?:\d{1,3}|\d?x{0,3}[sml])$/.test(t.text));
+  const dimensionHits = terms.length > 1 && dimensions.length
+    ? sql.join(dimensions.map(t => sql`CASE WHEN lower(${p.size}) = ${t.text} OR ${p.height} = ${t.text} THEN 1 ELSE 0 END`), sql` + `)
+    : sql`0`;
+  return { condition, rank: sql`least(${sql.join(scores, sql`, `)}) * ${dimensions.length + 1} - (${dimensionHits})` };
 }
 
 /**
@@ -174,37 +203,20 @@ function notBareParentSql() {
   )`;
 }
 
-/** Совпадение по вариации поднимаем выше имени и артикула. */
-function variationFirstOrder(tokens: string[]) {
-  const safe = sanitizeToken(tokens[0] ?? "");
-  if (!safe) return undefined;
-  return sql`CASE
-    WHEN lower(trim(${products.variation})) = lower(${safe}) THEN 0
-    WHEN ${products.variation} ILIKE ${`%${safe}%`} THEN 1
-    ELSE 2 END`;
-}
-
 export async function searchCatalog(
   q: string,
   limit: number,
   storeName?: string,
   category?: string,
-  browse?: boolean
+  browse?: boolean,
+  offset = 0
 ): Promise<Product[]> {
   if (browse && !q.trim() && !category?.trim()) {
     // Обзор по разделам: больше позиций, чтобы UI собрал модели без модификаций.
     return browseCatalogByGroups(storeName, Math.min(Math.max(limit, 80), 120));
   }
 
-  const tokens = q
-    .trim()
-    .split(/\s+/)
-    .map((t) => t.trim())
-    .filter(Boolean);
-  const tokenConditions = tokens
-    .map((token) => tokenMatchesField(token))
-    .filter((c): c is NonNullable<typeof c> => c != null);
-  const textCondition = tokenConditions.length > 0 ? and(...tokenConditions) : undefined;
+  const search = catalogTextQuery(q);
   const cat = category?.trim();
   // Фильтр группы: либо pathName МС, либо префикс имени (для вариантов без категории).
   const categoryCondition = cat
@@ -222,11 +234,12 @@ export async function searchCatalog(
     .where(and(
       inArray(products.msType, ["product", "variant"]),
       notBareParentSql(),
-      textCondition,
+      search.condition,
       categoryCondition
     ))
-    .orderBy(...[variationFirstOrder(tokens), asc(products.name)].filter((c): c is NonNullable<typeof c> => c != null))
-    .limit(limit);
+    .orderBy(...(search.condition ? [search.rank] : []), asc(products.name), asc(products.msId))
+    .limit(limit)
+    .offset(offset);
 
   return attachStock(rows, storeName);
 }
@@ -825,18 +838,23 @@ export async function browseCatalogPaged(query: CatalogBrowseQuery): Promise<Cat
   const hallGroup = query.subCategory?.trim() || "";
   const isSuitSection = hall === "suits";
   const wantSuits =
-    query.kind !== "items" && (isSuitSection || query.kind === "suits" || Boolean(query.q?.trim()));
+    query.kind !== "items" && (isSuitSection || (!hall && (query.kind === "suits" || Boolean(query.q?.trim()))));
   const emptyOverview = !hall && !query.q?.trim() && query.kind === "all";
+  const store = query.store?.trim() ?? "";
+  const warehouseName = query.warehouse?.trim() ||
+    (Object.hasOwn(STORE_TO_WAREHOUSE, store) ? STORE_TO_WAREHOUSE[store as keyof typeof STORE_TO_WAREHOUSE] : store);
 
   const suits: CatalogSuitModel[] = !wantSuits
     ? []
     : (
         await catalogSuitModels({
           q: query.q,
-          warehouse: query.warehouse || query.store,
+          warehouse: warehouseName || undefined,
         })
       ).models.filter((m) => {
-        if (query.suitFamily && suitFamilyOf(m) !== query.suitFamily) return false;
+          if (query.suitFamily && suitFamilyOf(m) !== query.suitFamily) return false;
+          if (query.variation && m.variation !== query.variation) return false;
+          if (query.size && !m.sizes.some(s => s.size === query.size)) return false;
           if (query.height && (m.height ?? "") !== query.height) return false;
           if (query.color && (m.color ?? "") !== query.color) return false;
           if (query.pattern && (m.pattern ?? "") !== query.pattern) return false;
@@ -881,14 +899,7 @@ export async function browseCatalogPaged(query: CatalogBrowseQuery): Promise<Cat
     };
   }
 
-  const tokens = (query.q ?? "")
-    .trim()
-    .split(/\s+/)
-    .map((t) => t.trim())
-    .filter(Boolean);
-  const textConditions = tokens
-    .map((token) => tokenMatchesField(token))
-    .filter((c): c is NonNullable<typeof c> => c != null);
+  const search = catalogTextQuery(query.q ?? "");
 
   const conditions = [sql`${products.msType} IN ('product', 'variant')`];
   conditions.push(sql`NOT ${suitPieceSql()}`);
@@ -897,7 +908,7 @@ export async function browseCatalogPaged(query: CatalogBrowseQuery): Promise<Cat
   if (hall) {
     conditions.push(hallSectionSql(hall, hallGroup || undefined));
   }
-  for (const c of textConditions) conditions.push(c);
+  if (search.condition) conditions.push(search.condition);
   if (query.color) conditions.push(sql`${products.color} = ${query.color}`);
   if (query.pattern) conditions.push(sql`${products.pattern} = ${query.pattern}`);
   if (query.size) conditions.push(sql`${products.size} = ${query.size}`);
@@ -907,7 +918,6 @@ export async function browseCatalogPaged(query: CatalogBrowseQuery): Promise<Cat
   if (query.priceMin != null) conditions.push(sql`${products.price} >= ${Math.round(query.priceMin * 100)}`);
   if (query.priceMax != null) conditions.push(sql`${products.price} <= ${Math.round(query.priceMax * 100)}`);
 
-  const warehouseName = (query.warehouse || query.store || "").trim();
   const totalsWarehouseFilter = warehouseName
     ? sql`WHERE ${stock.warehouseName} = ${warehouseName}`
     : sql``;
@@ -924,7 +934,6 @@ export async function browseCatalogPaged(query: CatalogBrowseQuery): Promise<Cat
   const pageSize = hall ? Math.max(query.pageSize, 1500) : query.pageSize;
   const offset = (query.page - 1) * pageSize;
   const whereSql = sql.join(conditions, sql` AND `);
-  const variationRank = variationFirstOrder(tokens) ?? sql`0`;
 
   // Остаток — отдельным LEFT JOIN на агрегат по stock, а не N запросов на клиенте.
   const result = await db.execute(sql`
@@ -936,7 +945,7 @@ export async function browseCatalogPaged(query: CatalogBrowseQuery): Promise<Cat
     ),
     base AS (
       SELECT ${products}.*, coalesce(totals.total_qty, 0) AS total_qty,
-             ${variationRank} AS variation_rank
+             ${search.rank} AS variation_rank
       FROM ${products}
       LEFT JOIN totals ON totals.product_ms_id = ${products.msId}
       WHERE ${whereSql}
@@ -944,7 +953,7 @@ export async function browseCatalogPaged(query: CatalogBrowseQuery): Promise<Cat
     SELECT *, count(*) OVER() AS full_count
     FROM base
     WHERE ${stockCondition}
-    ORDER BY variation_rank, category NULLS LAST, name
+    ORDER BY variation_rank, category NULLS LAST, name, ms_id
     LIMIT ${pageSize} OFFSET ${offset}
   `);
 

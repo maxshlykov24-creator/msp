@@ -24,7 +24,8 @@ export default async function catalogRoutes(app: FastifyInstance) {
       parsed.data.limit,
       parsed.data.store,
       parsed.data.category,
-      parsed.data.browse
+      parsed.data.browse,
+      parsed.data.offset
     );
   });
 

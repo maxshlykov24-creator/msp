@@ -2,6 +2,7 @@ export * from "./types.js";
 export * from "./constants.js";
 export * from "./taskFlow.js";
 export * from "./suitSets.js";
+export * from "./catalogSearch.js";
 export * from "./suitPrices.js";
 export * from "./hallCatalog.js";
 export * from "./schemas.js";

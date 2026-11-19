@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { CatalogPhoto } from "../components/CatalogPhoto";
 import {
   Boxes,
@@ -341,6 +341,7 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
   const [warehouseOptions, setWarehouseOptions] = useState<Array<{ id: string; name: string }>>([]);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const searchVersion = useRef(0);
   const [error, setError] = useState<string | null>(null);
   const [openSections, setOpenSections] = useState<Set<string>>(new Set());
   const [openBases, setOpenBases] = useState<Set<string>>(new Set());
@@ -376,6 +377,7 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
   }, []);
 
   async function fetchPage(pageNum: number, replace: boolean) {
+    const version = searchVersion.current;
     if (replace) {
       setLoading(true);
       setError(null);
@@ -401,6 +403,7 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
         page: pageNum,
         pageSize: section && section !== "suits" ? 2000 : PAGE_SIZE,
       });
+      if (version !== searchVersion.current) return;
       setProducts((prev) => (replace ? res.items : [...prev, ...res.items]));
       setItemsTotal(res.itemsTotal);
       setSuits(res.suits);
@@ -429,6 +432,7 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
         }
       }
     } catch (e) {
+      if (version !== searchVersion.current) return;
       setError(e instanceof Error ? e.message : "Не удалось загрузить каталог");
       if (replace) {
         setProducts([]);
@@ -438,8 +442,10 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
         setSectionCounts({});
       }
     } finally {
-      if (replace) setLoading(false);
-      else setLoadingMore(false);
+      if (version === searchVersion.current) {
+        if (replace) setLoading(false);
+        else setLoadingMore(false);
+      }
     }
   }
 
@@ -450,10 +456,15 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
       setSuits([]);
       return;
     }
+    setLoading(true);
+    setLoadingMore(false);
     const timer = window.setTimeout(() => {
       void fetchPage(1, true);
     }, 250);
-    return () => window.clearTimeout(timer);
+    return () => {
+      ++searchVersion.current;
+      window.clearTimeout(timer);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     q,
@@ -764,7 +775,7 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
             className="input pl-9"
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Вариация, артикул, цвет или штрихкод…"
+            placeholder="Часть вариации, артикул, цвет, размер или штрихкод…"
             autoComplete="off"
             aria-busy={loading}
           />
@@ -1270,7 +1281,7 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
             <button
               type="button"
               onClick={() => void fetchPage(page + 1, false)}
-              disabled={loadingMore}
+              disabled={loading || loadingMore}
               className="inline-flex items-center gap-2 rounded-lg border border-ink-700 bg-ink-900 px-3 py-1.5 text-[13px] text-mute-soft hover:border-gold/40 hover:text-white disabled:opacity-50"
             >
               {loadingMore && <span className="kassa-spin" aria-hidden />}

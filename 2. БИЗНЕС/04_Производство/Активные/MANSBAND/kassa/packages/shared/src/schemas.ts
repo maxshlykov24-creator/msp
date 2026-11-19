@@ -311,6 +311,7 @@ export const catalogSearchSchema = z.object({
     .optional()
     .transform((v) => v === true || v === "1" || v === "true"),
   limit: z.coerce.number().int().min(1).max(200).default(30),
+  offset: z.coerce.number().int().min(0).default(0),
 }).refine((value) => value.q.trim() || value.category?.trim() || value.browse, {
   message: "Укажите поисковый запрос, группу или browse=1",
 });

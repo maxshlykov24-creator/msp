@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   computeCompleteness,
+  catalogSearchTerms,
+  matchesCatalogTerms,
   countSuitsInLines,
   isHalfSetWarehouse,
   suitFamilyOf,
@@ -26,8 +28,43 @@ function line(part, size, qty, extra = {}) {
     line: "regular",
     warehouse: extra.warehouse ?? "На Новокузнецкой",
     qty,
+    ...extra,
   };
 }
+
+test("catalogue search finds inner code fragments and unordered attributes on the same garment", () => {
+  const lines = [
+    line("jacket", "48", 2, { variation: "M03/642MB3", color: "красный", barcode: "2940000123456" }),
+    line("trousers", "52", 1, { variation: "M03/642MB3", color: "красный" }),
+    line("jacket", "50", 3, { variation: "M03/642B3+", color: "черный" }),
+  ];
+  const models = q => computeCompleteness(lines, { q, tolerance: 0, keepZeroSizes: true }).models;
+  for (const q of ["красный 03/", "03/ КРАСНЫЙ", "48 красная 42МВ", "М03642МВ3", "2940000123456"]) {
+    assert.deepEqual(models(q).map(m => m.variation), ["M03/642MB3"], q);
+  }
+  assert.deepEqual(models("чёрный 642b3+").map(m => m.variation), ["M03/642B3+"]);
+  for (const q of ["03/ зелёный", "брюки 48", "жилет 03/", "%_", "42B3+ красный"]) {
+    assert.equal(models(q).length, 0, q);
+  }
+  assert.equal(models("брюки 52")[0].sizes.length, 2);
+  const withoutSlash = ["M03642MB3"];
+  assert.equal(matchesCatalogTerms(catalogSearchTerms("03/"), [], withoutSlash), false);
+  assert.equal(matchesCatalogTerms(catalogSearchTerms("1234"), [], ["A12", "34B"]), false);
+  assert.equal(matchesCatalogTerms(catalogSearchTerms("44"), ["Брюки"], ["444"]), true);
+});
+
+test("catalogue quantities follow the selected warehouse while known sizes remain searchable", () => {
+  const lines = [
+    line("jacket", "48", 2, { warehouse: "Центральный склад" }),
+    line("trousers", "48", 2, { warehouse: "Центральный склад" }),
+  ];
+  const options = { tolerance: 0, warehouse: "На Бауманской", q: "48 чёрный" };
+  assert.equal(computeCompleteness(lines, options).models.length, 0);
+  const [model] = computeCompleteness(lines, { ...options, keepZeroSizes: true }).models;
+  assert.equal(model.whole, 0);
+  assert.deepEqual(model.sizes.map(s => s.size), ["48"]);
+  assert.deepEqual(model.sizes[0].warehouses, []);
+});
 
 test("suit part and line are read from the product kind name", () => {
   assert.equal(suitPartOf("Пиджак однобортный (48/6, чёрный)"), "jacket");

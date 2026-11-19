@@ -1,4 +1,5 @@
-import { isHalfSetWarehouse, suitModelId, suitSizeNumber, suitTitle } from "./constants.js";
+import { isHalfSetWarehouse, SUIT_PART_LABEL, suitModelId, suitSizeNumber, suitTitle } from "./constants.js";
+import { catalogSearchTerms, matchesCatalogTerms, variationSearchRank, type CatalogSearchTerm } from "./catalogSearch.js";
 import type {
   SuitCompleteness,
   SuitLine,
@@ -41,6 +42,9 @@ export interface SuitStockLine {
   qty: number;
   /** Имя товара из МойСклада — нужно только для сопоставления с матрицей цен (поиск по каталогу). */
   name?: string;
+  article?: string | null;
+  code?: string | null;
+  barcode?: string | null;
   /** Группа МойСклада — часть строк прайса (сафари, лён, New, детские) распознаётся только по ней. */
   category?: string | null;
 }
@@ -143,7 +147,8 @@ export function buildSuitModel(
    * По умолчанию `false` — экран «Костюмы»/полупарки продолжают показывать
    * только размеры с реальным остатком, логика комплектности не меняется.
    */
-  keepZeroSizes = false
+  keepZeroSizes = false,
+  search: CatalogSearchTerm[] = []
 ): SuitModel | null {
   const jackets = lines.filter((l) => l.part === "jacket");
   // Модели без пиджака вообще — самостоятельные брюки из справочника составов,
@@ -159,6 +164,16 @@ export function buildSuitModel(
   // Цвет и узор — по пиджаку: внутри вариации части расходятся, и в такой
   // модели цифры считаем, но помечаем расхождение.
   const jacketSample = jackets[0] ?? sample;
+  const title = suitTitle({ hasVest, line: sample.line, color: jacketSample.color,
+    pattern: jacketSample.pattern, fit: jacketSample.fit });
+  if (search.length) {
+    const modelFields = [title, sample.height];
+    const remaining = search.filter(term => !matchesCatalogTerms([term], modelFields, [sample.variation]));
+    // Название изделия, размер и штрихкод должны относиться к одной позиции модели.
+    if (remaining.length && !lines.some(l => matchesCatalogTerms(remaining,
+      [l.name, l.category, SUIT_PART_LABEL[l.part], l.size, l.height, `${l.size}/${l.height}`, l.color, l.pattern, l.fit],
+      [l.variation, l.article, l.code, l.barcode]))) return null;
+  }
   const colors = new Set(lines.map((l) => (l.color ?? "").trim()).filter(Boolean));
   const patterns = new Set(lines.map((l) => (l.pattern ?? "").trim()).filter(Boolean));
 
@@ -251,13 +266,7 @@ export function buildSuitModel(
   return {
     modelId: suitModelKey(sample),
     variation: sample.variation,
-    title: suitTitle({
-      hasVest,
-      line: sample.line,
-      color: jacketSample.color,
-      pattern: jacketSample.pattern,
-      fit: jacketSample.fit,
-    }),
+    title,
     color: jacketSample.color,
     pattern: jacketSample.pattern,
     fit: jacketSample.fit || null,
@@ -345,6 +354,16 @@ export function computeCompleteness(
   // некомплектом руками, и смешивать его с вычисленным нельзя — изделие попало
   // бы в цифры дважды.
   const halfSets = lines.filter((l) => isHalfSetWarehouse(l.warehouse));
+  // В каталоге склад определяет остаток. Известные модификации без строки остатка
+  // на этом складе всё равно нужны для поиска, состава костюма и его размерного ряда.
+  if (options.keepZeroSizes) {
+    const known = new Set(scoped.map(l => l.msId));
+    for (const line of lines) {
+      if (known.has(line.msId)) continue;
+      scoped.push({ ...line, warehouse: "", qty: 0 });
+      known.add(line.msId);
+    }
+  }
 
   const grouped = new Map<string, SuitStockLine[]>();
   for (const line of scoped) {
@@ -357,35 +376,25 @@ export function computeCompleteness(
     halfSetsByModel.set(key, [...(halfSetsByModel.get(key) ?? []), line]);
   }
 
-  const needle = (options.q ?? "").trim().toLowerCase();
+  const search = catalogSearchTerms(options.q ?? "");
+  const ranks = new Map<string, number>();
   let models: SuitModel[] = [];
   for (const [key, group] of grouped) {
     const model = buildSuitModel(
       group,
       halfSetsByModel.get(key) ?? [],
       options.tolerance,
-      options.keepZeroSizes
+      options.keepZeroSizes,
+      search
     );
     if (!model) continue;
-    if (needle) {
-      const haystack = [
-        model.variation,
-        model.title,
-        model.color,
-        model.pattern,
-        model.fit,
-        model.height,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-      if (!haystack.includes(needle)) continue;
-    }
+    if (search.length) ranks.set(key, variationSearchRank(search, model.variation));
     models.push(model);
   }
 
   // Сверху то, что требует работы: больше всего некомплекта.
-  models.sort((a, b) => b.orphans - a.orphans || b.whole - a.whole);
+  models.sort((a, b) => (ranks.get(a.modelId) ?? 0) - (ranks.get(b.modelId) ?? 0) ||
+    b.orphans - a.orphans || b.whole - a.whole || (search.length ? a.modelId.localeCompare(b.modelId) : 0));
   const totals = {
     models: models.length,
     whole: models.reduce((s, m) => s + m.whole, 0),
