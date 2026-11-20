@@ -270,11 +270,19 @@ def review_used_for_other_sale(db, job, message_id):
     return db.scalar(proof.limit(1)) is not None
 
 
-def confirmed_copy(db, j):
+def confirmed_copy(db, j, c=None):
     """Proves the task is fulfilled, not which sender/attempt produced the copy."""
     from app.reservation_reminders import ReminderEvent, SUCCESS
     if not j.rendered.strip() or not j.plan: return None
     start = aware(j.source_at or j.due_at)
+    native = None
+    if j.rule_id == "legacy-review":
+        for attempt in db.scalars(select(Attempt).where(Attempt.job_id == j.id).order_by(Attempt.position.desc())):
+            trace = db.get(Operation, f"send-trace-{attempt.id}")
+            if trace and trace.result.get("bot_id") and attempt.state not in ("error", "skipped"):
+                native = (attempt, trace.result)
+                start = datetime.fromisoformat(trace.result["started_at"]) - timedelta(seconds=60)
+                break
     hashes = {body_hash(j.rendered)}
     # The old SalesBot review contained both stores. Accept only that exact
     # known text, and only when the current body is one of these two variants.
@@ -292,12 +300,20 @@ def confirmed_copy(db, j):
             if e.channel == route.get("channelId") and e.transport == route.get("transport") and keys & set(e.recipients):
                 if j.rule_id == "legacy-review" and review_used_for_other_sale(db, j, e.id):
                     break
+                if native:
+                    from app.review_conversations import native_echo_owner
+                    attempt, trace = native
+                    if (not c or e.transport != attempt.transport or e.body_hash != body_hash(j.rendered)
+                            or aware(e.received_at) < datetime.fromisoformat(trace["started_at"])
+                            or not native_echo_owner(c, j, e, trace)):
+                        continue
+                    attempt.message_id, attempt.state = e.id, "sent"
                 return e, "delivered" if states & {"delivered","read"} else "sent"
     return None
 
 
-def apply_confirmed_copy(db, j):
-    match = confirmed_copy(db, j)
+def apply_confirmed_copy(db, j, c=None):
+    match = confirmed_copy(db, j, c)
     if not match: return False
     e, state = match
     j.state, j.reason = state, "confirmed_outgoing_copy"
@@ -844,7 +860,7 @@ def synchronize(db,c,stamp):
         db.commit()
 
 
-def reconcile(db):
+def reconcile(db, c=None):
     from app.reservation_reminders import ReminderEvent, SUCCESS, REJECTED
     for a in db.scalars(select(Attempt).join(Job,Job.id==Attempt.job_id).where(Attempt.state.in_(["inflight","pending","unknown","sent"]),Job.state!="delivered")):
         j=db.get(Job,a.job_id)
@@ -853,6 +869,19 @@ def reconcile(db):
             if trace and trace.result.get("http_status")==201 and trace.result.get("provider_message_id"):
                 a.message_id=trace.result["provider_message_id"]
                 a.state,j.state,j.reason="pending","pending",""
+            elif trace and trace.result.get("bot_id") and c:
+                # Acceptance only proves queuing. Recover from interruption after the HTTP response.
+                if trace.result.get("http_status") == 202 and a.state == "inflight":
+                    a.state, j.state, j.reason = "pending", "pending", "awaiting_native_delivery"
+                from app.review_conversations import rejected_native_echo
+                try:
+                    rejected_mid = rejected_native_echo(db, c, j, a, trace.result)
+                except (httpx.HTTPError, ValueError):
+                    rejected_mid = None
+                if rejected_mid and j.state not in {"sent", "delivered", "cancelled", "expired"}:
+                    a.message_id, a.state, a.reason = rejected_mid, "error", "confirmed_delivery_error"
+                    j.state, j.reason = "ready", a.reason
+                    continue
             elif trace:
                 status,code=trace.result.get("http_status",0),trace.result.get("error_code","")
                 malformed=status==400 and code in VALIDATION_REJECTIONS
@@ -875,7 +904,10 @@ def reconcile(db):
                 j.state,j.reason=("ready","confirmed_delivery_error") if j.snapshot else ("failed","confirmed_delivery_error")
     db.commit()
     for j in db.scalars(select(Job).where(Job.state.in_(["uncertain", "pending", "inflight", "sent"]))):
-        apply_confirmed_copy(db, j)
+        try:
+            apply_confirmed_copy(db, j, c)
+        except (httpx.HTTPError, ValueError) as exc:
+            log.warning("Review proof check deferred for job=%s: %s", j.id, type(exc).__name__)
 
 
 def refresh_message_body(db, job, lead, rule, started):
@@ -942,7 +974,7 @@ def send(db,j,c,stamp):
         if not j.rendered.strip():
             raise ValueError("Пустой текст сообщения: требуется проверка шаблона")
         refresh_message_body(db, j, lead, r, started)
-        if apply_confirmed_copy(db, j): return
+        if apply_confirmed_copy(db, j, c): return
         channels={x["channelId"]:x for x in c.wz.get("/channels").json()}
         for pos,route in enumerate(j.plan):
             prior=db.scalar(select(Attempt).where(Attempt.job_id==j.id,Attempt.position==pos))
@@ -956,6 +988,8 @@ def send(db,j,c,stamp):
             channel=channels.get(route["channelId"],{})
             available=bool(route["recipient"]) and channel.get("state")=="active"
             if channel.get("transport") != ("tgapi" if route["transport"]=="telegram" else route["transport"]):available=False
+            native_config = db.get(Operation, "review-native-routing-v1") if j.rule_id == "legacy-review" else None
+            bot_id, native_skip = None, ""
             if available:
                 fresh=c.get(f"/api/v4/leads/{j.lead_id}", **{"with":"contacts"})
                 if migration_blocked(fresh): return
@@ -976,15 +1010,35 @@ def send(db,j,c,stamp):
                 if current.astimezone(MSK).date()!=local.date() or not r.window_start<=current.astimezone(MSK).hour<r.window_end:raise ValueError("Окно отправки закрыто")
                 limit={"telegram":4096,"max":4096,"whatsapp":10000,"instagram":1000,"avito":1000,"vk":1000}[route["transport"]]
                 if len(j.rendered)>limit:raise ValueError("Текст превышает лимит канала "+route["transport"])
-            if apply_confirmed_copy(db, j): return
+                if native_config:
+                    from app.review_conversations import native_route, prepare_native_text
+                    bot_id, native_skip = native_route(c, fresh, route, native_config.result)
+                    available = bool(bot_id)
+                    if available:
+                        prepare_native_text(c, fresh, native_config.result["field"], j.rendered, r)
+            if apply_confirmed_copy(db, j, c): return
             a=prior or Attempt(job_id=j.id,position=pos,transport=route["transport"],crm_id=f"rule-{j.id}-{pos}-{uuid.uuid4().hex}")
             a.state="inflight" if available else "skipped"
-            if not available:a.reason="no_recipient" if not route["recipient"] else "inactive_channel"
+            if not available:a.reason=native_skip or ("no_recipient" if not route["recipient"] else "inactive_channel")
             db.add(a);j.state="inflight" if available else "ready";db.commit()
             if not available:continue
             attempt_trace(db, a, started_at=now().isoformat(), job_id=j.id,
                           body_hash=body_hash(j.rendered), crm_message_id=a.crm_id)
             try:
+                if bot_id:
+                    from app.reservation_reminders import primary_contact
+                    attempt_trace(db, a, bot_id=bot_id, contact_id=primary_contact(fresh), lead_id=j.lead_id)
+                    resp = c.amo.post(f"/api/v4/bots/{bot_id}/run",
+                                      json={"entity_type": "leads", "entity_id": j.lead_id})
+                    attempt_trace(db, a, http_status=resp.status_code, response_at=now().isoformat())
+                    if resp.status_code == 202:
+                        a.state, j.state, j.reason = "pending", "pending", "awaiting_native_delivery"
+                    elif resp.status_code in (400, 401, 403, 404):
+                        a.state, j.state, j.reason = "error", "failed", f"native_bot_http_{resp.status_code}"
+                    else:
+                        a.state, j.state, j.reason = "unknown", "uncertain", "native_bot_result_unknown"
+                    db.commit()
+                    return
                 resp=c.wz.post("/message",json={"channelId":route["channelId"],"chatType":route["transport"],**route["recipient"],"text":j.rendered,"clearUnanswered":False,"crmMessageId":a.crm_id})
                 try:result=resp.json()
                 except ValueError:result={}
@@ -1039,7 +1093,7 @@ def tick():
         if not conn.execute(text("SELECT pg_try_advisory_lock(:key)"),{"key":LOCK}).scalar():return
         c=None
         try:
-            c=Clients(db,ReminderSettings());reconcile(db)
+            c=Clients(db,ReminderSettings());reconcile(db,c)
             if last_event_scan is None or (now()-last_event_scan).total_seconds()>=30:
                 last_event_scan=now()
                 try:recover_stage_events(db,c,now())

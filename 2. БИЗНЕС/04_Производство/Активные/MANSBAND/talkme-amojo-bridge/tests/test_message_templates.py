@@ -779,7 +779,6 @@ def test_vk_dispatch_without_phone_and_callback(db,transport,monkeypatch):
     m.send(db,j,transport,STAMP)
     assert j.state=='delivered' and len(transport.posts)==1
 
-# FRIDAY native amoCRM webhook: retries, expiry and one confirmed channel.
 @pytest.mark.parametrize("scenario,expected", [
     ("old", "closed"), ("fresh", "within_48h"), ("recent_activity", "recent_activity"),
     ("unread", "unread_or_in_progress"), ("closed", "closed"),
@@ -837,6 +836,7 @@ def test_review_talk_closes_only_after_verified_quiet_period(db, transport, monk
         assert len(calls) == 1 and db.get(m.Operation, reviews.PREFIX+str(j.id)).state == "done"
 
 
+# FRIDAY native amoCRM webhook: retries, expiry and one confirmed channel.
 def friday_doc(db):
     data=rule(name='FRIDAY',statuses=[],trigger={'type':'webhook','repeat':'once'},
         content=m.FRIDAY_TEXT,window_start=0,window_end=24,late_policy='same_day').model_dump()
@@ -1013,3 +1013,66 @@ def test_changed_body_after_attempt_cannot_fall_through_to_next_channel(db, tran
     transport.document["custom_fields_values"].append({"field_id": 3133923, "values": [{"value": "NEW"}]})
     m.send(db, j, transport, STAMP)
     assert j.state == "blocked" and not transport.posts and j.rendered == "OLD"
+
+
+@pytest.mark.parametrize("case", ["first", "closed", "multiple_phones", "multiple_chats", "other_sale",
+                                 "lost", "foreign_echo", "provider_error", "bad_bot"])
+def test_review_runs_once_in_sale_and_requires_bound_provider_proof(db, transport, monkeypatch, case):
+    from app.review_conversations import ROUTING
+    d = doc(db)
+    d.id = "legacy-review"
+    db.commit()
+    j = job(db, d)
+    routing = {"field": 900, "channels": {"telegram": {"source": 11, "channel": "tg", "bot": 29}}}
+    db.add(m.Operation(id=ROUTING, digest="example", state="active", result=routing))
+    db.commit()
+    transport.document["_embedded"] = {"contacts": [{"id": 80, "is_main": True}]}
+    get_original = transport.get
+    talk = {"contact_id": 80, "entity_id": 17, "entity_type": "lead", "source_id": 11,
+            "status": "closed", "chat_id": "a"}
+    def get(path, **kwargs):
+        if path.endswith("/contacts/80"):
+            phones = [{"value": "79990000001"}]
+            if case == "multiple_phones":
+                phones.append({"value": "79990000002"})
+            return {"id": 80, "custom_fields_values": [{"field_code": "PHONE", "values": phones}]}
+        if path.endswith("/talks"):
+            talks = {"multiple_chats": [talk, {**talk, "chat_id": "b"}], "closed": [talk],
+                     "other_sale": [{**talk, "status": "in_work", "entity_id": 18}]}.get(case, [])
+            return {"_embedded": {"talks": talks}}
+        if path.endswith("/events"):
+            owner = 18 if case == "foreign_echo" else 17
+            return {"_embedded": {"events": [{"type": "outgoing_chat_message", "entity_type": "lead",
+                "entity_id": owner, "value_after": [{"message": {"origin": "com.wazzup24-1", "talk_id": 22}}]}]}}
+        return get_original(path, **kwargs)
+    def patch(path, *, json):
+        assert path == "/api/v4/leads/17"
+        field, = json["custom_fields_values"]
+        assert field == {"field_id": 900, "values": [{"value": "Здравствуйте 17"}]}
+        transport.document["custom_fields_values"].append(field)
+        return httpx.Response(200, request=httpx.Request("PATCH", "https://example.test"))
+    launches = []
+    def post(path, *, json):
+        assert (path, json) == ("/api/v4/bots/29/run", {"entity_type": "leads", "entity_id": 17})
+        launches.append(path)
+        if case == "lost":
+            raise httpx.ReadTimeout("lost reply")
+        return httpx.Response(404 if case == "bad_bot" else 202)
+    monkeypatch.setattr(transport, "get", get)
+    monkeypatch.setattr(transport, "amo", SimpleNamespace(post=post, patch=patch), raising=False)
+    m.send(db, j, transport, STAMP)
+    m.send(db, j, transport, STAMP)
+    assert not transport.posts
+    if case in {"multiple_chats", "multiple_phones", "other_sale"}:
+        assert not launches and j.state == "failed"
+        return
+    assert len(launches) == 1
+    if case == "bad_bot":
+        assert j.state == "failed"
+        return
+    assert j.state == ("uncertain" if case == "lost" else "pending")
+    m.record_outbound(db, {"messages": [echo(status="error" if case == "provider_error" else "delivered")]})
+    m.reconcile(db, transport)
+    assert j.state == {"provider_error": "ready", "foreign_echo": "pending"}.get(case, "delivered")
+    m.send(db, j, transport, STAMP)
+    assert len(launches) == 1

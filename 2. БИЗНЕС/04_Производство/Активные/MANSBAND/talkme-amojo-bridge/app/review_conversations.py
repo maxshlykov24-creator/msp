@@ -1,6 +1,8 @@
 """Close the verified amoCRM conversation two days after a managed sale review."""
 from datetime import datetime, timedelta
 
+import re
+
 import httpx
 from sqlalchemy import String, cast, or_, select
 
@@ -11,6 +13,92 @@ from app.stage_notifications import ORIGINS
 
 QUIET = timedelta(hours=48)
 PREFIX = "review-talk-close-"
+
+
+ROUTING = "review-native-routing-v1"
+
+
+def native_route(c, lead, route, config):
+    """Salesbot sends to all identities of its selected source on the main contact."""
+    transport = route["transport"]
+    choice = config["channels"].get(transport)
+    if not choice or choice["channel"] != route["channelId"]:
+        return None, "native_channel_unmapped"
+    cid = primary_contact(lead)
+    if not cid:
+        raise ValueError("Для запроса отзыва нужен один основной контакт")
+    contact = c.get(f"/api/v4/contacts/{cid}")
+    phones = set()
+    for field in contact.get("custom_fields_values") or []:
+        if field.get("field_code") == "PHONE":
+            for value in field.get("values") or []:
+                phone = re.sub(r"\D", "", str(value.get("value") or ""))
+                if phone:
+                    phones.add("7" + phone[1:] if len(phone) == 11 and phone.startswith("8") else phone)
+    if transport in ("whatsapp", "telegram", "max") and len(phones) > 1:
+        return None, "multiple_contact_phones"
+    talks = templates.all_pages(c, "/api/v4/talks", "talks", **{"filter[contact_id]": cid})
+    history = [t for t in talks if t.get("contact_id") == cid and t.get("source_id") == choice["source"]]
+    if any(not t.get("chat_id") for t in history) or len({t["chat_id"] for t in history}) > 1:
+        return None, "multiple_messenger_chats"
+    if any(t.get("status") == "in_work" and (t.get("entity_type"), t.get("entity_id")) !=
+           ("lead", lead["id"]) for t in history):
+        return None, "active_conversation_in_other_sale"
+    return choice["bot"], ""
+
+
+def prepare_native_text(c, lead, field_id, body, rule):
+    path = f"/api/v4/leads/{lead['id']}"
+    if [v.get("value") for v in templates.entries(lead, field_id)] != [body]:
+        update = c.amo.patch(path, json={"custom_fields_values": [
+            {"field_id": field_id, "values": [{"value": body}]}]})
+        update.raise_for_status()
+    fresh = c.get(path, **{"with": "contacts"})
+    if (migration_blocked(fresh) or primary_contact(fresh) != primary_contact(lead)
+            or not templates.matches(fresh, rule) or templates.render(fresh, rule) != body
+            or [v.get("value") for v in templates.entries(fresh, field_id)] != [body]):
+        raise ValueError("Перед запуском Salesbot изменились сделка, контакт или текст")
+
+
+def native_echo_owner(c, job, echo, trace):
+    start = int(datetime.fromisoformat(trace["started_at"]).timestamp())
+    at = int(templates.aware(echo.at).timestamp())
+    width = 62 if echo.transport == "whatsapp" else 5
+    floor, ceiling = max(start - 2, at - 3), at + width
+    if floor > ceiling:
+        return False
+    events = templates.all_pages(c, "/api/v4/events", "events", **{
+        "filter[entity]": "contact", "filter[entity_id]": trace["contact_id"],
+        "filter[type]": "outgoing_chat_message", "filter[created_at][from]": floor,
+        "filter[created_at][to]": ceiling,
+    })
+    owners = {ev["entity_id"] for ev in events if ev.get("type") == "outgoing_chat_message"
+              and ev.get("entity_type") == "lead" for v in ev.get("value_after") or []
+              if ORIGINS.get((v.get("message") or {}).get("origin")) == echo.transport}
+    return owners == {job.lead_id}
+
+
+def rejected_native_echo(db, c, job, attempt, trace):
+    """Only a bound, explicitly rejected provider message may release the next route."""
+    from app.reservation_reminders import ReminderEvent
+    start = datetime.fromisoformat(trace["started_at"])
+    route = job.plan[attempt.position]
+    keys = {templates.recipient_hash(k, v) for k, v in (route.get("recipient") or {}).items()}
+    evidence = templates.OutboundEvidence
+    failure = select(ReminderEvent.key).where(ReminderEvent.message_id == evidence.id,
+                                               ReminderEvent.status == "error").exists()
+    candidates = select(evidence).where(evidence.channel == route["channelId"],
+        evidence.transport == attempt.transport, evidence.body_hash == templates.body_hash(job.rendered),
+        evidence.at >= start - timedelta(seconds=60), evidence.received_at >= start,
+        evidence.status != "changed", (evidence.status == "error") | failure)
+    matches = [item for item in db.scalars(candidates) if keys.intersection(item.recipients)]
+    if len(matches) != 1:
+        return None
+    item = matches[0]
+    states = {item.status, *db.scalars(select(ReminderEvent.status).where(ReminderEvent.message_id == item.id))}
+    if states & SUCCESS or templates.review_used_for_other_sale(db, job, item.id):
+        return None
+    return item.id if native_echo_owner(c, job, item, trace) else None
 
 
 def review_anchor(db, job):
@@ -32,7 +120,7 @@ def review_anchor(db, job):
             continue
         trace = db.get(templates.Operation, f"send-trace-{attempt.id}") if attempt else None
         started = trace.result.get("started_at") if trace else None
-        if started:
+        if started and not trace.result.get("bot_id"):
             at = datetime.fromisoformat(started)
             anchors.append((int(at.timestamp()), attempt.transport, 5))
         elif echo:
