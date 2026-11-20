@@ -36,9 +36,17 @@
   function start(){scrub();new MutationObserver(scrub).observe(document.body,{childList:true,subtree:true,characterData:true});}
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start);else start();
 })();
-</script><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="theme-color" content="#fff7f7"><title>Бренд 4 · Бренд одежды</title>  <script defer src="/brands/previews/cutting/assets/index-oPYB-8z3.js"></script>
+</script><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="theme-color" content="#fff7f7"><title>Каталог и крой · Демо MS Product</title>  <script defer src="/brands/previews/cutting/assets/index-oPYB-8z3.js"></script>
   <link rel="stylesheet"  href="/brands/previews/cutting/assets/style-KQ-SMIe5.css">
 <style>
+.preview-bar {display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 16px;background:#502c40;color:white;font:14px/1.35 system-ui}
+.preview-bar a {display:inline-flex;align-items:center;min-height:44px;color:inherit;text-decoration:underline;text-underline-offset:3px}
+.preview-bar span {font-size:12px;text-align:right}
+.preview-bar a:focus-visible,.preview-feedback button:focus-visible {outline:2px solid currentColor;outline-offset:2px}
+.preview-feedback {padding:24px 16px;color:#38232b;background:#fff8f5;font:16px/1.5 system-ui}
+.preview-feedback p {margin:0}
+.preview-feedback button {margin-top:12px;text-decoration:underline;font:inherit;color:inherit;cursor:pointer}
+header[hidden],.preview-feedback[hidden] {display:none}
 @media(max-width:720px){
 .shell .sidebar,.shell.rail-compact .sidebar{position:sticky;inset:0 0 auto}
 }
@@ -46,19 +54,39 @@
 <script>
 document.addEventListener('DOMContentLoaded', () => {
   const root = document.getElementById('root');
+  const feedback = document.querySelector('.preview-feedback');
+  const retry = feedback.querySelector('button');
   const observer = new MutationObserver(openTasks);
+  const timer = setTimeout(() => {
+    feedback.querySelector('p').textContent = 'Не удалось открыть задания на крой.';
+    retry.hidden = false;
+  }, 15000);
   function openTasks() {
+    if (root.querySelector('.cutting .cut-register')) {
+      clearTimeout(timer);
+      observer.disconnect();
+      feedback.hidden = true;
+      return;
+    }
     const tasks = root.querySelector('nav button[aria-label="Крой"]');
-    if (tasks && root.querySelector('.model-trigger')) { observer.disconnect(); tasks.click(); }
+    if (tasks && !tasks.hasAttribute('aria-current') && root.querySelector('.model-trigger')) tasks.click();
   }
+  retry.addEventListener('click', () => location.reload());
   observer.observe(root, {childList:true, subtree:true});
   openTasks();
 });
-</script></head><body><a href="./#software" id="return-site" style="display:block;padding:12px 16px;background:#502c40;color:white;font:14px system-ui">← Вернуться к программам</a><script>
+</script></head><body>
+<header class="preview-bar"><a href="./#preview-cutting" id="return-site">← К программам</a><span>Демонстрационные данные</span></header>
+<script>
+const bar = document.querySelector('.preview-bar');
+if (window.self !== window.top) bar.hidden = true;
 document.getElementById('return-site').addEventListener('click', event => {
-  if (document.referrer && new URL(document.referrer).pathname.startsWith('/redesign/')) {
-    event.preventDefault(); history.back();
+  const previous = document.referrer && new URL(document.referrer);
+  if (previous && previous.origin === location.origin && /^\/redesign\/(index\.html)?$/.test(previous.pathname) && history.length > 1) {
+    event.preventDefault();
+    history.back();
   }
 });
-if (window.self !== window.top) document.getElementById('return-site').style.display = 'none';
-</script><div id="root"></div></body></html>
+</script>
+<div class="preview-feedback"><p role="status">Открываем задания на крой…</p><button type="button" hidden>Повторить загрузку</button></div>
+<div id="root"></div></body></html>

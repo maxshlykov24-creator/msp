@@ -46,9 +46,7 @@ p,dd {color: var(--muted)}
 .section {padding-block: clamp(72px,7.4vw,124px)}
 .skip {position: fixed; top: -90px; left: 15px; z-index: 20; padding: 12px 18px; background: var(--surface)}
 .skip:focus {top: 12px}
-.eyebrow,.section-label,.delivery article>span {font: 560 11px/1.4 Inter,Arial,sans-serif; letter-spacing: .105em; text-transform: uppercase}
-.section-label {display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: clamp(23px,3vw,45px); color: var(--wine)}
-.section-label>span:last-child {color: var(--muted); text-transform: none; letter-spacing: 0; font-size: 13px; text-align: right; font-weight: 450}
+.eyebrow,.delivery article>span {font: 560 11px/1.4 Inter,Arial,sans-serif; letter-spacing: .105em; text-transform: uppercase}
 .section-intro {display: flex; align-items: end; justify-content: space-between; gap: 48px; margin-bottom: clamp(27px,3.4vw,56px)}
 .section-intro>p {max-width: 34ch; padding-bottom: .22em; font-size: clamp(16px,1.23vw,19px)}
 .button,.quiet-link,.header-contact {display: inline-flex; align-items: center; gap: 12px; min-height: 44px; font-weight: 550}
@@ -114,60 +112,50 @@ p,dd {color: var(--muted)}
 .project-slide {display: grid; grid-template-columns: 1.05fr 1fr; align-items: stretch; border: 1px solid var(--line); background: var(--surface)}
 .project-visual {position: relative; min-height: clamp(410px,39vw,640px); overflow: hidden; isolation: isolate; background: #9b6476}
 .editorial-photo>img,.production-visual>img {position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover}
-.photo-legend {position: absolute; inset: auto 0 0; display: flex; justify-content: space-between; align-items: end; gap: 10px; padding: 54px 24px 18px; background: linear-gradient(transparent,#2e1021c9); color: #fff6ef; font-size: 13px}
-.photo-legend em {font-size: clamp(21px,1.9vw,31px); line-height: 1.1}
 .analytics-visual,.loyalty-visual {display: grid; place-items: center}
 .analytics-visual {background: radial-gradient(ellipse at top left,#d8b7bc,#765366)}
 .report-image {width: 86%; transform: perspective(1100px) rotateY(-9deg) rotateZ(-4deg); border-radius: 6px; overflow: hidden; box-shadow: 12px 24px 40px #371d3e44}
 .report-image img {width: 100%; height: auto}
 .loyalty-visual {background: linear-gradient(140deg,#c0919f,#69374f)}
-.loyalty-object {width: min(72%,380px); aspect-ratio: 1.54; position: relative; display: flex; flex-direction: column; justify-content: space-between; padding: clamp(16px,2.1vw,36px); color: #62354a; background: linear-gradient(130deg,#fff0df,#debbc1); box-shadow: 6px 19px 32px #3b1e4044; transform: rotate(-9deg); border-radius: 12px}
-.loyalty-object>span,.loyalty-object small {font-size: 9px; letter-spacing: .12em}
+.loyalty-object {width: min(72%,380px); aspect-ratio: 1.54; position: relative; display: flex; flex-direction: column; justify-content: center; padding: clamp(16px,2.1vw,36px); color: #62354a; background: linear-gradient(130deg,#fff0df,#debbc1); box-shadow: 6px 19px 32px #3b1e4044; transform: rotate(-9deg); border-radius: 12px}
 .loyalty-object strong {font-weight: 500; font-size: clamp(30px,3vw,48px); letter-spacing: -.04em; line-height: .95; margin-block: 12px}
 .loyalty-symbol {position: absolute; top: 22%; right: 10%; font-size: clamp(38px,5vw,72px)}
 .project-copy {display: flex; flex-direction: column; align-items: flex-start; align-self: center; padding: clamp(25px,3.45vw,64px)}
-.project-copy .eyebrow,.about-copy .eyebrow {color: var(--wine)}
-.project-copy h3 {font-size: clamp(29px,3vw,47px); margin: 18px 0 28px}
+.project-copy h3 {font-size: clamp(29px,3vw,47px); margin-bottom: 24px}
 .project-copy dt {font-weight: 650; color: var(--ink); font-size: 14px; margin-bottom: 3px}
-.project-copy dd,.route-note,.case-result {font-size: clamp(15px,1.12vw,18px); line-height: 1.54}
+.project-copy dd,.project-copy>p,.case-detail p {font-size: clamp(15px,1.12vw,18px); line-height: 1.54}
 .project-copy dd+dt {margin-top: 15px}
-.order-route {display: flex; flex-wrap: wrap; gap: 6px; color: var(--wine); margin-top: 23px; font-size: 14px; font-weight: 600}
-.order-route i {font-style: normal; font-weight: 400}
-.route-note,.case-result {margin-top: 8px}
+.order-route {display: flex; flex-wrap: wrap; gap: 8px; margin: 22px 0 0; padding: 0; list-style: none; color: var(--wine); font-size: 14px; font-weight: 600}
+.order-route li+li {display: flex; align-items: center; gap: 8px}
+.order-route li+li::before {content: ''; width: 5px; height: 5px; border: solid currentColor; border-width: 1px 1px 0 0; transform: rotate(45deg)}
+.project-copy>.quiet-link {margin-top: 16px}
 .case-detail {width: 100%; margin-top: 18px; border-block: 1px solid var(--line)}
 .case-detail summary {padding: 13px 1px; font-size: 15px; font-weight: 550; color: var(--wine)}
-.case-detail dl {padding-bottom: 16px}
-.case-result+.quiet-link {margin-top: 12px}
+.case-detail dl,.case-detail p {padding-bottom: 16px}
 .project-navigation {display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 14px}
 .project-navigation p {font-size: 13px; font-variant-numeric: tabular-nums}
 .project-navigation>div {display: flex; gap: 8px}
 .circle-button {border-color: var(--line); font-size: 22px}
 
 .software {--ink: #fbf1ec; --muted: #d6c3cb; --wine: #f8c6d7; --line: #725764; --panel: #38262f; background: radial-gradient(ellipse at 93% 12%,#523447,transparent 55%),#291c24; color: var(--ink); color-scheme: dark}
-.software .section-intro {align-items: end}
 .lab-select {display: none}
 .lab {display: grid; grid-template-columns: minmax(205px,.72fr) minmax(0,1.65fr); column-gap: clamp(28px,4vw,76px)}
 .lab-choice {grid-row: var(--row); grid-column: 1; position: relative; border-top: 1px solid var(--line); text-align: left; padding: 15px 27px 15px 8px; color: var(--muted)}
-.lab-choice strong,.lab-choice span {display: block}
+.lab-choice strong {display: block}
 .lab-choice strong {font-size: clamp(17px,1.45vw,23px); line-height: 1.22; letter-spacing: -.025em; font-weight: 500}
-.lab-choice span {font-size: 14px; margin-top: 5px}
-.lab-choice::after {content: '+'; position: absolute; top: 50%; right: 6px; transform: translateY(-50%); font-size: 20px}
+.lab-choice[aria-expanded=true]::after {content: '→'; color: var(--wine); position: absolute; top: 50%; right: 6px; transform: translateY(-50%); font-size: 20px}
 .lab-choice[aria-expanded=true] {color: var(--ink); border-color: var(--wine)}
-.lab-choice[aria-expanded=true]::after {content: '→'; color: var(--wine)}
 .lab-screen {grid-column: 2; grid-row: 1/6; align-self: start; min-width: 0}
 .preview-action {width: 100%; display: block; padding: 0; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: #1e141a}
 .preview-action img {width: 100%; height: auto}
 .preview-action>span {display: flex; align-items: center; justify-content: space-between; padding: 13px 18px; font-size: 15px; font-weight: 550; background: #f0dfd8; color: #432636}
 .preview-action i {font-size: 20px; font-style: normal; line-height: 1}
 .lab-hint {margin-top: 16px; max-width: 70ch; font-size: 15px}
-.lab-hint strong {color: var(--ink); margin-right: .6em; font-weight: 600}
 .economy-grid,.about {display: grid; grid-template-columns: 1fr 1fr; gap: clamp(32px,7vw,120px)}
 .large-copy {font-size: clamp(19px,1.65vw,26px); line-height: 1.42; color: var(--ink)}
 .economy .large-copy {margin-top: 22px; max-width: 32ch}
-.economy-details>div {display: grid; grid-template-columns: 25px 1fr; gap: 3px 14px; padding: 16px 0; border-top: 1px solid var(--line)}
-.economy-details>div span {color: var(--wine); font-size: 12px; padding-top: 6px}
-.economy-details>div strong {font-size: clamp(20px,1.65vw,27px); font-weight: 500; letter-spacing: -.035em}
-.economy-details>div p {grid-column: 2}
+.economy-details>div {display: grid; gap: 4px; padding: 16px 0; border-top: 1px solid var(--line)}
+.economy-details>div h3 {font-size: clamp(20px,1.65vw,27px); font-weight: 500; letter-spacing: -.035em}
 .telephony {margin-top: 15px; padding: 18px 22px; background: var(--panel); border-left: 2px solid var(--wine)}
 .telephony h3 {font-size: 22px; margin-bottom: 8px}
 .fine {font-size: 13px; margin-top: 12px}
@@ -175,8 +163,8 @@ p,dd {color: var(--muted)}
 .about-backdrop {inset: 0 calc((100% - 100vw)/2); mask-image: linear-gradient(transparent,#000 17%,#000 78%,transparent)}
 .portrait-frame {width: min(100%,480px); justify-self: center}
 .portrait-frame img {width: 100%; height: auto; border-radius: 48% 48% 2px 2px}
-.portrait-frame>div {display: flex; justify-content: space-between; gap: 14px; padding-top: 10px; font-size: 12px; color: var(--muted)}
-.about-copy h2 {margin-block: 19px 24px}
+.portrait-frame figcaption {display: flex; justify-content: space-between; gap: 14px; padding-top: 10px; font-size: 12px; color: var(--muted)}
+.about-copy h2 {margin-bottom: 24px}
 .about-copy>p:not(.large-copy) {max-width: 44ch; margin-top: 12px}
 .about-copy>a {margin-top: 17px}
 .delivery {padding-block: clamp(36px,4vw,64px) clamp(64px,7vw,110px)}
@@ -189,6 +177,7 @@ p,dd {color: var(--muted)}
 .contact-layout {display: grid; grid-template-columns: 1.15fr 1fr; align-items: center; gap: clamp(30px,7vw,120px)}
 .contact h2 {font-size: clamp(50px,5.8vw,92px)}
 .light-button {background: #f7e8e2; color: #472438; margin-top: 27px}
+.contact-intro {margin-top: 18px; font-size: clamp(16px,1.2vw,20px); max-width: 36ch}
 .contact-email {display: block; width: fit-content; color: var(--muted); margin-top: 18px}
 .gift {border-left: 1px solid var(--line); padding-left: clamp(28px,4vw,68px)}
 .gift-number {font-size: clamp(60px,5.8vw,100px); line-height: .94; letter-spacing: -.05em}
@@ -296,10 +285,8 @@ body.modal-open {overflow: hidden}
   .specimen-caption {width: min(100%,365px); margin-top: 5px}
   .specimen-caption p {min-height: 2.9em; margin-top: 8px}
   .hero-index {margin-top: 17px; font-size: 12px}
-  .hero-index>span {max-width: 55%; text-align: right}
+  .hero-index>span {max-width: 60%; text-align: right}
   .section {padding-block: 64px}
-  .section-label {margin-bottom: 20px}
-  .section-label>span:last-child {font-size: 12px}
   .section-intro {display: block; margin-bottom: 24px}
   .section-intro>p {margin-top: 15px; max-width: 42ch}
   h2 {font-size: clamp(39px,8.5vw,53px)}
@@ -308,13 +295,11 @@ body.modal-open {overflow: hidden}
   .project-picker button[aria-pressed=true] {color: var(--surface); background: var(--wine); border-color: var(--wine)}
   .project-slide {grid-template-columns: 1fr}
   .project-visual {min-height: 0; aspect-ratio: 1.42}
-  .photo-legend {padding: 42px 17px 13px}
   .project-copy {padding: 23px 19px}
-  .project-copy h3 {margin: 13px 0 20px}
+  .project-copy h3 {margin-bottom: 18px}
   .project-navigation {margin-top: 9px}
   .lab {display: block}
   .lab-choice {width: 100%; padding: 13px 32px 13px 3px}
-  .lab-choice span {margin-top: 3px}
   .lab-select:not([hidden]) {display: grid; gap: 7px; margin-bottom: 15px}
   .lab-select span {font-size: 13px; color: var(--muted)}
   .lab-select select {width: 100%; min-height: 50px; padding: 8px 38px 8px 14px; border: 1px solid var(--line); border-radius: 4px; background-color: var(--panel); color: var(--ink); font: 500 17px Inter,Arial,sans-serif}
