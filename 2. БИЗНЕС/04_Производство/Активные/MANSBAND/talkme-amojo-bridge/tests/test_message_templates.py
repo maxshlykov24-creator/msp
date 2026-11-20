@@ -780,6 +780,63 @@ def test_vk_dispatch_without_phone_and_callback(db,transport,monkeypatch):
     assert j.state=='delivered' and len(transport.posts)==1
 
 # FRIDAY native amoCRM webhook: retries, expiry and one confirmed channel.
+@pytest.mark.parametrize("scenario,expected", [
+    ("old", "closed"), ("fresh", "within_48h"), ("recent_activity", "recent_activity"),
+    ("unread", "unread_or_in_progress"), ("closed", "closed"),
+    ("wrong_owner", "other_sale"), ("ambiguous", "no_unique_conversation"),
+    ("moved", "conversation_binding_changed"), ("open_sale", "sale_not_closed_or_contact_changed"),
+])
+def test_review_talk_closes_only_after_verified_quiet_period(db, transport, monkeypatch, scenario, expected):
+    from app import review_conversations as reviews
+    d = doc(db, rule(content="Просим оставить отзыв"))
+    d.id = "legacy-review"
+    db.commit()
+    j = job(db, d)
+    j.rendered, j.state = "Просим оставить отзыв", "delivered"
+    age = timedelta(hours=47 if scenario == "fresh" else 49)
+    sent = STAMP - age
+    j.due_at = sent
+    db.add(m.Attempt(job_id=j.id, position=0, transport="telegram", state="sent",
+                     message_id="echo-1", crm_id="close-test"))
+    db.commit()
+    m.record_outbound(db, {"messages":[echo(text=j.rendered, dateTime=sent.isoformat())]})
+    ts = int(sent.timestamp())
+    talk = {"talk_id":801, "entity_type":"lead", "entity_id":17, "contact_id":702,
+            "status":"in_work", "is_read":True, "updated_at":ts}
+    if scenario == "unread": talk["is_read"] = False
+    if scenario == "closed": talk["status"] = "closed"
+    if scenario == "moved": talk["entity_id"] = 19
+    if scenario == "recent_activity": talk["updated_at"] = int(STAMP.timestamp()) - 3600
+    event = {"type":"outgoing_chat_message", "entity_type":"lead", "entity_id":17,
+             "value_after":[{"message":{"talk_id":801,"origin":"com.wazzup24-1"}}]}
+    if scenario == "wrong_owner": event["entity_id"] = 18
+    def get(path, **params):
+        if path.endswith("/events"):
+            events=[event]
+            if scenario == "ambiguous":
+                events.append({**event, "value_after":[{"message":{"talk_id":802,"origin":"com.wazzup24-1"}}]})
+            return {"_embedded":{"events":events}}
+        if path.endswith("/talks/801"): return talk.copy()
+        assert path in ("/api/v4/leads/17", "/api/v4/leads/18")
+        return {"id":int(path.rsplit("/",1)[1]), "status_id":10 if scenario=="open_sale" else 142,
+                "_embedded":{"contacts":[{"id":702,"is_main":True}]}}
+    calls = []
+    def post(path, *, json):
+        assert path == "/api/v4/talks/801/close" and json == {"force_close": True}
+        calls.append(path)
+        talk["status"]="closed"
+        return SimpleNamespace(status_code=202)
+    monkeypatch.setattr(transport, "get", get)
+    monkeypatch.setattr(transport, "amo", SimpleNamespace(post=post), raising=False)
+    reason, next_check, _ = reviews.close_candidate(db, transport, j, STAMP, apply=True)
+    assert reason == expected
+    assert len(calls) == int(scenario == "old")
+    if scenario == "old":
+        reviews.sweep(db, transport, STAMP)
+        reviews.sweep(db, transport, STAMP + timedelta(minutes=3))
+        assert len(calls) == 1 and db.get(m.Operation, reviews.PREFIX+str(j.id)).state == "done"
+
+
 def friday_doc(db):
     data=rule(name='FRIDAY',statuses=[],trigger={'type':'webhook','repeat':'once'},
         content=m.FRIDAY_TEXT,window_start=0,window_end=24,late_policy='same_day').model_dump()
