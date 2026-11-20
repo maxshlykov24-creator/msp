@@ -13,6 +13,7 @@
 <link rel="stylesheet" href="./style.css?v=20261120"><script src="./theme.js?v=atelier1"></script><script defer src="./silk.js?v=atelier1"></script><script defer src="./app.js?v=20261120"></script>
 <noscript><style>
   .route-switch,.motion-toggle,.theme-toggle,.lab,.project-picker,.project-navigation,.case-program {display:none}
+  .requires-script {display:block}
   .project-slide[hidden] {display:grid!important}
   .project-slide + .project-slide {margin-top:1.5rem}
 </style></noscript>
@@ -56,7 +57,7 @@
 <section class="projects section" id="projects" aria-labelledby="projects-title"><div class="wrap">
 <div class="section-intro"><h2 id="projects-title">Кейсы <em>брендов одежды</em></h2></div>
 <div class="project-picker" role="group" aria-label="Выбрать кейс"><button aria-pressed="true" data-project="0">Шоурум</button><button aria-pressed="false" data-project="1">Аналитика</button><button aria-pressed="false" data-project="2">Производство</button><button aria-pressed="false" data-project="3">Лояльность</button></div>
-<div class="project-stage" tabindex="0" role="region" aria-roledescription="карусель" aria-label="Кейсы. Для переключения используйте стрелки влево и вправо">
+<div class="project-stage" role="region" aria-label="Кейсы брендов">
 <article class="project-slide" aria-label="Кейс 1 из 4">
   <div class="project-visual editorial-photo"><img src="./assets/hero.jpg" width="1536" height="1024" alt="Бордовый свитер с товарной биркой"></div>
   <div class="project-copy">
@@ -111,7 +112,7 @@
   <h2 id="software-title">Программы <em>в работе</em></h2>
   <p>Внутри демонстрационные заказы и товары. Изменения остаются в демо.</p>
 </div>
-<noscript><p>Для запуска программ включите JavaScript.</p></noscript>
+<p class="requires-script">Для запуска программ включите JavaScript.</p>
 <div class="lab">
   <label class="lab-select" hidden><span>Программа</span><select id="software-select"></select></label>
   <button class="lab-choice" aria-expanded="true" aria-controls="preview-orders" style="--row:1"><strong>Касса шоурума</strong></button>
@@ -186,7 +187,7 @@
 <footer class="wrap"><a class="brand" href="#top"><img src="/assets/logo-mark-textured.svg" width="36" height="36" alt=""><span>MS Product</span></a><span>© 2026 · ИП Шлыков М. А.</span><a href="/privacy.html" target="_blank" rel="noopener noreferrer">Конфиденциальность <span aria-hidden="true">↗</span></a><a href="/">Основной сайт</a></footer>
 <dialog id="demo-dialog" aria-labelledby="demo-title">
   <div class="dialog-top"><div><span class="eyebrow">Демонстрационные данные</span><h2 id="demo-title">Рабочий интерфейс</h2></div><button id="demo-close" class="circle-button" autofocus aria-label="Закрыть демонстрацию">×</button></div>
-  <details class="demo-help"><summary>Подсказка и действия</summary><p id="demo-instruction"></p>
+  <details class="demo-help"><summary>Подсказка к демо</summary><p id="demo-instruction"></p>
     <div class="dialog-actions"><a id="demo-external" class="quiet-link" target="_blank" rel="noopener noreferrer">Открыть в новой вкладке <span aria-hidden="true">↗</span></a><button id="demo-retry" class="quiet-link" type="button">Начать демо заново</button></div>
   </details>
   <div class="dialog-screen"><p id="demo-status" role="status">Загружаем интерфейс…</p><iframe id="demo-frame" title="Демонстрационный интерфейс" sandbox="allow-scripts allow-forms allow-downloads" referrerpolicy="no-referrer"></iframe></div>

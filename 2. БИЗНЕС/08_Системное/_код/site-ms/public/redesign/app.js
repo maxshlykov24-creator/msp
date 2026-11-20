@@ -40,8 +40,14 @@ function selectSoftware(choice) {
   });
   labSelect.value = choice.getAttribute('aria-controls');
 }
-choices.forEach(choice => choice.addEventListener('click', () => selectSoftware(choice)));
-labSelect.addEventListener('change', () => selectSoftware(choices[labSelect.selectedIndex]));
+function chooseProgram(choice) {
+  selectSoftware(choice);
+  if (location.hash.startsWith('#preview-')) {
+    history.replaceState(history.state, '', '#' + choice.getAttribute('aria-controls'));
+  }
+}
+choices.forEach(choice => choice.addEventListener('click', () => chooseProgram(choice)));
+labSelect.addEventListener('change', () => chooseProgram(choices[labSelect.selectedIndex]));
 labSelect.parentElement.hidden = false;
 
 const root = document.documentElement;
@@ -132,6 +138,10 @@ if ('IntersectionObserver' in window) {
   });
   $$('.delivery article').forEach((el,i) => el.style.setProperty('--entry-delay',(i * .065)+'s'));
 }
+const projectStage = $('.project-stage');
+projectStage.tabIndex = 0;
+projectStage.setAttribute('aria-roledescription', 'карусель');
+projectStage.setAttribute('aria-label', 'Кейсы. Для переключения используйте стрелки влево и вправо');
 const slides = $$('.project-slide');
 const pickers = $$('[data-project]');
 let selected=0;
@@ -157,7 +167,7 @@ function advanceCase(delta) {
 }
 $('#project-prev').addEventListener('click', () => advanceCase(-1));
 $('#project-next').addEventListener('click', () => advanceCase(1));
-$('.project-stage').addEventListener('keydown',event=>{if(event.target!==event.currentTarget)return;if(event.key==='ArrowLeft'||event.key==='ArrowRight'){event.preventDefault();selectProject(selected+(event.key==='ArrowRight'?1:-1));}});
+projectStage.addEventListener('keydown',event=>{if(event.target!==event.currentTarget)return;if(event.key==='ArrowLeft'||event.key==='ArrowRight'){event.preventDefault();selectProject(selected+(event.key==='ArrowRight'?1:-1));}});
 function revealLinkedProgram(hash) {
   const choice = choices.find(item => '#' + item.getAttribute('aria-controls') === hash);
   if (!choice) return;
@@ -186,9 +196,9 @@ window.addEventListener('pageshow', event => {
   }
 });
 let touch=null;
-$('.project-stage').addEventListener('touchstart',event=>{if(event.touches.length!==1||event.target.closest('button,a,summary')){touch=null;return;};const t=event.touches[0];touch={x:t.clientX,y:t.clientY};},{passive:true});
-$('.project-stage').addEventListener('touchend',event=>{if(!touch)return;const t=event.changedTouches[0],x=t.clientX-touch.x,y=t.clientY-touch.y;touch=null;if(Math.abs(x)>70&&Math.abs(x)>Math.abs(y)*1.5)selectProject(selected+(x<0?1:-1));},{passive:true});
-$('.project-stage').addEventListener('touchcancel',()=>{touch=null;});
+projectStage.addEventListener('touchstart',event=>{if(event.touches.length!==1||event.target.closest('button,a,summary')){touch=null;return;};const t=event.touches[0];touch={x:t.clientX,y:t.clientY};},{passive:true});
+projectStage.addEventListener('touchend',event=>{if(!touch)return;const t=event.changedTouches[0],x=t.clientX-touch.x,y=t.clientY-touch.y;touch=null;if(Math.abs(x)>70&&Math.abs(x)>Math.abs(y)*1.5)selectProject(selected+(x<0?1:-1));},{passive:true});
+projectStage.addEventListener('touchcancel',()=>{touch=null;});
 const demos = {
   orders: {
     path: '/brands/previews/mansband/index.html?v=anonymous-1#board/deferred/all',

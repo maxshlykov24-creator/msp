@@ -139,7 +139,7 @@ p,dd {color: var(--muted)}
 .circle-button {border-color: var(--line); font-size: 22px}
 
 .software {--ink: #fbf1ec; --muted: #d6c3cb; --wine: #f8c6d7; --line: #725764; --panel: #38262f; background: radial-gradient(ellipse at 93% 12%,#523447,transparent 55%),#291c24; color: var(--ink); color-scheme: dark}
-.lab-select {display: none}
+.requires-script,.lab-select {display: none}
 .lab {display: grid; grid-template-columns: minmax(205px,.72fr) minmax(0,1.65fr); column-gap: clamp(28px,4vw,76px)}
 .lab-choice {grid-row: var(--row); grid-column: 1; position: relative; border-top: 1px solid var(--line); text-align: left; padding: 15px 27px 15px 8px; color: var(--muted)}
 .lab-choice strong {display: block; font-size: clamp(17px,1.45vw,23px); line-height: 1.22; letter-spacing: -.025em; font-weight: 500}
