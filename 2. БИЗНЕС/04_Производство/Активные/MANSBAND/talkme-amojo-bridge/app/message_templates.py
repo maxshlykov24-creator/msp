@@ -20,7 +20,7 @@ import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from sqlalchemy import DateTime, Integer, JSON, String, UniqueConstraint, select, text
+from sqlalchemy import DateTime, Integer, JSON, String, UniqueConstraint, cast, select, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models import Base
@@ -257,6 +257,19 @@ def record_outbound(db, body):
     db.commit()
 
 
+def review_used_for_other_sale(db, job, message_id):
+    other_sales = select(Job.id).where(Job.rule_id == job.rule_id, Job.lead_id != job.lead_id)
+    sent_attempt = select(Attempt.id).where(Attempt.job_id.in_(other_sales), Attempt.message_id == message_id)
+    if db.scalar(sent_attempt.limit(1)) is not None:
+        return True
+    # Manual sends can have an outgoing proof without a local provider attempt.
+    proof_ids = select("outgoing-proof-" + cast(Job.id, String)).where(
+        Job.rule_id == job.rule_id, Job.lead_id != job.lead_id)
+    proof = select(Operation.id).where(Operation.id.in_(proof_ids),
+        Operation.result["message_id"].as_string() == message_id)
+    return db.scalar(proof.limit(1)) is not None
+
+
 def confirmed_copy(db, j):
     """Proves the task is fulfilled, not which sender/attempt produced the copy."""
     from app.reservation_reminders import ReminderEvent, SUCCESS
@@ -277,6 +290,8 @@ def confirmed_copy(db, j):
         for route in j.plan:
             keys = {recipient_hash(k,v) for k,v in (route.get("recipient") or {}).items() if k in {"phone","username","chatId"}}
             if e.channel == route.get("channelId") and e.transport == route.get("transport") and keys & set(e.recipients):
+                if j.rule_id == "legacy-review" and review_used_for_other_sale(db, j, e.id):
+                    break
                 return e, "delivered" if states & {"delivered","read"} else "sent"
     return None
 
@@ -296,7 +311,7 @@ def apply_confirmed_copy(db, j):
 
 def review_that_opened_lead(db, c, lead, success_at):
     """Identify a Wazzup conversation opened by the review of another sale."""
-    from app.reservation_reminders import primary_contact
+    from app.reservation_reminders import ReminderEvent, SUCCESS, primary_contact
     from app.stage_notifications import ORIGINS
 
     created = lead.get("created_at")
@@ -307,12 +322,15 @@ def review_that_opened_lead(db, c, lead, success_at):
 
     created_at = datetime.fromtimestamp(created, timezone.utc)
     # WhatsApp echoes sometimes round down to the start of the minute.
+    confirmed_status = select(ReminderEvent.key).where(ReminderEvent.message_id == OutboundEvidence.id,
+        ReminderEvent.status.in_(SUCCESS)).exists()
     candidates = db.execute(select(Job.lead_id, Attempt.transport, OutboundEvidence.body_hash, Job.rendered)
         .join(Attempt, Attempt.job_id == Job.id)
         .join(OutboundEvidence, OutboundEvidence.id == Attempt.message_id)
         .where(Job.rule_id == "legacy-review", Job.lead_id != lead["id"],
                OutboundEvidence.at.between(created_at - timedelta(minutes=1), created_at + timedelta(seconds=5)),
-               OutboundEvidence.status.in_(["sent", "delivered", "read"]))).all()
+               OutboundEvidence.status != "changed",
+               OutboundEvidence.status.in_(SUCCESS) | confirmed_status)).all()
     if not candidates:
         return None
 
@@ -1011,9 +1029,10 @@ def send(db,j,c,stamp):
 
 last_scan=None
 last_event_scan=None
+last_review_close_scan=None
 
 def tick():
-    global last_scan, last_event_scan
+    global last_scan, last_event_scan, last_review_close_scan
     if Settings().executor!="live":return
     from app.reservation_reminders import Clients,ReminderSettings
     with get_engine().connect() as conn,get_session_factory()() as db:
@@ -1034,6 +1053,14 @@ def tick():
             for j in list(db.scalars(select(Job).where(Job.state.in_(["ready","blocked"]),Job.due_at<=now()).order_by(Job.due_at).limit(100))):
                 try:send(db,j,c,now())
                 except Exception as exc:db.rollback();log.error("Managed message failed: %s",type(exc).__name__)
+            if last_review_close_scan is None or now() - last_review_close_scan >= timedelta(minutes=2):
+                from app.review_conversations import sweep
+                last_review_close_scan = now()
+                try:
+                    sweep(db, c, last_review_close_scan)
+                except Exception as exc:
+                    db.rollback()
+                    log.error("Review conversation scan failed: %s", type(exc).__name__)
             attention=delivery_attention(db)
             summary={"checked_at":now().isoformat(),"attention_count":attention["attention_count"],
                      "jobs":[{"job_id":x["job_id"],"state":x["state"],"reason":x["reason"]} for x in attention["items"]]}

@@ -617,8 +617,32 @@ def test_known_both_store_review_suppresses_duplicate(db,transport):
     assert j.state=='sent' and not transport.posts
 
 
+@pytest.mark.parametrize("evidence", ["provider_attempt", "manual_copy"])
+def test_review_for_a_separate_sale_cannot_fulfil_current_sale(db, transport, evidence):
+    d = doc(db, rule(content="Просим оставить отзыв"))
+    d.id = "legacy-review"
+    db.commit()
+    current = job(db, d)
+    current.source_at = STAMP - timedelta(minutes=10)
+    prior = m.Job(rule_id=d.id, lead_id=16, occurrence="once", due_at=STAMP, state="sent")
+    db.add(prior)
+    db.flush()
+    if evidence == "provider_attempt":
+        db.add(m.Attempt(job_id=prior.id, position=0, transport="telegram", state="sent",
+                         message_id="echo-1", crm_id="sale-16"))
+    else:
+        db.add(m.Operation(id=f"outgoing-proof-{prior.id}", state="confirmed", digest="test",
+                           result={"message_id": "echo-1"}))
+    db.commit()
+    m.record_outbound(db, {"messages": [echo(text="Просим оставить отзыв")]})
+    m.send(db, current, transport, STAMP)
+    assert len(transport.posts) == 1
+    assert current.state == "pending"
+
+
 @pytest.mark.parametrize("scenario, suppressed", [
     ("generated", True), ("whatsapp_minute", True), ("incoming", False),
+    ("separate_delivery_callback", True), ("unconfirmed", False), ("edited_after_delivery", False),
     ("later_reply", True), ("another_contact", False), ("another_talk_owner", False), ("later_purchase", False),
 ])
 def test_review_of_lead_created_by_previous_outbound(db, transport, monkeypatch, scenario, suppressed):
@@ -638,7 +662,13 @@ def test_review_of_lead_created_by_previous_outbound(db, transport, monkeypatch,
                      message_id="echo-1", crm_id="sale-16"))
     db.commit()
     echo_at = created.replace(second=0) if channel == "whatsapp" else created
-    m.record_outbound(db, {"messages": [echo(chatType=channel, text=prior.rendered, dateTime=echo_at.isoformat())]})
+    status = "pending" if scenario in ("separate_delivery_callback", "unconfirmed", "edited_after_delivery") else "sent"
+    m.record_outbound(db, {"messages": [echo(chatType=channel, text=prior.rendered, dateTime=echo_at.isoformat(), status=status)]})
+    if scenario in ("separate_delivery_callback", "edited_after_delivery"):
+        db.add(ReminderEvent(key="delivery-echo-1", message_id="echo-1", status="delivered"))
+        db.commit()
+    if scenario == "edited_after_delivery":
+        m.record_outbound(db, {"messages": [echo(isEdited=True)]})
     ts = int(created.timestamp())
     contact = {"id": 702, "is_main": True}
     transport.document.update(created_at=ts + (3600 if scenario == "later_purchase" else 0), created_by=0,
