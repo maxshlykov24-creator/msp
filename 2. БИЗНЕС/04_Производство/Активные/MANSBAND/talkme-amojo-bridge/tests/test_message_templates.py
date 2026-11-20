@@ -617,6 +617,57 @@ def test_known_both_store_review_suppresses_duplicate(db,transport):
     assert j.state=='sent' and not transport.posts
 
 
+@pytest.mark.parametrize("scenario, suppressed", [
+    ("generated", True), ("whatsapp_minute", True), ("incoming", False),
+    ("later_reply", True), ("another_contact", False), ("another_talk_owner", False), ("later_purchase", False),
+])
+def test_review_of_lead_created_by_previous_outbound(db, transport, monkeypatch, scenario, suppressed):
+    d = doc(db, rule(content="Просим оставить отзыв"))
+    d.id = "legacy-review"
+    db.commit()
+    current = job(db, d)
+    current.source_at = STAMP - timedelta(hours=1)
+    created = current.source_at - timedelta(minutes=4, seconds=34)
+    channel = "whatsapp" if scenario == "whatsapp_minute" else "telegram"
+    origin = "com.wazzup24.wz" if channel == "whatsapp" else "com.wazzup24-1"
+    prior = m.Job(rule_id=d.id, lead_id=16, occurrence="once", due_at=created,
+                  rendered="Просим оставить отзыв", state="delivered")
+    db.add(prior)
+    db.flush()
+    db.add(m.Attempt(job_id=prior.id, position=0, transport=channel, state="sent",
+                     message_id="echo-1", crm_id="sale-16"))
+    db.commit()
+    echo_at = created.replace(second=0) if channel == "whatsapp" else created
+    m.record_outbound(db, {"messages": [echo(chatType=channel, text=prior.rendered, dateTime=echo_at.isoformat())]})
+    ts = int(created.timestamp())
+    contact = {"id": 702, "is_main": True}
+    transport.document.update(created_at=ts + (3600 if scenario == "later_purchase" else 0), created_by=0,
+        _embedded={"contacts": [contact], "source": {"id": 5}})
+    get = transport.get
+    def read(path, **params):
+        if path == "/api/v4/events":
+            events = [{"entity_type": "lead", "entity_id": 17, "created_at": ts, "type": "outgoing_chat_message",
+                       "value_after": [{"message": {"talk_id": 801, "origin": origin}}]}]
+            if scenario in ("incoming", "later_reply"):
+                delay = 1 if scenario == "incoming" else 30
+                events.append({**events[0], "created_at": ts + delay, "type": "incoming_chat_message"})
+            return {"_embedded": {"events": events}}
+        if path == "/api/v4/talks/801":
+            return {"entity_type": "lead", "entity_id": 99 if scenario == "another_talk_owner" else 17,
+                    "contact_id": 702, "source_id": 5}
+        if path == "/api/v4/leads/16":
+            return {"_embedded": {"contacts": [{"id": 900} if scenario == "another_contact" else contact]}}
+        return get(path, **params)
+    monkeypatch.setattr(transport, "get", read)
+    m.send(db, current, transport, STAMP)
+    m.send(db, current, transport, STAMP)
+    if suppressed:
+        assert current.reason == "review_created_lead:16" and current.state == "cancelled"
+        assert not transport.posts
+    else:
+        assert len(transport.posts) == 1 and current.state == "pending"
+
+
 def test_pre_success_manual_message_does_not_suppress_stage_rule(db,transport):
     j=job(db,doc(db));j.source_at=STAMP+timedelta(seconds=1);db.commit()
     m.record_outbound(db,{'messages':[echo()]});m.send(db,j,transport,STAMP)

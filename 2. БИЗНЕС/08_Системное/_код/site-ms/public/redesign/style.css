@@ -113,6 +113,7 @@ p,dd {color: var(--muted)}
 .project-visual {position: relative; min-height: clamp(410px,39vw,640px); overflow: hidden; isolation: isolate; background: #9b6476}
 .editorial-photo>img,.production-visual>img {position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover}
 .analytics-visual,.loyalty-visual {display: grid; place-items: center}
+.analytics-visual figcaption {position: absolute; bottom: 12px; left: 14px; padding: 3px 8px; background: var(--surface); color: var(--muted); border-radius: 3px; font-size: 12px}
 .analytics-visual {background: radial-gradient(ellipse at top left,#d8b7bc,#765366)}
 .report-image {width: 86%; transform: perspective(1100px) rotateY(-9deg) rotateZ(-4deg); border-radius: 6px; overflow: hidden; box-shadow: 12px 24px 40px #371d3e44}
 .report-image img {width: 100%; height: auto}
@@ -141,8 +142,7 @@ p,dd {color: var(--muted)}
 .lab-select {display: none}
 .lab {display: grid; grid-template-columns: minmax(205px,.72fr) minmax(0,1.65fr); column-gap: clamp(28px,4vw,76px)}
 .lab-choice {grid-row: var(--row); grid-column: 1; position: relative; border-top: 1px solid var(--line); text-align: left; padding: 15px 27px 15px 8px; color: var(--muted)}
-.lab-choice strong {display: block}
-.lab-choice strong {font-size: clamp(17px,1.45vw,23px); line-height: 1.22; letter-spacing: -.025em; font-weight: 500}
+.lab-choice strong {display: block; font-size: clamp(17px,1.45vw,23px); line-height: 1.22; letter-spacing: -.025em; font-weight: 500}
 .lab-choice[aria-expanded=true]::after {content: '→'; color: var(--wine); position: absolute; top: 50%; right: 6px; transform: translateY(-50%); font-size: 20px}
 .lab-choice[aria-expanded=true] {color: var(--ink); border-color: var(--wine)}
 .lab-screen {grid-column: 2; grid-row: 1/6; align-self: start; min-width: 0}
@@ -197,6 +197,7 @@ dialog::backdrop {background: #170d16bd; backdrop-filter: blur(5px)}
 #demo-status {position: absolute; z-index: 1; inset: 0; display: grid; place-items: center; background: var(--surface); padding: 16px; text-align: center}
 #demo-status.loaded {inset: auto; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); pointer-events: none}
 .dialog-actions .quiet-link {font-size: 13px}
+.dialog-actions button:disabled {opacity: .55; cursor: wait}
 #demo-frame {width: 100%; height: 100%; display: block; border: 0; background: var(--panel)}
 body.modal-open {overflow: hidden}
 

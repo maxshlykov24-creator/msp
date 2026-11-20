@@ -147,9 +147,12 @@ function selectProject(index) {
 pickers.forEach(button => button.addEventListener('click', () => selectProject(Number(button.dataset.project))));
 function advanceCase(delta) {
   selectProject(selected + delta);
-  if (smallLab.matches && $('.project-picker').getBoundingClientRect().bottom < 0) {
-    pickers[selected].focus({preventScroll:true});
-    $('.project-picker').scrollIntoView({block:'start'});
+  if (smallLab.matches) {
+    const picker = pickers[selected];
+    picker.focus({preventScroll: true});
+    if (picker.getBoundingClientRect().top < 0) {
+      $('.project-picker').scrollIntoView({block: 'start'});
+    }
   }
 }
 $('#project-prev').addEventListener('click', () => advanceCase(-1));

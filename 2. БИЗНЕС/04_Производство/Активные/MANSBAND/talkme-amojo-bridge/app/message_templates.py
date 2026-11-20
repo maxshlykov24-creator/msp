@@ -294,6 +294,62 @@ def apply_confirmed_copy(db, j):
     return True
 
 
+def review_that_opened_lead(db, c, lead, success_at):
+    """Identify a Wazzup conversation opened by the review of another sale."""
+    from app.reservation_reminders import primary_contact
+    from app.stage_notifications import ORIGINS
+
+    created = lead.get("created_at")
+    contact = primary_contact(lead)
+    source = (lead.get("_embedded", {}).get("source") or {}).get("id")
+    if not created or lead.get("created_by") != 0 or not contact or not source or not success_at:
+        return None
+
+    created_at = datetime.fromtimestamp(created, timezone.utc)
+    # WhatsApp echoes sometimes round down to the start of the minute.
+    candidates = db.execute(select(Job.lead_id, Attempt.transport, OutboundEvidence.body_hash, Job.rendered)
+        .join(Attempt, Attempt.job_id == Job.id)
+        .join(OutboundEvidence, OutboundEvidence.id == Attempt.message_id)
+        .where(Job.rule_id == "legacy-review", Job.lead_id != lead["id"],
+               OutboundEvidence.at.between(created_at - timedelta(minutes=1), created_at + timedelta(seconds=5)),
+               OutboundEvidence.status.in_(["sent", "delivered", "read"]))).all()
+    if not candidates:
+        return None
+
+    events = all_pages(c, "/api/v4/events", "events", **{
+        "filter[entity]": "contact", "filter[entity_id]": contact,
+        "filter[created_at][from]": created - 2,
+        "filter[created_at][to]": min(created + 2, int(aware(success_at).timestamp())),
+        "filter[type][]": ["outgoing_chat_message", "incoming_chat_message"],
+    })
+    incoming_talks = set()
+    opening = []
+    for event in events:
+        for value in event.get("value_after") or []:
+            message = value.get("message") or {}
+            talk_id = message.get("talk_id")
+            if not talk_id or abs(event["created_at"] - created) > 2:
+                continue
+            if event["type"] == "incoming_chat_message":
+                incoming_talks.add(talk_id)
+            elif event["type"] == "outgoing_chat_message":
+                opening.append((talk_id, message.get("origin")))
+    for talk_id, origin in opening:
+        if talk_id in incoming_talks or origin not in ORIGINS:
+            continue
+        talk = c.get(f"/api/v4/talks/{talk_id}")
+        if (talk.get("entity_type"), talk.get("entity_id"), talk.get("contact_id"), talk.get("source_id")) != (
+                "lead", lead["id"], contact, source):
+            continue
+        for previous_id, transport, echo_hash, body in candidates:
+            if transport != ORIGINS[origin] or echo_hash != body_hash(body):
+                continue
+            original = c.get(f"/api/v4/leads/{previous_id}", **{"with": "contacts"})
+            if primary_contact(original) == contact:
+                return previous_id
+    return None
+
+
 def attempt_trace(db, a, **details):
     opid = f"send-trace-{a.id}"
     op = db.get(Operation, opid)
@@ -838,10 +894,17 @@ def send(db,j,c,stamp):
     if r.trigger.type != "webhook" and ((r.late_policy!="legacy_stage" and (local.date()!=due.astimezone(MSK).date() or local.hour>=r.window_end)) or (r.late_policy=="skip" and not started and stamp>due+timedelta(minutes=5))):
         j.state,j.reason="expired","scheduled_window_passed";db.commit();return
     if local.hour<r.window_start:return
-    lead=c.get(f"/api/v4/leads/{j.lead_id}", **{"with":"contacts"})
+    expand = "contacts,source" if j.rule_id == "legacy-review" else "contacts"
+    lead=c.get(f"/api/v4/leads/{j.lead_id}", **{"with":expand})
     if migration_blocked(lead): return
     if not matches(lead,r) or not matches(lead,Rule(**doc.active)):
         j.state,j.reason="cancelled","conditions_changed";db.commit();return
+    if j.rule_id == "legacy-review":
+        original = review_that_opened_lead(db, c, lead, j.source_at)
+        if original:
+            j.state, j.reason = "cancelled", f"review_created_lead:{original}"
+            db.commit()
+            return
     if r.trigger.type=="date":
         from app.stage_notifications import calendar_date
         if str(calendar_date(lead,r.trigger.field))!=j.occurrence:
