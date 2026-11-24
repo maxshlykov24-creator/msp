@@ -5,8 +5,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   DIGEST_PIPELINES, REPORT_PIPELINES, WON, LOST, acceptance, canonicalStage, catalogProblems,
-  chain, checkboxDisagreements, classifyTouch, digestOverdue, funnel, general, isQual, isTarget,
-  kassaCases, liveStageNames, normalizeLead, overdueStages, overdueTasks, periodBounds,
+  chain, checkboxDisagreements, classifyTouch, digestOverdue, funnel, general, isKassaWeekSuccess,
+  isQual, isTarget, kassaCases, kassaNumberFromLink, kassaStatus, liveStageNames, normalizeLead,
+  overdueStages, overdueTasks, periodBounds, reopenGate,
 } from "../reports/crm-analytics-calc.mjs";
 
 function findEnv(start) {
@@ -20,9 +21,8 @@ function findEnv(start) {
   }
   throw new Error("Файл доступа amo не найден");
 }
-const envFile = findEnv(path.dirname(fileURLToPath(import.meta.url)));
 const probeOnly = process.argv.includes("--probe");
-const dir = path.join(os.homedir(), ".config", "mansband");
+const dir = process.env.CRM_ANALYTICS_DIR || "/root/.config/mansband";
 const snapshotPath = path.join(dir, "crm-analytics-snapshot.json");
 const reviewPath = path.join(dir, "crm-analytics-review.json");
 const checkpointPath = path.join(dir, "crm-analytics-checkpoint.json");
@@ -40,7 +40,9 @@ function loadEnv(file) {
   return env;
 }
 
-const env = loadEnv(envFile);
+const env = process.env.AMOCRM_API_BASE && process.env.AMOCRM_LONG_LIVED_TOKEN
+  ? { AMOCRM_API_BASE: process.env.AMOCRM_API_BASE, AMOCRM_LONG_LIVED_TOKEN: process.env.AMOCRM_LONG_LIVED_TOKEN }
+  : loadEnv(findEnv(path.dirname(fileURLToPath(import.meta.url))));
 const base = env.AMOCRM_API_BASE.replace(/\/$/, "");
 let nextAt = 0;
 async function amo(pathname, query = {}) {
@@ -127,7 +129,9 @@ function historyFrom(events, names, created) {
 
 function writePrivate(file, value) {
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-  fs.writeFileSync(file, JSON.stringify(value), { mode: 0o600 });
+  const tmp = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(value), { mode: 0o600 });
+  fs.renameSync(tmp, file);
   fs.chmodSync(file, 0o600);
 }
 
@@ -238,8 +242,12 @@ for (const user of directory.rows) if (user?.id && user.name) users.set(user.id,
 
 let checkpoint = null;
 if (fs.existsSync(checkpointPath)) {
-  const saved = JSON.parse(fs.readFileSync(checkpointPath, "utf8"));
-  if (saved.weekFrom === week.from && saved.weekTo === week.to) checkpoint = saved;
+  try {
+    const saved = JSON.parse(fs.readFileSync(checkpointPath, "utf8"));
+    if (saved.weekFrom === week.from && saved.weekTo === week.to && saved.leads) checkpoint = saved;
+  } catch {
+    checkpoint = null;
+  }
 }
 if (!checkpoint) checkpoint = { weekFrom: week.from, weekTo: week.to, leads: {} };
 
@@ -295,9 +303,7 @@ function build(lead) {
   const historyComplete = saved.eventsComplete && (!closedStatus || terminal);
   const createdInTerminal = historyComplete && history.length > 0 && history.every((event) => event.stage === "Успех" || event.stage === "Провал");
   const link = linkField ? (lead.custom_fields_values ?? []).find((field) => field.field_id === linkField.id)?.values?.[0]?.value : null;
-  const numberMatch = typeof link === "string" ? link.match(/#board\/all\/all\/(\d+)/) : null;
-  const number = numberMatch ? Number(numberMatch[1]) : null;
-  const kassaNumber = Number.isInteger(number) && number > 0 && number < 1_000_000 && number !== Number(lead.id) ? number : null;
+  const kassaNumber = kassaNumberFromLink(link, lead.id);
   const touch = classifyTouch({
     historyComplete, history, createdInTerminal, kassaCreated: false, priorOpenLead: false, priorLeadKnown: null,
   });
@@ -337,8 +343,6 @@ for (const id of remoteIds) if (!results.all.some((deal) => deal.id === id)) dis
 for (const deal of results.all) if (!remoteIds.has(deal.id)) disagreements.push({ id: deal.id, kind: "нет в фильтре amo" });
 
 const checkbox = checkboxDisagreements(deals.filter((deal) => deal.closed != null && deal.closed >= week.from && deal.closed < week.to));
-let reopenVerified = false;
-let reopenNote = "В событиях этой недели повторное открытие не встретилось";
 const reopenScan = await pages("/events", "events", {
   "filter[entity]": "lead", "filter[type]": "lead_status_changed",
   "filter[created_at][from]": Math.floor(week.from / 1000),
@@ -349,13 +353,16 @@ const reopened = reopenScan.rows.find((event) => {
   const after = Number(event.value_after?.[0]?.lead_status?.id);
   return before === WON && after !== WON && after !== LOST;
 });
-if (reopened) {
+let reopen = reopenGate({ scanComplete: reopenScan.complete, found: false, closedAtCleared: false });
+if (reopened && reopenScan.complete) {
   const lead = await amo(`/leads/${reopened.entity_id}`);
   const openNow = lead && lead.status_id !== WON && lead.status_id !== LOST;
-  reopenVerified = Boolean(openNow && (lead.closed_at == null || Number(lead.closed_at) === 0));
-  reopenNote = reopenVerified ? "Повторно открытая сделка выпала из закрытых: closed_at пуст" : "После выхода из успеха карточка не совпала с правилом";
-  if (!reopenVerified) disagreements.push({ id: Number(reopened.entity_id), kind: "closed_at не снят после повторного открытия" });
-} else if (!reopenScan.complete) reopenNote = "Поиск повторного открытия оборвался, правило не проверено";
+  const closedAtCleared = Boolean(openNow && (lead.closed_at == null || Number(lead.closed_at) === 0));
+  reopen = reopenGate({ scanComplete: true, found: true, closedAtCleared });
+  if (!reopen.verified) disagreements.push({ id: Number(reopened.entity_id), kind: "closed_at не снят после повторного открытия" });
+}
+const reopenVerified = reopen.verified;
+const reopenNote = reopen.note;
 
 const openFetch = await (async () => {
   const rows = [];

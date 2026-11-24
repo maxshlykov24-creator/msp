@@ -74,8 +74,50 @@ export function acceptance(input) {
   if (input.partial) blockers.push("Выборка amo оборвалась");
   if (input.discrepancies) blockers.push("Есть расхождения с фильтром amo");
   if (input.checkboxCount) blockers.push("Чекбокс «Целевой» расходится с датой взятия в работу");
-  if (input.kassa !== "checked") blockers.push("Касса за эту неделю не сверена");
+  if (input.kassa === "mismatch") blockers.push("Касса за эту неделю расходится с amo");
+  else if (input.kassa !== "checked") blockers.push("Касса за эту неделю не сверена");
   return { accepted: blockers.length === 0, blockers };
+}
+
+/** Полный поиск без события не блокирует бейдж. Оборванный поиск и неснятый closed_at блокируют. */
+export function reopenGate({ scanComplete, found, closedAtCleared }) {
+  if (!scanComplete) return { verified: false, note: "Поиск повторного открытия оборвался, правило не проверено" };
+  if (!found) return { verified: true, note: "За закрытую неделю повторного открытия не было" };
+  if (closedAtCleared) return { verified: true, note: "Повторно открытая сделка выпала из закрытых: closed_at пуст" };
+  return { verified: false, note: "После выхода из успеха карточка не совпала с правилом" };
+}
+
+export function kassaStatus(readOk, cases) {
+  if (!readOk) return "unavailable";
+  const empty = !cases.onlyKassa.length && !cases.closedOpen.length && !cases.amoMissing.length;
+  return empty ? "checked" : "mismatch";
+}
+
+function successInstant(sale) {
+  const stamp = sale.completedAt ?? [...(sale.history ?? [])].reverse().find((row) => /→ Успех|→ Товар выдан/.test(row.action ?? ""))?.at;
+  const at = typeof stamp === "number" ? stamp : Date.parse(stamp ?? "");
+  return Number.isFinite(at) ? at : null;
+}
+
+/** Успех кассы за неделю. Открытая отложка, провал, тест и непроведённое зеркало сюда не входят. */
+export function isKassaWeekSuccess(sale, from, to) {
+  if (!sale || sale.isTest) return false;
+  if (typeof sale.id === "string" && sale.id.startsWith("amo-")) {
+    const paid = sale.paid ?? 0;
+    const paidLine = (sale.payments ?? []).some((payment) => payment.amount > 0);
+    if (paid <= 0 && !paidLine && !sale.msOrderId && !sale.msDemandId) return false;
+  }
+  const success = sale.stage === "Успех" || (sale.kind === "company" && sale.stage === "Товар выдан" && sale.issued === true);
+  if (!success) return false;
+  const at = successInstant(sale);
+  return at != null && at >= from && at < to;
+}
+
+/** Номер из ссылки кассы. Id сделки amo номером не становится, потолка в миллион нет. */
+export function kassaNumberFromLink(link, leadId) {
+  const numberMatch = typeof link === "string" ? link.match(/#board\/all\/all\/(\d+)/) : null;
+  const number = numberMatch ? Number(numberMatch[1]) : null;
+  return Number.isInteger(number) && number > 0 && number !== Number(leadId) ? number : null;
 }
 
 export const DICTIONARY = [
