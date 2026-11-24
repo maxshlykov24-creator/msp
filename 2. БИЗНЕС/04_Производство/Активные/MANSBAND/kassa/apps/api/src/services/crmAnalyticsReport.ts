@@ -28,7 +28,10 @@ export function renderCrmAnalytics(
   if (!snapshot) return { mode: "demo", html: files.shell };
   const json = JSON.stringify(snapshot).replace(/</g, "\\u003c");
   const calc = files.calc.replace(/^export /gm, "");
-  const html = files.shell.replace(/<script>[\s\S]*<\/script>/, `<script>\nwindow.SNAPSHOT=${json};\n${calc}\n${files.view}\n</script>`);
+  const badge = snapshot.meta?.accepted ? "" : `<span class="demo">Сверка не закрыта</span>`;
+  const html = files.shell
+    .replace(`<span class="demo">Демоданные</span>`, badge)
+    .replace(/<script>[\s\S]*<\/script>/, `<script>\nwindow.SNAPSHOT=${json};\n${calc}\n${files.view}\n</script>`);
   return { mode: snapshot.meta?.accepted ? "live" : "review", html };
 }
 
