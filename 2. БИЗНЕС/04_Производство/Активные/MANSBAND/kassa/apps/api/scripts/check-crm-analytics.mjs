@@ -176,9 +176,9 @@ const stageRows = overdueStages([deal({ id: 24, status: 142, closed: monday + 2 
 })], now);
 assert.equal(stageRows.overdue.length, 1);
 assert.equal(medianHours([], ["Дано обещание", "Доставлен"]).hours, null);
-const gate = acceptance({ fieldProblems: [], eventsAvailable: true, tasksAvailable: true, weekStartConfirmed: false, reopenVerified: true, partial: false, discrepancies: 0, checkboxCount: 0, kassa: "checked" });
+const gate = acceptance({ fieldProblems: [], eventsAvailable: true, tasksAvailable: true, timezoneConfirmed: true, weekStartConfirmed: false, reopenVerified: true, partial: false, discrepancies: 0, checkboxCount: 0, kassa: "checked" });
 assert.equal(gate.accepted, false);
-assert.equal(acceptance({ fieldProblems: [], eventsAvailable: true, tasksAvailable: true, weekStartConfirmed: true, reopenVerified: true, partial: false, discrepancies: 0, checkboxCount: 0, kassa: "checked" }).accepted, true);
+assert.equal(acceptance({ fieldProblems: [], eventsAvailable: true, tasksAvailable: true, timezoneConfirmed: true, weekStartConfirmed: true, reopenVerified: true, partial: false, discrepancies: 0, checkboxCount: 0, kassa: "checked" }).accepted, true);
 const sales = [
   { number: 1, amoLeadId: null, isTest: false, completedAt: monday + 1000 },
   { number: 2, amoLeadId: 1, isTest: false, completedAt: monday + 1000 },

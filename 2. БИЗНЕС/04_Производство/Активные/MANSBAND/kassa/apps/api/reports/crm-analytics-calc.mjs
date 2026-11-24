@@ -20,15 +20,15 @@ export const FIELD_NAMES = {
   3134043: "Источник (техническое)",
   3134039: "Тип клиента",
   3134051: "Причина провала",
-  3169911: "Сертификат действителен до",
+  3169911: "Сертификат действителен До",
   3279145: "Переход на след. этап до",
   3382311: "Дата встречи",
   3185681: "Примерная дата встречи / отправки",
   3815335: "Актуально до (обещание)",
   3810739: "Отложка до",
-  3815337: "Аренда оплачена до",
+  3815337: "Аренда от",
   3322895: "Аренда до",
-  3134989: "Дата счёта",
+  3134989: "План. дата оплаты",
 };
 
 export const STAGE_DATE_FIELDS = {
@@ -68,6 +68,7 @@ export function acceptance(input) {
   if (input.fieldProblems?.length) blockers.push("Имена полей amo не совпали с формулами");
   if (!input.eventsAvailable) blockers.push("События amo не прочитаны");
   if (!input.tasksAvailable) blockers.push("Задачи amo не прочитаны");
+  if (!input.timezoneConfirmed) blockers.push("Часовой пояс аккаунта amo не прочитан");
   if (!input.weekStartConfirmed) blockers.push("Первый день недели в аккаунте amo не прочитан");
   if (!input.reopenVerified) blockers.push("Повторное открытие не проверено на живой сделке");
   if (input.partial) blockers.push("Выборка amo оборвалась");
@@ -115,7 +116,8 @@ export function liveStageNames(pipelines) {
 
 export function chain(kind, lane, liveNames) {
   const source = (kind === "logistics" ? LOGISTICS : EFFECT)[lane] ?? [];
-  const goods = ["Товар в пути", "Ждет товар"].filter((name) => liveNames.has(name));
+  const ordered = [...liveNames];
+  const goods = ordered.filter((name) => name === "Товар в пути" || name === "Ждет товар");
   const used = new Set();
   const stages = [];
   for (const name of source) {

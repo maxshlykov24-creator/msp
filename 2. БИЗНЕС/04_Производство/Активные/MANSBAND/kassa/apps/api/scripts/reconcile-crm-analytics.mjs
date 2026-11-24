@@ -125,17 +125,19 @@ function writePrivate(file, value) {
   fs.chmod(file, 0o600);
 }
 
-const account = await amo("/api/v4/account", { with: "datetime_settings" });
-const settings = account?.datetime_settings ?? {};
+const account = await amo("/account", { with: "datetime_settings,users_groups" });
+const embedded = account?._embedded ?? {};
+const settings = account?.datetime_settings ?? embedded.datetime_settings ?? {};
 const timeZone = settings.timezone || "Europe/Moscow";
+const timezoneConfirmed = Boolean(settings.timezone);
 const weekKey = Object.keys(settings).find((key) => /week/i.test(key));
 const weekStartConfirmed = weekKey != null && Number.isInteger(Number(settings[weekKey]));
 const weekStartsOn = weekStartConfirmed ? Number(settings[weekKey]) : 1;
 const now = Date.now();
 const current = periodBounds("week", now, now, timeZone, weekStartsOn);
 const week = periodBounds("week", current.from - 1, now, timeZone, weekStartsOn);
-const pipelines = (await amo("/api/v4/leads/pipelines"))?._embedded?.pipelines ?? [];
-const fields = (await pages("/api/v4/leads/custom_fields", "custom_fields", {}, 20)).rows;
+const pipelines = (await amo("/leads/pipelines"))?._embedded?.pipelines ?? [];
+const fields = (await pages("/leads/custom_fields", "custom_fields", {}, 20)).rows;
 const fieldProblems = catalogProblems(fields);
 const stages = [...liveStageNames(pipelines)];
 const { names, types } = statusMap(pipelines);
@@ -143,13 +145,13 @@ const linkField = fields.find((field) => field.name === "Ссылка на ка�
 let eventsAvailable = false;
 let tasksAvailable = false;
 try {
-  await amo("/api/v4/events", { "filter[entity]": "lead", "filter[type]": "lead_status_changed", limit: 1, page: 1 });
+  await amo("/events", { "filter[entity]": "lead", "filter[type]": "lead_status_changed", limit: 1, page: 1 });
   eventsAvailable = true;
 } catch (error) {
   if (error.status !== 403 && error.status !== 402 && error.status !== 404) throw error;
 }
 try {
-  await amo("/api/v4/tasks", { "filter[is_completed]": 1, limit: 1, page: 1 });
+  await amo("/tasks", { "filter[is_completed]": 1, limit: 1, page: 1 });
   tasksAvailable = true;
 } catch (error) {
   if (error.status !== 403 && error.status !== 402 && error.status !== 404) throw error;
@@ -158,17 +160,20 @@ console.log(JSON.stringify({
   timeZone,
   weekStartConfirmed,
   weekStartsOn,
+  accountKeys: Object.keys(account ?? {}),
+  embeddedKeys: Object.keys(embedded),
+  timezoneConfirmed,
   datetimeKeys: Object.keys(settings),
-  fieldProblems: fieldProblems.length,
+  fieldProblems,
   stages,
   eventsAvailable,
   tasksAvailable,
   linkField: Boolean(linkField),
   weekFrom: new Date(week.from).toISOString(),
   weekTo: new Date(week.to).toISOString(),
-}));
+}, null, 0));
 if (probeOnly && !process.argv.includes("--full")) {
-  const sample = await pages("/api/v4/leads", "leads", {
+  const sample = await pages("/leads", "leads", {
     "filter[pipeline_id]": REPORT_PIPELINES[0],
     "filter[closed_at][from]": Math.floor(week.from / 1000),
     "filter[closed_at][to]": Math.floor((week.to - 1) / 1000),
@@ -178,12 +183,12 @@ if (probeOnly && !process.argv.includes("--full")) {
   let eventStatus = "no-lead";
   let taskStatus = "no-lead";
   if (lead && eventsAvailable) {
-    const events = await amo("/api/v4/events", { "filter[entity]": "lead", "filter[entity_id]": lead.id, "filter[type]": "lead_status_changed", limit: 5, page: 1 });
+    const events = await amo("/events", { "filter[entity]": "lead", "filter[entity_id]": lead.id, "filter[type]": "lead_status_changed", limit: 5, page: 1 });
     const batch = events?._embedded?.events ?? [];
     eventStatus = batch.every((event) => Number(event.entity_id) === Number(lead.id)) ? `ok ${batch.length}` : "filter-ignored";
   }
   if (lead && tasksAvailable) {
-    const tasks = await amo("/api/v4/tasks", { "filter[entity_type]": "leads", "filter[entity_id]": lead.id, "filter[is_completed]": 1, limit: 5, page: 1 });
+    const tasks = await amo("/tasks", { "filter[entity_type]": "leads", "filter[entity_id]": lead.id, "filter[is_completed]": 1, limit: 5, page: 1 });
     const batch = tasks?._embedded?.tasks ?? [];
     taskStatus = batch.every((task) => Number(task.entity_id) === Number(lead.id)) ? `ok ${batch.length}` : "filter-ignored";
   }
@@ -195,7 +200,7 @@ async function leadsFor(field) {
   const rows = [];
   let complete = true;
   for (const pipeline of REPORT_PIPELINES) {
-    const page = await pages("/api/v4/leads", "leads", {
+    const page = await pages("/leads", "leads", {
       "filter[pipeline_id]": pipeline,
       [`filter[${field}][from]`]: Math.floor(week.from / 1000),
       [`filter[${field}][to]`]: Math.floor((week.to - 1) / 1000),
@@ -222,7 +227,7 @@ if (!fetchComplete) {
 }
 
 const users = new Map();
-const directory = await pages("/api/v4/users", "users", {}, 10);
+const directory = await pages("/users", "users", {}, 10);
 for (const user of directory.rows) if (user?.id && user.name) users.set(user.id, user.name);
 
 let checkpoint = null;
@@ -249,9 +254,9 @@ const ids = [...byId.keys()];
 let done = 0;
 for (const id of ids) {
   if (!checkpoint.leads[id]) {
-    const events = eventsAvailable ? await entityPages("/api/v4/events", "events", id) : { rows: [], complete: false, ignored: false };
-    const openTasks = tasksAvailable ? await entityPages("/api/v4/tasks", "tasks", id, 0) : { rows: [], complete: false, ignored: false };
-    const doneTasks = tasksAvailable ? await entityPages("/api/v4/tasks", "tasks", id, 1) : { rows: [], complete: false, ignored: false };
+    const events = eventsAvailable ? await entityPages("/events", "events", id) : { rows: [], complete: false, ignored: false };
+    const openTasks = tasksAvailable ? await entityPages("/tasks", "tasks", id, 0) : { rows: [], complete: false, ignored: false };
+    const doneTasks = tasksAvailable ? await entityPages("/tasks", "tasks", id, 1) : { rows: [], complete: false, ignored: false };
     if (events.ignored || openTasks.ignored || doneTasks.ignored) {
       eventsAvailable = events.ignored ? false : eventsAvailable;
       tasksAvailable = openTasks.ignored || doneTasks.ignored ? false : tasksAvailable;
@@ -349,12 +354,12 @@ const taskRows = overdueTasks(results.all);
 const stageRows = overdueStages(results.all, now);
 const kassa = kassaCases(deals, [], week.from, week.to);
 const gate = acceptance({
-  fieldProblems, eventsAvailable, tasksAvailable, weekStartConfirmed, reopenVerified,
+  fieldProblems, eventsAvailable, tasksAvailable, timezoneConfirmed, weekStartConfirmed, reopenVerified,
   partial: false, discrepancies: disagreements.length, checkboxCount: checkbox.length, kassa: "unavailable",
 });
 const meta = {
   builtAt: new Date(now).toISOString(),
-  timeZone, weekStartsOn, weekStartConfirmed, fieldProblems, eventsAvailable, tasksAvailable,
+  timeZone, timezoneConfirmed, weekStartsOn, weekStartConfirmed, fieldProblems, eventsAvailable, tasksAvailable,
   kassa: "unavailable", accepted: gate.accepted, blockers: gate.blockers,
   week: {
     from: week.from, to: week.to,
