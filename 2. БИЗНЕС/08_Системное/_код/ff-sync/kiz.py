@@ -22,7 +22,8 @@ import logging
 
 log = logging.getLogger(__name__)
 
-from db import get_shipments_by_ids, get_cabinet, list_shipment_marks, replace_shipment_marks, run_lock, shipment_items
+import gtin_pairs
+from db import get_client_by_id, get_shipments_by_ids, get_cabinet, list_shipment_marks, replace_shipment_marks, run_lock, shipment_items
 from net import OZON_BASE, WB_BASE, ozon_headers, req, wb_headers
 from shipments_pull import gtin_of
 
@@ -140,6 +141,16 @@ def _cab(row):
     if not cab or not cab["token"]:
         raise KizError("у кабинета нет токена")
     return cab
+
+
+def _pair_who(row, cab):
+    """Код клиента и номер кабинета Ozon. Чужой кабинет в список не попадает."""
+    client = get_client_by_id(row["client_id"]) if row is not None else None
+    code = client["code"] if client else ""
+    ext = ""
+    if cab is not None and "client_id_ext" in (cab.keys() if hasattr(cab, "keys") else ()):
+        ext = cab["client_id_ext"] or ""
+    return code, ext
 
 
 def _fail(r, what):
@@ -337,6 +348,7 @@ def _ozon_submit(row, cab, codes, assignments=None):
     notes = []
     info = _ozon_product_info(row, data)
     pools, articles, gtins, required = {}, {}, {}, {}
+    pair_code, pair_ext = _pair_who(row, cab)
     for prod, item in info:
         pid = int(prod['product_id'])
         must = bool(prod.get('is_mandatory_mark_needed'))
@@ -344,7 +356,13 @@ def _ozon_submit(row, cab, codes, assignments=None):
             continue
         pools[pid] = [ex for ex in prod.get('exemplars') or [] if isinstance(ex, dict) and ex.get('exemplar_id')]
         articles[pid] = item.get('article') or str(pid)
-        gtins[pid] = str(item.get('gtin') or '').zfill(14) if item.get('gtin') else ''
+        bound, conflict = gtin_pairs.bind_gtin(pair_code, pair_ext, articles[pid], item.get('gtin'))
+        if conflict:
+            raise KizError(conflict)
+        if bound:
+            gtins[pid] = bound
+        else:
+            gtins[pid] = str(item.get('gtin') or '').zfill(14) if item.get('gtin') else ''
         required[pid] = int(prod.get('quantity') or 0) if must else 0
     if not pools:
         raise KizError(OZON_MARK_UNAVAILABLE if info else "Ozon вернул пустой состав отправления. Обнови отправления и открой КиЗ заново.")
@@ -367,6 +385,11 @@ def _ozon_submit(row, cab, codes, assignments=None):
             pid = matched[0] if len(matched) == 1 else next(iter(pools)) if len(pools) == 1 else None
         if pid not in pools:
             raise KizError('Для каждого кода выбери его артикул. Порядок сканирования не определяет товар.')
+        # Список подставляется выше. Здесь та же проверка, но с понятным текстом
+        # и до validate: чужой номер и номер от другого артикула списка не уходят.
+        stop = gtin_pairs.scan_stop(pair_code, pair_ext, articles[pid], gtin)
+        if stop:
+            raise KizError(stop)
         if gtins[pid] and gtin != gtins[pid]:
             raise KizError('Код не относится к выбранному артикулу %s' % articles[pid])
         index = counts.get(pid, 0)
@@ -574,17 +597,25 @@ def missing_mark_note(rows, moved=None):
     записан, в сборку они больше не идут и весь проход из-за них не останавливается.
     """
     missing = []
+    wrong = []
     for row in rows:
         if dict(row).get('marketplace') == 'ozon' and dict(row).get('kind') == 'fbs':
             # Источник требований и уже принятых кодов — Ozon, не кеш каталога.
             # При недоступности API сборку не продолжаем вслепую.
-            remote = _ozon_plan(row, _cab(row))
+            cab = _cab(row)
+            remote = _ozon_plan(row, cab)
             if remote.get('state_blocked'):
                 line = str(row['ext_id']) + ': ' + remote['note']
                 if moved is not None:
                     moved.append({"id": row["id"], "note": line})
                     continue
                 raise KizError(line)
+            pair_code, pair_ext = _pair_who(row, cab)
+            for mark in remote.get('_remote_marks') or []:
+                note = gtin_pairs.ship_stop(
+                    pair_code, pair_ext, mark.get('article') or '', mark.get('gtin') or '')
+                if note:
+                    wrong.append('%s: %s' % (row['ext_id'], note))
             for product in remote['products']:
                 if product['required'] and product['filled'] < product['quantity']:
                     missing.append('%s: %s из %s' % (
@@ -603,12 +634,18 @@ def missing_mark_note(rows, moved=None):
         if not label and "ext_id" in keys:
             label = str(row["ext_id"])
         missing.append("%s: %s из %s" % (label or "заказ", have, qty))
-    if not missing:
-        return ""
-    shown = ", ".join(missing[:6])
-    if len(missing) > 6:
-        shown += " и ещё %s" % (len(missing) - 6)
-    return "Маркированный товар без КиЗ не пропускаем. " + shown
+    parts = []
+    if wrong:
+        shown = ", ".join(wrong[:6])
+        if len(wrong) > 6:
+            shown += " и ещё %s" % (len(wrong) - 6)
+        parts.append(shown)
+    if missing:
+        shown = ", ".join(missing[:6])
+        if len(missing) > 6:
+            shown += " и ещё %s" % (len(missing) - 6)
+        parts.append("Маркированный товар без КиЗ не пропускаем. " + shown)
+    return " ".join(parts)
 
 
 def _wb_plan(row, cab):
@@ -696,10 +733,14 @@ def plan(ship_id):
     else:
         raise KizError("неизвестная площадка %s" % row["marketplace"])
     remote_marks = out.pop('_remote_marks', [])
+    # Непустой ответ Ozon заменяет журнал. Склейка оставляла коды, которых на
+    # площадке уже нет. Пустой ответ не трогаем: он не должен стереть только
+    # что принятый код. Ночная выгрузка эти снятые коды не вернёт, их нет в заказе.
     if remote_marks:
-        known = {r['code']: {'code': r['code'], 'gtin': r['gtin'], 'article': r['article']} for r in list_shipment_marks([row['id']])}
-        known.update({r['code']: r for r in remote_marks})
-        replace_shipment_marks(row['id'], list(known.values()))
+        replace_shipment_marks(row['id'], [
+            {'code': r.get('code') or '', 'gtin': r.get('gtin') or '', 'article': r.get('article') or ''}
+            for r in remote_marks
+        ])
     saved = [r["code"] for r in list_shipment_marks([row["id"]])]
     assignments = []
     if row['marketplace'] == 'ozon':
