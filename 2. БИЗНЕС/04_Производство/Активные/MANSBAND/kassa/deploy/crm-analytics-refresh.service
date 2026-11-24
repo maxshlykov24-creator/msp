@@ -1,0 +1,8 @@
+[Unit]
+Description=Срез CRM MANSBAND
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/mansband-kassa
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/opt/mansband-kassa/deploy/crm-analytics-refresh.sh

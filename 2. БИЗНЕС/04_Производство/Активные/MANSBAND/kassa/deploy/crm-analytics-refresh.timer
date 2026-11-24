@@ -1,0 +1,10 @@
+[Unit]
+Description=Срез CRM MANSBAND, понедельник 07:00 Europe/Moscow
+
+[Timer]
+OnCalendar=Mon *-*-* 07:00:00 Europe/Moscow
+Persistent=true
+Unit=crm-analytics-refresh.service
+
+[Install]
+WantedBy=timers.target

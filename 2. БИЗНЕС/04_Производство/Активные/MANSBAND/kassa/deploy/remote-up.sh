@@ -29,5 +29,11 @@ echo "== Миграции БД =="
 docker compose run --rm api node dist/db/migrate.js
 
 chmod +x "${ROOT}/deploy/crm-analytics-refresh.sh"
+if command -v systemctl >/dev/null 2>&1; then
+  install -m 644 "${ROOT}/deploy/crm-analytics-refresh.service" /etc/systemd/system/crm-analytics-refresh.service
+  install -m 644 "${ROOT}/deploy/crm-analytics-refresh.timer" /etc/systemd/system/crm-analytics-refresh.timer
+  systemctl daemon-reload
+  systemctl enable --now crm-analytics-refresh.timer
+fi
 
 echo "== Готово. Проверь: https://mansband-kassa.ru =="
