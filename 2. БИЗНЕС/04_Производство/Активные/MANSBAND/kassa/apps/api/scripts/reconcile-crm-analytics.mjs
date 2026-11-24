@@ -46,7 +46,7 @@ let nextAt = 0;
 async function amo(pathname, query = {}) {
   const wait = nextAt - Date.now();
   if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
-  nextAt = Date.now() + 250;
+  nextAt = Date.now() + 350;
   const url = new URL(base + pathname);
   for (const [key, value] of Object.entries(query)) {
     if (Array.isArray(value)) value.forEach((item) => url.searchParams.append(key, String(item)));
@@ -54,20 +54,26 @@ async function amo(pathname, query = {}) {
   }
   let last = 0;
   for (let attempt = 0; attempt < 6; attempt += 1) {
-    const response = await fetch(url, { headers: { Authorization: `Bearer ${env.AMOCRM_LONG_LIVED_TOKEN}` } });
-    last = response.status;
-    if (response.status === 204) return null;
-    if (response.status === 429 || response.status >= 500) {
+    try {
+      const response = await fetch(url, { headers: { Authorization: `Bearer ${env.AMOCRM_LONG_LIVED_TOKEN}` } });
+      last = response.status;
+      if (response.status === 204) return null;
+      if (response.status === 429 || response.status >= 500) {
+        await new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1)));
+        continue;
+      }
+      const text = await response.text();
+      if (!response.ok) {
+        const error = new Error(`amo ${response.status} ${pathname}`);
+        error.status = response.status;
+        throw error;
+      }
+      return text ? JSON.parse(text) : null;
+    } catch (error) {
+      if (error.status && error.status < 500) throw error;
+      if (attempt === 5) throw error;
       await new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1)));
-      continue;
     }
-    const text = await response.text();
-    if (!response.ok) {
-      const error = new Error(`amo ${response.status} ${pathname}`);
-      error.status = response.status;
-      throw error;
-    }
-    return text ? JSON.parse(text) : null;
   }
   throw new Error(`amo retries exhausted ${pathname} ${last}`);
 }
@@ -122,7 +128,7 @@ function historyFrom(events, names, created) {
 function writePrivate(file, value) {
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   fs.writeFileSync(file, JSON.stringify(value), { mode: 0o600 });
-  fs.chmod(file, 0o600);
+  fs.chmodSync(file, 0o600);
 }
 
 const account = await amo("/account", { with: "datetime_settings,users_groups" });
@@ -266,14 +272,14 @@ for (const id of ids) {
       checkpoint.leads[id] = {
         events: events.rows.map((event) => ({ id: event.id, created_at: event.created_at, value_before: event.value_before, value_after: event.value_after })),
         tasks: [...openTasks.rows, ...doneTasks.rows].map((task) => ({
-          id: task.id, text: task.text, complete_till: task.complete_till, is_completed: task.is_completed,
+          id: task.id, text: String(task.text ?? "Задача").replace(/\d{5,}/g, "••••").slice(0, 80), complete_till: task.complete_till, is_completed: task.is_completed,
           updated_at: task.updated_at, responsible_user_id: task.responsible_user_id, entity_id: task.entity_id,
         })),
         eventsComplete: events.complete,
         tasksComplete: openTasks.complete && doneTasks.complete,
       };
     }
-    if (done % 20 === 0) writePrivate(checkpointPath, checkpoint);
+    if (done % 5 === 0) writePrivate(checkpointPath, checkpoint);
   }
   done += 1;
   if (done % 25 === 0) console.log(JSON.stringify({ progress: done, total: ids.length }));
@@ -289,7 +295,9 @@ function build(lead) {
   const historyComplete = saved.eventsComplete && (!closedStatus || terminal);
   const createdInTerminal = historyComplete && history.length > 0 && history.every((event) => event.stage === "Успех" || event.stage === "Провал");
   const link = linkField ? (lead.custom_fields_values ?? []).find((field) => field.field_id === linkField.id)?.values?.[0]?.value : null;
-  const number = typeof link === "string" ? Number(link.match(/\/(\d+)\/?$/)?.[1]) : null;
+  const numberMatch = typeof link === "string" ? link.match(/#board\/all\/all\/(\d+)/) : null;
+  const number = numberMatch ? Number(numberMatch[1]) : null;
+  const kassaNumber = Number.isInteger(number) && number > 0 && number < 1_000_000 && number !== Number(lead.id) ? number : null;
   const touch = classifyTouch({
     historyComplete, history, createdInTerminal, kassaCreated: false, priorOpenLead: false, priorLeadKnown: null,
   });
@@ -297,7 +305,7 @@ function build(lead) {
   return normalizeLead(lead, users, {
     history, historyComplete, touch: touch.touch, stage,
     unsorted: types.get(`${lead.pipeline_id}:${lead.status_id}`) === 1,
-    kassaNumber: Number.isInteger(number) ? number : null,
+    kassaNumber: kassaNumber,
     tasks: saved.tasks.map((task) => ({
       id: task.id, name: task.text || "Задача", due: Number(task.complete_till) * 1000,
       done: task.is_completed ? Number(task.updated_at) * 1000 : null,
@@ -330,21 +338,104 @@ for (const deal of results.all) if (!remoteIds.has(deal.id)) disagreements.push(
 
 const checkbox = checkboxDisagreements(deals.filter((deal) => deal.closed != null && deal.closed >= week.from && deal.closed < week.to));
 let reopenVerified = false;
-let reopenNote = "В событиях закрытой недели повторное открытие не встретилось";
-for (const deal of deals) {
-  const saved = checkpoint.leads[deal.id];
-  const events = [...(saved?.events ?? [])].sort((a, b) => a.created_at - b.created_at);
-  const left = events.findIndex((event, index) => {
-    const before = event.value_before?.[0]?.lead_status?.id;
-    const after = event.value_after?.[0]?.lead_status?.id;
-    return Number(before) === WON && Number(after) !== WON && events.slice(index + 1).length >= 0;
-  });
-  if (left >= 0) {
-    const lead = byId.get(deal.id);
-    reopenVerified = lead?.status_id !== WON ? lead?.closed_at == null || Number(lead.closed_at) === 0 : false;
-    reopenNote = reopenVerified ? "Повторно открытая сделка выпала из закрытых: closed_at пуст" : "После выхода из успеха closed_at всё ещё заполнен";
-    if (!reopenVerified) disagreements.push({ id: deal.id, kind: "closed_at не снят после повторного открытия" });
-    break;
+let reopenNote = "В событиях этой недели повторное открытие не встретилось";
+const reopenScan = await pages("/events", "events", {
+  "filter[entity]": "lead", "filter[type]": "lead_status_changed",
+  "filter[created_at][from]": Math.floor(week.from / 1000),
+  "filter[created_at][to]": Math.floor((week.to - 1) / 1000),
+}, 12);
+const reopened = reopenScan.rows.find((event) => {
+  const before = Number(event.value_before?.[0]?.lead_status?.id);
+  const after = Number(event.value_after?.[0]?.lead_status?.id);
+  return before === WON && after !== WON && after !== LOST;
+});
+if (reopened) {
+  const lead = await amo(`/leads/${reopened.entity_id}`);
+  const openNow = lead && lead.status_id !== WON && lead.status_id !== LOST;
+  reopenVerified = Boolean(openNow && (lead.closed_at == null || Number(lead.closed_at) === 0));
+  reopenNote = reopenVerified ? "Повторно открытая сделка выпала из закрытых: closed_at пуст" : "После выхода из успеха карточка не совпала с правилом";
+  if (!reopenVerified) disagreements.push({ id: Number(reopened.entity_id), kind: "closed_at не снят после повторного открытия" });
+} else if (!reopenScan.complete) reopenNote = "Поиск повторного открытия оборвался, правило не проверено";
+
+const openFetch = await (async () => {
+  const rows = [];
+  let complete = true;
+  for (const pipeline of REPORT_PIPELINES) {
+    const statuses = (pipelines.find((item) => item.id === pipeline)?._embedded?.statuses ?? []).filter((status) => status.id !== WON && status.id !== LOST);
+    const query = { with: "contacts" };
+    statuses.forEach((status, index) => {
+      query[`filter[statuses][${index}][pipeline_id]`] = pipeline;
+      query[`filter[statuses][${index}][status_id]`] = status.id;
+    });
+    const page = await pages("/leads", "leads", query, 20);
+    rows.push(...page.rows);
+    complete &&= page.complete;
+  }
+  return { rows, complete };
+})();
+if (openFetch.complete) {
+  for (const lead of openFetch.rows) {
+    if (!lead?.id || lead.is_deleted || byId.has(lead.id)) continue;
+    byId.set(lead.id, lead);
+    deals.push(build(lead));
+  }
+}
+
+let digest = null;
+const digestTasks = await pages("/tasks", "tasks", { "filter[is_completed]": 0 }, 20);
+if (digestTasks.complete) {
+  const leadIds = [...new Set(digestTasks.rows.filter((task) => task.entity_type === "leads").map((task) => Number(task.entity_id)))];
+  const digestLeads = [];
+  let digestComplete = true;
+  for (let index = 0; index < leadIds.length; index += 40) {
+    const chunk = leadIds.slice(index, index + 40);
+    const query = { with: "contacts" };
+    chunk.forEach((id, position) => { query[`filter[id][${position}]`] = id; });
+    const page = await pages("/leads", "leads", query, 3);
+    if (!page.complete || page.rows.some((lead) => !chunk.includes(lead.id))) {
+      digestComplete = false;
+      break;
+    }
+    digestLeads.push(...page.rows);
+  }
+  if (digestComplete) {
+    const known = new Map(deals.map((deal) => [deal.id, deal]));
+    const taskByLead = new Map();
+    for (const task of digestTasks.rows) {
+      if (task.entity_type !== "leads") continue;
+      const list = taskByLead.get(Number(task.entity_id)) ?? [];
+      list.push({
+        id: task.id, name: String(task.text ?? "Задача").replace(/\d{5,}/g, "••••").slice(0, 80),
+        due: Number(task.complete_till) * 1000, done: task.is_completed ? Number(task.updated_at) * 1000 : null,
+        responsibleId: task.responsible_user_id, leadMissing: false,
+      });
+      taskByLead.set(Number(task.entity_id), list);
+    }
+    const digestDeals = digestLeads.map((lead) => {
+      const existing = known.get(lead.id);
+      const stage = names.get(`${lead.pipeline_id}:${lead.status_id}`) ?? "";
+      const built = existing ?? normalizeLead(lead, users, {
+        history: [], historyComplete: false, touch: "unknown", stage,
+        unsorted: types.get(`${lead.pipeline_id}:${lead.status_id}`) === 1,
+        tasks: taskByLead.get(lead.id) ?? [],
+      });
+      return { ...built, tasks: taskByLead.get(lead.id) ?? built.tasks };
+    });
+    for (const task of digestTasks.rows) {
+      if (task.entity_type === "leads" && !digestLeads.some((lead) => lead.id === Number(task.entity_id))) {
+        digestDeals.push(normalizeLead({ id: 0, pipeline_id: 0, status_id: 0, custom_fields_values: [] }, users, {
+          tasks: [{ id: task.id, due: Number(task.complete_till) * 1000, done: null, leadMissing: true }],
+        }));
+      }
+    }
+    const collected = digestOverdue(digestDeals, now);
+    digest = {
+      complete: true,
+      tasks: collected.tasks.length,
+      stages: collected.stages.length,
+      missing: collected.missingDates.length,
+      unavailable: collected.unavailableTasks.length,
+    };
   }
 }
 
@@ -374,8 +465,8 @@ const meta = {
     complete: true, closedFrom: week.from, closedTo: week.to, createdFrom: week.from, createdTo: week.to,
   },
   queueHistory: "not_archive",
-  queueComplete: false,
-  digest: null,
+  queueComplete: openFetch.complete,
+  digest,
   liveStages: stages,
   chains: {
     effectOff: chain("effect", "off", new Set(stages)),

@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { readFile } from "node:fs/promises";
+import { readCrmAnalytics } from "../services/crmAnalyticsReport.js";
 import { getUserById } from "../services/auth.js";
 import { z } from "zod";
 import { dealStoreSchema } from "@kassa/shared";
@@ -16,8 +16,8 @@ export default async function statsRoutes(app: FastifyInstance) {
     if (!user || user.role !== "admin" || user.mustChangePassword) {
       return reply.code(403).send({ message: "Доступ только для администратора с действующей учётной записью" });
     }
-    const html = await readFile(new URL("../../reports/crm-analytics.html", import.meta.url), "utf8");
-    return { html };
+    const report = readCrmAnalytics();
+    return report;
   });
   const canStore = (user: {role:string;store?:string}, store:string) => ["admin","rop"].includes(user.role) || user.store === store;
   app.get("/shifts/current",{preHandler:[app.requireRoles(["admin","rop","consultant","seller"])]},async(req,reply)=>{
