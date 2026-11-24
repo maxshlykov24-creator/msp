@@ -1,4 +1,4 @@
-import { rentalEndPassed } from "@kassa/shared";
+import { AMO_PIPELINE_SALES, type DealKind } from "@kassa/shared";
 import * as amo from "../clients/amo.js";
 import * as deals from "./deals.js";
 import * as taskFlow from "./taskFlow.js";
@@ -6,6 +6,7 @@ import { writeKassaLink } from "./amoMapping.js";
 import { appendSystemAudit } from "./audit.js";
 import { allowedAmoPipeline, migrationBlocked, readTypedLead, assertTypedBinding, typedExecutionKind } from "./amoRouting.js";
 import { withOperationLock } from "../lib/idempotency.js";
+import { performAmoStatusPlan, planAmoStatus } from "./amoStatusPolicy.js";
 
 /**
  * Этапы воронки доставки (СДЭК). При приходе из amo на такой этап
@@ -113,6 +114,10 @@ export async function applyAmoLeadStatusEvent(event: LeadStatusEvent): Promise<A
   return withOperationLock(`amo-sync:${event.id}`, () => applyAmoLeadStatusEventLocked(event));
 }
 
+function inboundKind(stage: string, current: DealKind, typed: ReturnType<typeof readTypedLead>): DealKind {
+  return typed ? typedExecutionKind(typed, stage, current) : deals.kindForAmoStage(stage, current);
+}
+
 async function applyAmoLeadStatusEventLocked(event: LeadStatusEvent): Promise<{
   dealNumber?: number;
   stage?: string;
@@ -120,92 +125,57 @@ async function applyAmoLeadStatusEventLocked(event: LeadStatusEvent): Promise<{
   skipped?: string;
 }> {
   // События могут прийти повторно и не по порядку: читаем актуальное состояние CRM.
-  let lead = await amo.getLead(event.id);
-  if (!lead) return { skipped: "lead_not_found", tasks: false };
+  const lead = await amo.getLead(event.id);
+  if (!lead?.id) return { skipped: "lead_not_found", tasks: false };
   if (migrationBlocked(lead)) return { skipped: "migration_guard", tasks: false };
-  const statusId = lead.status_id;
-  const pipelineId = lead.pipeline_id;
-  // Проверяем актуальную CRM до зеркала, ссылок, задач и финансовых эффектов.
-  if (!allowedAmoPipeline(pipelineId)) return { skipped: "pipeline_disabled", tasks: false };
+  const pipelineAllowed = allowedAmoPipeline(lead.pipeline_id);
+  const stage = lead.status_id ? await deals.stageNameByStatusId(lead.status_id, lead.pipeline_id) : null;
+  const deal = pipelineAllowed ? await deals.getByAmoLeadId(lead.id) : null;
   const typed = readTypedLead(lead);
-
-  const stage = await deals.stageNameByStatusId(statusId!, pipelineId);
-  if (!stage || stage === "—") return { skipped: "unknown_status", tasks: false };
-
-  let deal = await deals.getByAmoLeadId(event.id);
-  if (!deal) {
-    lead = lead ?? (await amo.getLead(event.id));
-    if (!lead?.id) return { skipped: "lead_not_found", tasks: false };
-    deal = await deals.ensureLocalFromAmoLead(lead, stage);
-  }
-  assertTypedBinding(typed, deal);
-  deal = await deals.refreshFieldsFromAmo(deal, lead);
-  if (deal.amoEditOutbox) return {dealNumber:deal.number,tasks:false,skipped:"local_edit_pending"};
-
-  // Ссылка в карточке amo на эту заявку кассы. Пишем и при первом зеркале,
-  // и при повторной синхронизации этапа: поле могли добавить позже.
-  await writeKassaLink(event.id, deal.number).catch((err: Error) => {
-    console.warn(`[amo] ссылка на кассу, сделка #${event.id}: ${err.message}`);
+  if (deal) assertTypedBinding(typed, deal);
+  const decision = planAmoStatus({
+    pipelineAllowed,
+    isSalesPipeline: lead.pipeline_id === AMO_PIPELINE_SALES,
+    stage,
+    deal: deal ? {
+      number: deal.number,
+      kind: deal.kind,
+      stage: deal.stage,
+      syncStatus: deal.syncStatus,
+      amoEditOutbox: deal.amoEditOutbox,
+      moneyCancellation: deal.moneyCancellation,
+      rentalTo: deal.rentalTo,
+    } : null,
   });
-
-  // Срок аренды вышел. В amo этап остаётся «Аренда оплачена»: статуса «Аренда просрочена» там нет.
-  // Иначе вебхук возвращал бы кассу на оплаченную аренду при каждом эхе.
-  if (deal.kind === "rental" && stage === "Аренда оплачена" && rentalEndPassed(deal.rentalTo)) {
-    return { dealNumber: deal.number, stage: "Аренда просрочена", tasks: false, skipped: "rental_overdue" };
-  }
-
-  // Не слив в amoCRM лежит на системном «Провал». В кассе этот этап не показываем.
-  if (deal.kind === "no_sliv" && stage === "Провал") {
-    if (deal.stage !== "Не слив") {
-      await deals.updateStage(String(deal.number), "Не слив", ACTOR, {
-        skipAmoWriteback: true,
-        reason: "У не слива в кассе нет этапа «Провал»",
+  return performAmoStatusPlan({
+    decision,
+    leadId: lead.id,
+    existing: deal ? { number: deal.number, stage: deal.stage, kind: deal.kind } : null,
+  }, {
+    createMirror: async () => {
+      const created = await deals.createAmoStatusMirror(lead, stage ?? "");
+      return { number: created.number, stage: created.stage, kind: created.kind };
+    },
+    saveStage: async (target) => {
+      const saved = await deals.applyInboundAmoStage(deal!, lead, target, inboundKind(target, deal!.kind, typed));
+      return { number: saved.deal.number, stage: saved.deal.stage, kind: saved.deal.kind, changed: saved.changed };
+    },
+    onTasks: async () => {
+      const current = await deals.getByAmoLeadId(lead.id);
+      if (current) await taskFlow.onDealStage(current, ACTOR);
+    },
+    writeLink: (dealNumber) => writeKassaLink(lead.id, dealNumber),
+    audit: async (fromStage, toStage, dealNumber) => {
+      await appendSystemAudit({
+        action: `Заявка #${dealNumber}: этап «${fromStage}» → «${toStage}» (синхронизация из amoCRM)`,
+        entityType: "deal",
+        entityId: String(dealNumber),
+        before: { stage: fromStage },
+        after: { stage: toStage },
       });
-    }
-    return { dealNumber: deal.number, stage: "Не слив", tasks: false, skipped: "no_sliv" };
-  }
-
-  // Этап из amo задаёт вид заявки: доставка по воронке СДЭК, отложка по
-  // «Ждет товар» / «Товар в магазине» (созвон 04.09, примечание №1).
-  const nextKind = typed ? typedExecutionKind(typed, stage, deal.kind) : deals.kindForAmoStage(stage, deal.kind);
-
-  if (deal.stage === stage && deal.kind === nextKind) {
-    // Этап уже совпал — задачи всё равно досоздаём (если вебхук пришёл повторно
-    // после сбоя постановки).
-    await taskFlow.onDealStage(deal, ACTOR);
-    if (stage === "Успех" && deal.financialSyncRequired) {
-      const { synchronizeFinancialDeal } = await import("./sale.js");
-      await synchronizeFinancialDeal(deal, ACTOR);
-    }
-    return { dealNumber: deal.number, stage, tasks: true, skipped: "stage_unchanged" };
-  }
-
-  const updated = await deals.updateStage(String(deal.number), stage, ACTOR, {
-    skipAmoWriteback: true,
-    kind: nextKind !== deal.kind ? nextKind : undefined,
-    reason:
-      nextKind !== deal.kind
-        ? `Синхронизация этапа из amoCRM · вид заявки «${nextKind}»`
-        : "Синхронизация этапа из amoCRM",
+    },
+    invalidate: () => deals.invalidateAmoOpenCache(),
   });
-  if (!updated) return { skipped: "update_failed", tasks: false };
-
-  // П9: синк из amo — авто-событие в истории изменений.
-  await appendSystemAudit({
-    action: `Заявка #${deal.number}: этап «${deal.stage}» → «${stage}» (синхронизация из amoCRM)`,
-    entityType: "deal",
-    entityId: String(deal.number),
-    before: { stage: deal.stage, kind: deal.kind },
-    after: { stage, kind: nextKind },
-  });
-
-  await taskFlow.onDealStage(updated, ACTOR);
-  if (stage === "Успех") {
-    const { synchronizeFinancialDeal } = await import("./sale.js");
-    await synchronizeFinancialDeal(updated, ACTOR);
-  }
-  deals.invalidateAmoOpenCache();
-  return { dealNumber: updated.number, stage: updated.stage, tasks: true };
 }
 
 export async function handleAmoWebhook(rawBody: unknown, applyEvent = applyAmoLeadStatusEvent): Promise<{

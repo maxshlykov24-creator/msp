@@ -142,7 +142,7 @@ export class HttpClient {
             data
           );
         }
-        throw new HttpError(res.status, `${method} ${url} → ${res.status}`, data);
+        throw new HttpError(res.status, `${method} ${url} → ${res.status}${publicHttpErrorHint(data)}`, data);
       }
       return data as T;
     }
@@ -160,6 +160,26 @@ export class HttpClient {
   patch<T>(path: string, body?: unknown, extraHeaders?: Record<string, string>) {
     return this.request<T>("PATCH", path, body, extraHeaders);
   }
+}
+
+/** Короткая причина отказа без телефона, токена и значения поля. */
+export function publicHttpErrorHint(body: unknown): string {
+  if (!body || typeof body !== "object") return "";
+  const record = body as Record<string, unknown>;
+  const parts: string[] = [];
+  if (typeof record.detail === "string") parts.push(record.detail);
+  const errors = record["validation-errors"];
+  if (Array.isArray(errors)) {
+    for (const item of errors) {
+      const list = (item as { errors?: Array<{ code?: string; path?: string }> }).errors ?? [];
+      for (const error of list.slice(0, 3)) {
+        const piece = [error.code, error.path].filter(Boolean).join(" ");
+        if (piece) parts.push(piece);
+      }
+    }
+  }
+  const text = parts.join("; ").replace(/\d{10,}/g, "…").replace(/\s+/g, " ").trim().slice(0, 180);
+  return text ? `: ${text}` : "";
 }
 
 function safeJson(text: string): unknown {

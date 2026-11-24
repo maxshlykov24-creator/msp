@@ -1,7 +1,7 @@
 import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { deals as dealsTable, expenses as expensesTable, products, shifts, ledger } from "../db/schema.js";
-import { countSuitsInLines, isTestDeal, isSalesVisit, dealAccountingDay, cartLineTotal, settledItems } from "@kassa/shared";
+import { countSuitsInLines, isTestDeal, isUnconductedAmoMirror, isSalesVisit, dealAccountingDay, cartLineTotal, settledItems } from "@kassa/shared";
 import type { Deal, SuitPart } from "@kassa/shared";
 import { suitPartsByMsIds } from "./catalog.js";
 
@@ -140,7 +140,7 @@ export async function summary(
   viewer?: StatsViewer
 ): Promise<StatsSummary> {
   const rows = await db.select().from(dealsTable);
-  const originals = rows.map((r) => r.data as Deal);
+  const originals = rows.map((r) => r.data as Deal).filter(deal => !isUnconductedAmoMirror(deal));
   const everything = originals.filter(d => !isTestDeal(d)).map(d => {
     if (!["refund", "exchange"].includes(d.kind) || !d.linkedDealNumber) return d;
     const original = originals.find(s => s.number === d.linkedDealNumber || s.amoLeadId === d.linkedDealNumber);

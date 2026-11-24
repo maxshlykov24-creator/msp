@@ -15,6 +15,7 @@ import {
   moscowTodayYmd,
   rentalEndPassed,
   rentalEndYmd,
+  nextKassaNumber,
 } from "@kassa/shared";
 import type { Deal, DealKind, FunnelType, Store } from "@kassa/shared";
 import { getFieldIdByName } from "./bootstrap.js";
@@ -22,7 +23,7 @@ import { broadcast } from "../ws/hub.js";
 import { withOperationLock } from "../lib/idempotency.js";
 import { getEnv } from "../env.js";
 import { prepareAmoEdit } from "./amoEditQueue.js";
-import { readTypedLead, assertTypedBinding, typedExecutionKind, typedRoutingEnabled, typedPipelines } from "./amoRouting.js";
+import { readTypedLead, typedExecutionKind, typedRoutingEnabled, typedPipelines } from "./amoRouting.js";
 import * as financeQueue from "./queue.js";
 import { readAmoEditableFields, buildEditedLeadFields, buildLeadCustomFields, scheduleKassaLinkBackfill } from "./amoMapping.js";
 
@@ -168,53 +169,80 @@ export function kindForAmoStage(stage: string, currentKind: DealKind): DealKind 
 }
 
 /**
- * Зеркало сделки из amo, если в кассе ещё нет записи по amoLeadId
- * (доставку завели в CRM, а не в кассе). number = id сделки amo.
+ * Зеркало сделки из amo, если в кассе ещё нет записи по amoLeadId.
+ * Номер берётся из последовательности кассы, а не из id сделки amo.
  */
 export async function ensureLocalFromAmoLead(lead: amo.AmoLead, stage: string): Promise<Deal> {
-  if (!lead?.id) throw new Error("amo lead без id");
-  const typed = readTypedLead(lead);
-  const existing = await getByAmoLeadId(lead.id);
-  if (existing) {
-    assertTypedBinding(typed, existing);
-    return existing;
-  }
+  return createAmoStatusMirror(lead, stage);
+}
 
-  const byNumber = await getByNumber(lead.id);
-  if (byNumber) {
-    if (byNumber.amoLeadId !== lead.id) {
-      throw new Error("Номер заявки совпал с ID другой сделки amoCRM. Автоматическое объединение запрещено.");
-    }
-    assertTypedBinding(typed, byNumber);
-    const patched: Deal = {
-      ...byNumber,
-      amoLeadId: lead.id,
-      stage,
-      kind: typed ? typedExecutionKind(typed, stage, byNumber.kind) : kindForAmoStage(stage, byNumber.kind),
-      ...(typed ? { funnel: typed.funnel } : {}),
-    };
-    await persist(patched);
-    return patched;
+/** Входящий этап amo создаёт заявку с обычным номером кассы. Повтор возвращает ту же строку. */
+export async function createAmoStatusMirror(lead: amo.AmoLead, stage: string): Promise<Deal> {
+  if (!lead?.id) throw new Error("amo lead без id");
+  const existing = await getByAmoLeadId(lead.id);
+  if (existing) return existing;
+  const occupied = await getByNumber(lead.id);
+  if (occupied) {
+    throw new Error("Номер заявки совпал с ID другой сделки amoCRM. Автоматическое объединение запрещено.");
   }
 
   const statuses = await statusRows();
   const storeFieldId = await getFieldIdByName(AMO_LEAD_FIELDS.storeAddress).catch(() => null);
   const contacts = await contactsForLeads([lead]);
   const mapped = await mapLeadToDeal(lead, statuses, storeFieldId, contacts);
-  const deal: Deal = {
-    ...mapped,
+  const typed = readTypedLead(lead);
+  const kind = typed ? typedExecutionKind(typed, stage, mapped.kind) : kindForAmoStage(stage, mapped.kind);
+  const { number: _amoNumber, ...draft } = mapped;
+  const reserved = await reserveServerDeal({
+    ...draft,
+    id: `amo-${lead.id}`,
+    amoLeadId: lead.id,
     stage,
-    kind: typed ? typedExecutionKind(typed, stage, mapped.kind) : kindForAmoStage(stage, mapped.kind),
-    history: [
-      {
-        at: new Date().toISOString(),
-        who: "amoCRM",
-        action: `Зеркало из amoCRM · этап «${stage}»`,
-      },
-    ],
+    kind,
+    ...(typed ? { funnel: typed.funnel } : {}),
+    history: [{
+      at: new Date().toISOString(),
+      who: "amoCRM",
+      action: `Зеркало из amoCRM · этап «${stage}»`,
+    }],
+  }, `amo-mirror:${lead.id}`, { rejectNumber: lead.id });
+  if (reserved.duplicate) return reserved.deal;
+  return persist({ ...reserved.deal, syncStatus: "synced", syncError: undefined });
+}
+
+/**
+ * Этап из amo записывается в уже существующую заявку.
+ * Позиции, оплаты, документы МойСклад и история не заменяются карточкой amo.
+ * Неуспешная прошлая запись в amo и незавершённая правка остаются как есть.
+ */
+export async function applyInboundAmoStage(
+  deal: Deal,
+  lead: amo.AmoLead,
+  stage: string,
+  kind: DealKind
+): Promise<{ deal: Deal; changed: boolean }> {
+  if (deal.moneyCancellation || deal.syncStatus === "failed" || deal.amoEditOutbox) {
+    return { deal, changed: false };
+  }
+  const fields = await readAmoEditableFields(lead);
+  const next: Deal = {
+    ...deal,
+    ...fields,
+    stage,
+    kind,
+    completedAt: stage === "Успех" ? deal.completedAt ?? new Date().toISOString() : deal.completedAt,
   };
-  await persist(deal);
-  return deal;
+  const descriptive = ["consultant", "purpose", "channel", "comment", "referredBy", "callManager"] as const;
+  const sameFields = descriptive.every(key => (next[key] ?? "") === (deal[key] ?? ""));
+  if (next.stage === deal.stage && next.kind === deal.kind && sameFields) return { deal, changed: false };
+  if (next.stage !== deal.stage || next.kind !== deal.kind) {
+    next.history = [...(deal.history ?? []), {
+      at: new Date().toISOString(),
+      who: "amoCRM",
+      action: `Этап изменён: ${deal.stage} → ${stage} · Синхронизация из amoCRM`,
+    }];
+  }
+  return { deal: await persist(next), changed: true };
 }
 
 // Резолв по ссылке с фронта: это может быть number (строкой) или Deal.id (строка).
@@ -293,7 +321,8 @@ export async function persist(deal: Deal): Promise<Deal> {
 /** Резервирует серверный номер и ключ до внешних API. Повтор возвращает исходный результат. */
 export async function reserveServerDeal(
   requested: Omit<Deal, "number" | "createdAt"> & { createdAt?: string },
-  idempotencyKey: string
+  idempotencyKey: string,
+  options?: { rejectNumber?: number }
 ): Promise<{ deal: Deal; duplicate: boolean }> {
   return db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(77194201)`);
@@ -305,7 +334,10 @@ export async function reserveServerDeal(
     if (existing[0]) return { deal: existing[0].data as Deal, duplicate: true };
 
     const maxRows = await tx.select({ max: sql<number>`coalesce(max(${dealsTable.number}), 0)` }).from(dealsTable);
-    const number = Number(maxRows[0]?.max ?? 0) + 1;
+    const number = nextKassaNumber(Number(maxRows[0]?.max ?? 0));
+    if (options?.rejectNumber != null && number === options.rejectNumber) {
+      throw new Error("Номер кассы совпал с id сделки amoCRM");
+    }
     const deal: Deal = {
       ...requested,
       id: requested.id || idempotencyKey,
@@ -1134,7 +1166,9 @@ export async function listAmoBoardDeals(): Promise<Deal[]> {
 
 /** Прогрев открытых в фоне (старт + таймер 35с). */
 export function prewarmAmoOpen(): void {
-  refreshAmoOpen().catch(() => {});
+  refreshAmoOpen().catch((error: unknown) => {
+    console.warn(`[amo] чтение открытых сделок не удалось: ${(error as Error).message}`);
+  });
 }
 
 /** Прогрев закрытых. После удачного прохода кассы забирают снимок одним списком. */
@@ -1143,7 +1177,9 @@ export function prewarmAmoClosed(): void {
     .then(() => {
       broadcast("deal.updated", { source: "amo-closed" });
     })
-    .catch(() => {});
+    .catch((error: unknown) => {
+      console.warn(`[amo] чтение закрытых сделок не удалось: ${(error as Error).message}`);
+    });
 }
 
 async function mapLeads(leads: amo.AmoLead[], statuses: StatusRow[]): Promise<Deal[]> {

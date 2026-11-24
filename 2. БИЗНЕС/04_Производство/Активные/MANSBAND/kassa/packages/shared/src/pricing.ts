@@ -70,3 +70,34 @@ export function dealAccountingDay(deal: Deal): string {
 export function isSalesVisit(deal: Deal): boolean {
   return !["refund", "exchange", "defect", "drycleaning", "resew", "wrong_size", "wrong_label"].includes(deal.kind);
 }
+
+/** Следующий человеческий номер кассы. Id сделки amo сюда не подставляется. */
+export function nextKassaNumber(currentMax: number): number {
+  if (!Number.isSafeInteger(currentMax) || currentMax < 0) throw new Error("Некорректный номер кассы");
+  return currentMax + 1;
+}
+
+/** Зеркало, созданное входящим этапом amo. Настоящая заявка кассы имеет другой id. */
+export function isAmoMirrorDeal(deal: Pick<Deal, "id">): boolean {
+  return deal.id.startsWith("amo-");
+}
+
+/**
+ * Зеркало ещё не проводили в кассе. Такие строки не входят в выручку,
+ * визиты, конверсию и зарплату: бюджет amo не должен становиться кассой.
+ */
+export function isUnconductedAmoMirror(deal: Pick<Deal, "id" | "paid" | "payments" | "msOrderId" | "msDemandId">): boolean {
+  if (!isAmoMirrorDeal(deal)) return false;
+  if ((deal.paid ?? 0) > 0) return false;
+  if (deal.payments?.some(payment => payment.amount > 0)) return false;
+  if (deal.msOrderId || deal.msDemandId) return false;
+  return true;
+}
+
+/** Если по сделке amo уже есть проведённая заявка, зеркало в списке не показываем. */
+export function visibleLocalDeals<T extends Pick<Deal, "id" | "amoLeadId">>(local: T[]): T[] {
+  const conducted = new Set(
+    local.filter(deal => deal.amoLeadId && !isAmoMirrorDeal(deal)).map(deal => deal.amoLeadId)
+  );
+  return local.filter(deal => !(isAmoMirrorDeal(deal) && deal.amoLeadId && conducted.has(deal.amoLeadId)));
+}

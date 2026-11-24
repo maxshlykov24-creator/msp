@@ -13,6 +13,7 @@ import {
   isPartialPayment,
   isPaidHold,
   stageDateError,
+  visibleLocalDeals,
   HOLD_DEAL_KINDS,
   AUTOMATIC_HOLD_STAGES,
   RESERVE_UNTIL_KINDS,
@@ -99,7 +100,7 @@ export default async function dealsRoutes(app: FastifyInstance, dependencies: {
   });
   // Список заявок: локальное зеркало + amo (короткий потолок — иначе мобильный логин/первый экран стопорятся).
   app.get("/deals", { preHandler: [app.authenticate] }, async () => {
-    const local = await deals.listLocal();
+    const local = visibleLocalDeals(await deals.listLocal());
     // Открытые: тёплый кэш сразу, холодный старт до 40с. Закрытые с июня
     // подмешиваются из отдельного снимка и этот запрос не ждут.
     const amoDeals = await withTimeout(deals.listAmoBoardDeals().catch(() => [] as Deal[]), 40_000, []);

@@ -2,7 +2,7 @@ import { withOperationLock } from "../lib/idempotency.js";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { deals as dealsTable, payrollSettings, shifts, queue } from "../db/schema.js";
-import { DEFAULT_PAYROLL_SETTINGS, isTestDeal, isSalesVisit, dealAccountingDay } from "@kassa/shared";
+import { DEFAULT_PAYROLL_SETTINGS, isTestDeal, isUnconductedAmoMirror, isSalesVisit, dealAccountingDay } from "@kassa/shared";
 import type {
   Deal,
   PayrollDay,
@@ -116,7 +116,7 @@ export async function payrollReport(from: string, to: string): Promise<PayrollRe
     return source ? { ...d, consultant: source.consultant } : d;
   })
     .filter((d) => {
-      if (isTestDeal(d) || d.funnel === "defects") return false;
+      if (isTestDeal(d) || isUnconductedAmoMirror(d) || d.funnel === "defects") return false;
       const day = dealAccountingDay(d);
       return day >= from && day <= to;
     });
