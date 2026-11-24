@@ -13,7 +13,7 @@
     "seed": "tsx src/seed.ts",
     "seed:team": "tsx src/seedTeam.ts",
     "lint": "echo 'no lint for api'",
-    "test": "node --import tsx scripts/check-message-template-access.mjs && node scripts/check-crm-analytics.mjs && node --import tsx scripts/check-crm-analytics-screen.mjs"
+    "test": "node --import tsx scripts/check-message-template-access.mjs && node scripts/check-crm-analytics.mjs && node --import tsx scripts/check-crm-analytics-screen.mjs && node --import tsx scripts/check-amo-webhook.mjs"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.1",
