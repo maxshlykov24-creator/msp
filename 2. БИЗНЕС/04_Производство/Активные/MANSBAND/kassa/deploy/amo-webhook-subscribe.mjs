@@ -71,7 +71,7 @@ async function main() {
   console.log(`Создана подписка ${body.id ?? "без id"}: ${view.host}${view.path} события=${view.events.join(",")}`);
 }
 
-if (process.argv[1]?.endsWith("amo-webhook-subscribe.mjs")) {
+if (process.argv[1]?.endsWith("amo-webhook-subscribe.mjs") || process.env.KASSA_SUBSCRIBE === "1") {
   main().catch((error) => {
     console.error(error instanceof Error ? error.message : "Подписка не выполнена");
     process.exit(1);
