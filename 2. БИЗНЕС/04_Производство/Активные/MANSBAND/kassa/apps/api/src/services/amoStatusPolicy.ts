@@ -56,6 +56,47 @@ export function planAmoStatus(input: {
   return { type: "sync", stage, tasks: true };
 }
 
+type DescriptiveDeal = {
+  stage: string;
+  kind: DealKind;
+  syncStatus?: string;
+  amoEditOutbox?: unknown;
+  moneyCancellation?: unknown;
+  history?: Array<{ at: string; who: string; action: string }>;
+  completedAt?: string;
+  consultant?: string;
+  purpose?: string;
+  channel?: string;
+  comment?: string;
+  referredBy?: string;
+  callManager?: string;
+};
+
+const DESCRIPTIVE_KEYS = ["consultant", "purpose", "channel", "comment", "referredBy", "callManager"] as const;
+
+/** Меняет только этап, вид и шесть описательных полей. Остальной объект остаётся тем же. */
+export function mergeInboundAmoStage<T extends DescriptiveDeal>(
+  deal: T,
+  fields: Partial<Pick<T, (typeof DESCRIPTIVE_KEYS)[number]>>,
+  stage: string,
+  kind: DealKind,
+  now = new Date().toISOString()
+): { deal: T; changed: boolean } {
+  if (deal.moneyCancellation || deal.syncStatus === "failed" || deal.amoEditOutbox) return { deal, changed: false };
+  const next: T = { ...deal, ...fields, stage, kind };
+  if (stage === "Успех" && !next.completedAt) next.completedAt = now;
+  const sameFields = DESCRIPTIVE_KEYS.every(key => (next[key] ?? "") === (deal[key] ?? ""));
+  if (next.stage === deal.stage && next.kind === deal.kind && sameFields) return { deal, changed: false };
+  if (next.stage !== deal.stage || next.kind !== deal.kind) {
+    next.history = [...(deal.history ?? []), {
+      at: now,
+      who: "amoCRM",
+      action: `Этап изменён: ${deal.stage} → ${stage} · Синхронизация из amoCRM`,
+    }];
+  }
+  return { deal: next, changed: true };
+}
+
 export type AmoStatusSnapshot = { number: number; stage: string; kind: DealKind };
 
 export type AmoStatusResult = {

@@ -24,6 +24,7 @@ import { withOperationLock } from "../lib/idempotency.js";
 import { getEnv } from "../env.js";
 import { prepareAmoEdit } from "./amoEditQueue.js";
 import { readTypedLead, typedExecutionKind, typedRoutingEnabled, typedPipelines } from "./amoRouting.js";
+import { mergeInboundAmoStage } from "./amoStatusPolicy.js";
 import * as financeQueue from "./queue.js";
 import { readAmoEditableFields, buildEditedLeadFields, buildLeadCustomFields, scheduleKassaLinkBackfill } from "./amoMapping.js";
 
@@ -206,7 +207,12 @@ export async function createAmoStatusMirror(lead: amo.AmoLead, stage: string): P
       action: `Зеркало из amoCRM · этап «${stage}»`,
     }],
   }, `amo-mirror:${lead.id}`, { rejectNumber: lead.id });
-  if (reserved.duplicate) return reserved.deal;
+  if (reserved.duplicate) {
+    if (reserved.deal.id.startsWith("amo-") && reserved.deal.syncStatus === "pending") {
+      return persist({ ...reserved.deal, syncStatus: "synced", syncError: undefined });
+    }
+    return reserved.deal;
+  }
   return persist({ ...reserved.deal, syncStatus: "synced", syncError: undefined });
 }
 
@@ -221,28 +227,10 @@ export async function applyInboundAmoStage(
   stage: string,
   kind: DealKind
 ): Promise<{ deal: Deal; changed: boolean }> {
-  if (deal.moneyCancellation || deal.syncStatus === "failed" || deal.amoEditOutbox) {
-    return { deal, changed: false };
-  }
   const fields = await readAmoEditableFields(lead);
-  const next: Deal = {
-    ...deal,
-    ...fields,
-    stage,
-    kind,
-    completedAt: stage === "Успех" ? deal.completedAt ?? new Date().toISOString() : deal.completedAt,
-  };
-  const descriptive = ["consultant", "purpose", "channel", "comment", "referredBy", "callManager"] as const;
-  const sameFields = descriptive.every(key => (next[key] ?? "") === (deal[key] ?? ""));
-  if (next.stage === deal.stage && next.kind === deal.kind && sameFields) return { deal, changed: false };
-  if (next.stage !== deal.stage || next.kind !== deal.kind) {
-    next.history = [...(deal.history ?? []), {
-      at: new Date().toISOString(),
-      who: "amoCRM",
-      action: `Этап изменён: ${deal.stage} → ${stage} · Синхронизация из amoCRM`,
-    }];
-  }
-  return { deal: await persist(next), changed: true };
+  const merged = mergeInboundAmoStage(deal, fields, stage, kind);
+  if (!merged.changed) return merged;
+  return { deal: await persist(merged.deal), changed: true };
 }
 
 // Резолв по ссылке с фронта: это может быть number (строкой) или Deal.id (строка).
