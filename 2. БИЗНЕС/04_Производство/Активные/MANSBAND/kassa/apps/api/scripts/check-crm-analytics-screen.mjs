@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { renderCrmAnalytics } from "../src/services/crmAnalyticsReport.ts";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { loadCrmSnapshot, renderCrmAnalytics, snapshotPath } from "../src/services/crmAnalyticsReport.ts";
 
 const dir = new URL("../reports/", import.meta.url);
 const files = {
@@ -8,9 +10,20 @@ const files = {
   calc: readFileSync(new URL("crm-analytics-calc.mjs", dir), "utf8"),
   view: readFileSync(new URL("crm-analytics-view.js", dir), "utf8"),
 };
+const scratch = mkdtempSync(path.join(tmpdir(), "crm-analytics-"));
+writeFileSync(path.join(scratch, "broken.json"), "{");
+assert.equal(loadCrmSnapshot(path.join(scratch, "missing.json")), null);
+assert.equal(loadCrmSnapshot(path.join(scratch, "broken.json")), null);
+const previous = process.env.CRM_ANALYTICS_DIR;
+process.env.CRM_ANALYTICS_DIR = scratch;
+assert.equal(snapshotPath(), path.join(scratch, "crm-analytics-snapshot.json"));
+if (previous == null) delete process.env.CRM_ANALYTICS_DIR;
+else process.env.CRM_ANALYTICS_DIR = previous;
+rmSync(scratch, { recursive: true, force: true });
 const demo = renderCrmAnalytics(null, files);
 assert.equal(demo.mode, "demo");
 assert.equal(demo.html.includes("function buildDeals"), true);
+assert.equal(demo.html.includes("Демоданные"), true);
 
 const snapshot = {
   meta: {
@@ -42,6 +55,7 @@ const review = renderCrmAnalytics(snapshot, files);
 assert.equal(review.mode, "review");
 assert.equal(review.html.includes("function buildDeals"), false);
 assert.equal(review.html.includes("нет источника"), true);
+assert.equal(review.html.includes("только в кассе"), true);
 assert.equal(review.html.includes("<script>"), true);
 assert.equal(review.html.includes("\\u003cscript"), true);
 assert.equal(review.html.includes("Сайт <script>"), false);

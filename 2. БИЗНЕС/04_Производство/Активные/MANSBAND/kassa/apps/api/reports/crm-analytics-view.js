@@ -198,12 +198,18 @@ function queueReport() {
   return `<p class="hintline">Срез на ${stamp(builtAt)}. Период на эту очередь не влияет. История конца дня до первого ежедневного снимка архивом не считается и здесь не достраивается.</p><div class="metrics">${metric("Открытые заявки", fmt(open.length), "включая неразобранное", () => list("Все открытые заявки", open.slice().sort((a, b) => a.created - b.created), "Сначала самые ранние."))}</div>` +
     panel("На каких этапах накопились заявки?", "Текущий этап взят с карточки amo.", `<div class="stack">${entries.map(([stage, group]) => barRow(stage, group.length, open.length, () => list(stage, group, "Открытые заявки на этом этапе."))).join("")}</div>`);
 }
+function kassaLine() {
+  const cases = meta.kassaCases ?? { onlyKassa: [], closedOpen: [], amoMissing: [] };
+  if (meta.kassa === "checked") return "Продажи кассы за эту неделю сверены и в число CRM не добавлялись.";
+  if (meta.kassa === "mismatch") return `Касса расходится с amo: только в кассе ${fmt(cases.onlyKassa.length)}, без сделки amo ${fmt(cases.amoMissing.length)}, касса закрыта при открытой сделке ${fmt(cases.closedOpen.length)}.`;
+  return "Касса за эту неделю не прочитана. Продажа, которая есть только в кассе, в число CRM не добавляется и в этом срезе не выдумана.";
+}
 function review() {
   const blockers = meta.blockers?.length ? `<ul class="reasonlist">${meta.blockers.map((item) => `<li>${esc(item)}</li>`).join("")}</ul>` : `<p class="note">Список расхождений этой недели пуст.</p>`;
   const fields = meta.fieldProblems?.length ? `<p class="note">${meta.fieldProblems.map((item) => esc(item)).join("<br>")}</p>` : "";
   return panel("Почему бейдж сверки ещё на экране", meta.reopen?.note ?? "", blockers + fields) +
     panel("Что не подключено", "Пока журнала нет, здесь нет нуля.", `<div class="stack"><button class="item" ${reg(() => missingSource("Среднее время ответа", QUALITY_SOURCES.response.reason))}><span>Время ответа<small>${esc(QUALITY_SOURCES.response.reason)}</small></span>${ic("right")}</button><button class="item" ${reg(() => missingSource("Звонки", QUALITY_SOURCES.calls.reason))}><span>Пропущенные звонки<small>${esc(QUALITY_SOURCES.calls.reason)}</small></span>${ic("right")}</button></div>`) +
-    panel("Касса", meta.kassa === "checked" ? "Продажи кассы за эту неделю сверены и в число CRM не добавлялись." : "Касса за эту неделю не прочитана. Продажа, которая есть только в кассе, в число CRM не добавляется и в этом срезе не выдумана.", "") +
+    panel("Касса", kassaLine(), "") +
     `<p class="note">Неделя среза: ${esc(meta.week.label)}. Закрыто ${fmt(meta.week.closed)}, создано ${fmt(meta.week.created)}. Расхождений с фильтром amo: ${fmt(meta.week.discrepancies)}. Расхождений чекбокса «Целевой»: ${fmt(meta.week.checkbox)}. Сдвоенных карточек: ${fmt(meta.week.duplicates)}.</p>`;
 }
 function uncovered() { return `<div class="empty"><strong>Этот период в срезе не собран</strong>Срез покрывает ${esc(meta.week.label)}. Непокрытый период не показывается нулями.</div>`; }

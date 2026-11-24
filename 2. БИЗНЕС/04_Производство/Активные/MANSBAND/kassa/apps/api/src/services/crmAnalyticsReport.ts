@@ -1,11 +1,14 @@
 import { readFileSync } from "node:fs";
-import { homedir } from "node:os";
 import path from "node:path";
 
 export type CrmAnalyticsMode = "demo" | "review" | "live";
 
+export function analyticsDir(): string {
+  return process.env.CRM_ANALYTICS_DIR || "/root/.config/mansband";
+}
+
 export function snapshotPath(): string {
-  return path.join(homedir(), ".config", "mansband", "crm-analytics-snapshot.json");
+  return path.join(analyticsDir(), "crm-analytics-snapshot.json");
 }
 
 export function loadCrmSnapshot(file = snapshotPath()): { meta?: { accepted?: boolean }; deals?: unknown[] } | null {

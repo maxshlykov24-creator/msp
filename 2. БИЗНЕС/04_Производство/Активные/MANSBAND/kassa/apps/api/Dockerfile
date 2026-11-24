@@ -27,6 +27,7 @@ ENV NODE_ENV=production
 COPY --from=build /app/deploy-api/node_modules ./node_modules
 COPY --from=build /app/apps/api/dist ./dist
 COPY --from=build /app/apps/api/reports ./reports
+COPY --from=build /app/apps/api/scripts/reconcile-crm-analytics.mjs ./scripts/reconcile-crm-analytics.mjs
 COPY --from=build /app/apps/api/drizzle ./drizzle
 COPY --from=build /app/apps/api/package.json ./package.json
 COPY --from=build /app/packages/shared/dist ./node_modules/@kassa/shared/dist

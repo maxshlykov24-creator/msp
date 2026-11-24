@@ -35,7 +35,7 @@ export function CrmAnalytics() {
     </div>
     {!admin ? <p role="status">Эта страница доступна только администраторам.</p>
       : error ? <div role="alert" className="card p-4">{error} <button className="ml-2 underline" onClick={() => setAttempt((n) => n + 1)}>Повторить</button></div>
-      : html ? <iframe title="Аналитика CRM и логистики" sandbox="allow-scripts" srcDoc={html}
+      : html ? <iframe title="Аналитика CRM и логистики" sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox" srcDoc={html}
           className="block w-full rounded-xl border-0" />
       : <p role="status">Загружаем аналитику…</p>}
   </section>;

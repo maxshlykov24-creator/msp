@@ -94,7 +94,13 @@ export function kassaStatus(readOk, cases) {
 }
 
 function successInstant(sale) {
-  const stamp = sale.completedAt ?? [...(sale.history ?? [])].reverse().find((row) => /→ Успех|→ Товар выдан/.test(row.action ?? ""))?.at;
+  if (sale.completedAt != null) {
+    const direct = typeof sale.completedAt === "number" ? sale.completedAt : Date.parse(sale.completedAt);
+    if (Number.isFinite(direct)) return direct;
+  }
+  const company = sale.kind === "company" && sale.stage === "Товар выдан" && sale.issued === true;
+  const pattern = company ? /→ Успех|→ Товар выдан|товар выдан/i : /→ Успех/;
+  const stamp = [...(sale.history ?? [])].reverse().find((row) => pattern.test(row.action ?? ""))?.at;
   const at = typeof stamp === "number" ? stamp : Date.parse(stamp ?? "");
   return Number.isFinite(at) ? at : null;
 }
@@ -111,6 +117,18 @@ export function isKassaWeekSuccess(sale, from, to) {
   if (!success) return false;
   const at = successInstant(sale);
   return at != null && at >= from && at < to;
+}
+
+export function kassaComparableSale(sale) {
+  const at = successInstant(sale);
+  if (at == null) return null;
+  const lead = sale.amoLeadId == null || sale.amoLeadId === "" ? null : Number(sale.amoLeadId);
+  return {
+    number: Number(sale.number),
+    amoLeadId: Number.isInteger(lead) ? lead : null,
+    isTest: false,
+    completedAt: at,
+  };
 }
 
 /** Номер из ссылки кассы. Id сделки amo номером не становится, потолка в миллион нет. */

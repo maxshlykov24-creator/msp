@@ -28,4 +28,6 @@ docker compose up -d --build
 echo "== Миграции БД =="
 docker compose run --rm api node dist/db/migrate.js
 
+chmod +x "${ROOT}/deploy/crm-analytics-refresh.sh"
+
 echo "== Готово. Проверь: https://mansband-kassa.ru =="

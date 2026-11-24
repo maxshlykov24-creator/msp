@@ -1,12 +1,11 @@
-// Только чтение amoCRM. Списки id пишутся в ~/.config/mansband, не в vault.
+// Только чтение amoCRM и кассы. Снимок пишется в CRM_ANALYTICS_DIR, не в vault.
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   DIGEST_PIPELINES, REPORT_PIPELINES, WON, LOST, acceptance, canonicalStage, catalogProblems,
   chain, checkboxDisagreements, classifyTouch, digestOverdue, funnel, general, isKassaWeekSuccess,
-  isQual, isTarget, kassaCases, kassaNumberFromLink, kassaStatus, liveStageNames, normalizeLead,
+  isQual, isTarget, kassaCases, kassaComparableSale, kassaNumberFromLink, kassaStatus, liveStageNames, normalizeLead,
   overdueStages, overdueTasks, periodBounds, reopenGate,
 } from "../reports/crm-analytics-calc.mjs";
 
@@ -267,7 +266,10 @@ async function entityPages(pathname, key, leadId, completed) {
 const ids = [...byId.keys()];
 let done = 0;
 for (const id of ids) {
-  if (!checkpoint.leads[id]) {
+  const savedLead = checkpoint.leads[id];
+  const needsEvents = eventsAvailable && !savedLead?.eventsComplete;
+  const needsTasks = tasksAvailable && !savedLead?.tasksComplete;
+  if (!savedLead || needsEvents || needsTasks) {
     const events = eventsAvailable ? await entityPages("/events", "events", id) : { rows: [], complete: false, ignored: false };
     const openTasks = tasksAvailable ? await entityPages("/tasks", "tasks", id, 0) : { rows: [], complete: false, ignored: false };
     const doneTasks = tasksAvailable ? await entityPages("/tasks", "tasks", id, 1) : { rows: [], complete: false, ignored: false };
@@ -293,6 +295,15 @@ for (const id of ids) {
   if (done % 25 === 0) console.log(JSON.stringify({ progress: done, total: ids.length }));
 }
 writePrivate(checkpointPath, checkpoint);
+const unread = ids.filter((id) => {
+  const saved = checkpoint.leads[id];
+  if (!saved) return eventsAvailable || tasksAvailable;
+  return (eventsAvailable && !saved.eventsComplete) || (tasksAvailable && !saved.tasksComplete);
+});
+if (unread.length) {
+  writePrivate(reviewPath, { partial: true, reason: "Карточки прочитаны не до конца, срез не опубликован", count: unread.length, at: new Date().toISOString() });
+  throw new Error(`incomplete cards ${unread.length}`);
+}
 
 function build(lead) {
   const saved = checkpoint.leads[lead.id] ?? { events: [], tasks: [], eventsComplete: false, tasksComplete: false };
@@ -450,15 +461,17 @@ const effect = funnel(results.all.filter((deal) => deal.lane === "off"), chain("
 const logistics = funnel(results.all.filter((deal) => deal.lane === "on"), chain("logistics", "on", new Set(stages)));
 const taskRows = overdueTasks(results.all);
 const stageRows = overdueStages(results.all, now);
-const kassa = kassaCases(deals, [], week.from, week.to);
+const kassaRead = await readKassaSales(week.from, week.to);
+const kassa = kassaCases(deals, kassaRead.sales, week.from, week.to);
+const kassaState = kassaStatus(kassaRead.ok, kassa);
 const gate = acceptance({
   fieldProblems, eventsAvailable, tasksAvailable, timezoneConfirmed, weekStartConfirmed, reopenVerified,
-  partial: false, discrepancies: disagreements.length, checkboxCount: checkbox.length, kassa: "unavailable",
+  partial: false, discrepancies: disagreements.length, checkboxCount: checkbox.length, kassa: kassaState,
 });
 const meta = {
   builtAt: new Date(now).toISOString(),
   timeZone, timezoneConfirmed, weekStartsOn, weekStartConfirmed, fieldProblems, eventsAvailable, tasksAvailable,
-  kassa: "unavailable", accepted: gate.accepted, blockers: gate.blockers,
+  kassa: kassaState, accepted: gate.accepted, blockers: gate.blockers,
   week: {
     from: week.from, to: week.to,
     label: `${new Date(week.from).toLocaleDateString("ru-RU", { timeZone })} — ${new Date(week.to - 1).toLocaleDateString("ru-RU", { timeZone })}`,
@@ -515,9 +528,39 @@ writePrivate(reviewPath, {
 console.log(JSON.stringify({
   accepted: gate.accepted, blockers: gate.blockers, closed: results.all.length, created: sources.all.length,
   discrepancies: disagreements.length, checkbox: checkbox.length, duplicates: meta.week.duplicates,
-  unknownTouch: meta.week.unknownTouch, unknownOutcome: sources.unknown.length,
-  overdueTasks: taskRows.length, overdueStages: stageRows.overdue.length, missingDue: stageRows.missing.length,
-  reopen: reopenNote, sample: disagreements.slice(0, 5).map((row) => row.kind),
+  unknownTouch: meta.week.unknownTouch,
+  kassa: kassaState, onlyKassa: kassa.onlyKassa.length, amoMissing: kassa.amoMissing.length, closedOpen: kassa.closedOpen.length,
+  reopenVerified,
 }));
+
+async function readKassaSales(from, to) {
+  if (!process.env.DATABASE_URL) return { ok: false, sales: [] };
+  let sql;
+  try {
+    const postgres = (await import("postgres")).default;
+    sql = postgres(process.env.DATABASE_URL, { max: 1 });
+    const rows = await sql`select number, amo_lead_id, stage, ms_order_id, ms_demand_id, data from deals`;
+    const sales = [];
+    for (const row of rows) {
+      const data = row.data && typeof row.data === "object" ? row.data : {};
+      const sale = {
+        ...data,
+        number: row.number,
+        stage: row.stage ?? data.stage,
+        amoLeadId: data.amoLeadId ?? row.amo_lead_id ?? null,
+        msOrderId: data.msOrderId ?? row.ms_order_id ?? null,
+        msDemandId: data.msDemandId ?? row.ms_demand_id ?? null,
+      };
+      if (!isKassaWeekSuccess(sale, from, to)) continue;
+      const comparable = kassaComparableSale(sale);
+      if (comparable) sales.push(comparable);
+    }
+    return { ok: true, sales };
+  } catch {
+    return { ok: false, sales: [] };
+  } finally {
+    if (sql) await sql.end({ timeout: 1 }).catch(() => {});
+  }
+}
 void DIGEST_PIPELINES;
 void digestOverdue;

@@ -251,7 +251,7 @@ export function Dashboard() {
       </div>
       {user?.role === "admin" && (
         <a href="#crm-analytics" className="card mb-4 flex items-center justify-between gap-3 p-4 text-white hover:border-gold/50">
-          <span><strong>Аналитика CRM и логистики</strong><span className="block text-sm text-mute-soft">Прототип · демонстрационные данные</span></span>
+          <span><strong>Аналитика CRM и логистики</strong><span className="block text-sm text-mute-soft">Закрытая неделя. Режим написан на самой странице.</span></span>
           <ChevronRight size={18} aria-hidden="true" />
         </a>
       )}

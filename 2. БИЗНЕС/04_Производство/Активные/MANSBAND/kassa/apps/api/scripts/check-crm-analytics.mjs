@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import {
   DICTIONARY, QUALITY_SOURCES, SALES, OFFLINE, ONLINE, TEST_TAG, acceptance,
   catalogProblems, chain, classifyTouch, checkboxDisagreements, cohort, digestOverdue,
-  funnel, general, kassaCases, liveStageNames, medianHours, normalizeLead, outcomeAt, overdueStages,
+  funnel, general, isKassaWeekSuccess, kassaCases, kassaNumberFromLink, kassaStatus, liveStageNames, medianHours, normalizeLead, outcomeAt, overdueStages, reopenGate,
   overdueTasks, periodBounds, periodCovered, qualOutsideTarget, queueAt, zonedParts, zonedTimeToUtc,
 } from "../reports/crm-analytics-calc.mjs";
 
@@ -178,7 +178,28 @@ assert.equal(stageRows.overdue.length, 1);
 assert.equal(medianHours([], ["Дано обещание", "Доставлен"]).hours, null);
 const gate = acceptance({ fieldProblems: [], eventsAvailable: true, tasksAvailable: true, timezoneConfirmed: true, weekStartConfirmed: false, reopenVerified: true, partial: false, discrepancies: 0, checkboxCount: 0, kassa: "checked" });
 assert.equal(gate.accepted, false);
-assert.equal(acceptance({ fieldProblems: [], eventsAvailable: true, tasksAvailable: true, timezoneConfirmed: true, weekStartConfirmed: true, reopenVerified: true, partial: false, discrepancies: 0, checkboxCount: 0, kassa: "checked" }).accepted, true);
+const clearWeek = { fieldProblems: [], eventsAvailable: true, tasksAvailable: true, timezoneConfirmed: true, weekStartConfirmed: true, reopenVerified: true, partial: false, discrepancies: 0, checkboxCount: 0, kassa: "checked" };
+assert.equal(acceptance(clearWeek).accepted, true);
+assert.equal(reopenGate({ scanComplete: true, found: false, closedAtCleared: false }).verified, true);
+assert.equal(acceptance({ ...clearWeek, reopenVerified: reopenGate({ scanComplete: true, found: false, closedAtCleared: false }).verified }).accepted, true);
+assert.equal(reopenGate({ scanComplete: false, found: false, closedAtCleared: false }).verified, false);
+assert.equal(reopenGate({ scanComplete: true, found: true, closedAtCleared: false }).verified, false);
+const mismatch = kassaStatus(true, { onlyKassa: [1], closedOpen: [], amoMissing: [] });
+assert.equal(mismatch, "mismatch");
+assert.equal(acceptance({ ...clearWeek, kassa: mismatch }).accepted, false);
+assert.equal(acceptance({ ...clearWeek, kassa: mismatch }).blockers.includes("Касса за эту неделю расходится с amo"), true);
+assert.equal(kassaStatus(true, { onlyKassa: [], closedOpen: [], amoMissing: [] }), "checked");
+assert.equal(kassaStatus(false, { onlyKassa: [], closedOpen: [], amoMissing: [] }), "unavailable");
+assert.equal(isKassaWeekSuccess({ stage: "Успех", completedAt: monday + 1000 }, bounds.from, bounds.to), true);
+assert.equal(isKassaWeekSuccess({ stage: "Ждет товар", completedAt: monday + 1000 }, bounds.from, bounds.to), false);
+assert.equal(isKassaWeekSuccess({ stage: "Успех", isTest: true, completedAt: monday + 1000 }, bounds.from, bounds.to), false);
+assert.equal(isKassaWeekSuccess({ id: "amo-1", stage: "Успех", paid: 0, payments: [], completedAt: monday + 1000 }, bounds.from, bounds.to), false);
+assert.equal(isKassaWeekSuccess({ id: "amo-2", stage: "Успех", paid: 100, completedAt: monday + 1000 }, bounds.from, bounds.to), true);
+assert.equal(isKassaWeekSuccess({ kind: "company", stage: "Товар выдан", issued: true, history: [{ action: "Этап изменён: Оплачено → Товар выдан", at: monday + 2000 }] }, bounds.from, bounds.to), true);
+assert.equal(isKassaWeekSuccess({ kind: "company", stage: "Товар выдан", issued: false, completedAt: monday + 1000 }, bounds.from, bounds.to), false);
+assert.equal(isKassaWeekSuccess({ stage: "Успех", completedAt: bounds.to + 1000 }, bounds.from, bounds.to), false);
+assert.equal(kassaNumberFromLink("https://kassa/#board/all/all/57642834", 61703360), 57642834);
+assert.equal(kassaNumberFromLink("https://kassa/#board/all/all/61703360", 61703360), null);
 const sales = [
   { number: 1, amoLeadId: null, isTest: false, completedAt: monday + 1000 },
   { number: 2, amoLeadId: 1, isTest: false, completedAt: monday + 1000 },

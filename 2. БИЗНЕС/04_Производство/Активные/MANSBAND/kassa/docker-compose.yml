@@ -27,6 +27,9 @@ services:
       HOST: 0.0.0.0
       PORT: 3001
       TZ: ${TZ:-Europe/Moscow} # локальное время для суточного синка номенклатуры (07:00)
+      CRM_ANALYTICS_DIR: /root/.config/mansband
+    volumes:
+      - crm-analytics:/root/.config/mansband
     depends_on:
       db:
         condition: service_healthy
@@ -52,3 +55,4 @@ services:
 
 volumes:
   pgdata:
+  crm-analytics:
