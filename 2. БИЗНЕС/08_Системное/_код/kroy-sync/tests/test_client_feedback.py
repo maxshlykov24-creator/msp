@@ -54,7 +54,7 @@ def test_report_scoped_by_platform_date_and_exact_code(setup):
     with Session(engine) as s:
         rows={r['item_id']:r for r in calculate(s,params)['rows']}
         assert rows['s']['net']==6 and rows['s']['recommendation']==8
-        assert rows['m']['net'] is None
+        assert rows['m']['net'] == 0 and rows['m']['recommendation'] == 0
         with pytest.raises(DomainError):calculate(s,{**params,'report_ids':{'ozon':wb}})
 
 def test_workshop_receipt_rate_date_advance_and_closed_snapshot(setup):

@@ -86,9 +86,9 @@ def wb_gap_text(data,start,end):
     count=unmatched_between(data,start,end)
     if count is None:
         if not data.get('unmatched'):return None
-        return 'Wildberries: '+str(data['unmatched'])+' строк выгрузки с '+str(data.get('start'))+' по '+str(data.get('end'))+' без однозначного штрихкода не вошли в расчёт и не заменены нулём.'
+        return 'Wildberries: '+str(data['unmatched'])+' строк выгрузки с '+str(data.get('start'))+' по '+str(data.get('end'))+' без однозначного штрихкода не вошли в расчёт.'
     if not count:return None
-    return 'Wildberries: '+str(count)+' строк с '+start+' по '+end+' без однозначного штрихкода не вошли в расчёт и не заменены нулём.'
+    return 'Wildberries: '+str(count)+' строк с '+start+' по '+end+' без однозначного штрихкода не вошли в расчёт.'
 
 
 def ozon_gap_cards(catalog,skus,normalized,limit=40):

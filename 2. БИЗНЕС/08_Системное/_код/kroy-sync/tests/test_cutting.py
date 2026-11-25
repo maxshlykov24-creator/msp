@@ -46,10 +46,10 @@ def test_stale_calculation_and_inconsistent_groups_rejected(setup):
     assert balance(engine,'cloth')['reserved']==0
 
 
-def test_missing_sources_never_zero_and_negative_net(setup):
+def test_missing_sources_count_as_zero_and_negative_net(setup):
     engine,u,cmd=setup
     p=payload(engine); c=p['cutting']['calculation']
-    assert c['rows'][0]['net'] is None and c['rows'][0]['recommendation'] is None
+    assert c['rows'][0]['net'] == 0 and c['rows'][0]['recommendation'] == 0
     with transaction(engine) as s:
         for platform in ('wb','ozon'):
             s.add(Entity(id=platform,kind='sales_window',version=1,data=dict(platform=platform,start=c['parameters']['start'],end=c['parameters']['end'],at='2026-10-29T00:00:00Z',complete=True,verified=True,covered_items=['s'],events=[dict(item_id='s',kind='return',quantity=2,date=c['parameters']['end'])])))
@@ -89,7 +89,7 @@ def test_sales_import_deduplicates_and_preserves_returns_date(setup):
     store_window(engine,data);store_window(engine,data)
     with Session(engine) as s:
         row=calculate(s,dict(location='own',item_ids=['s']))['rows'][0]
-        assert row['platforms']['wb']['returns']==1 and row['net'] is None and row['net_known']==-1 and row['recommendation'] is None and row['sales_missing']==['ozon']
+        assert row['platforms']['wb']['returns']==1 and row['net'] == -1 and row['net_known']==-1 and row['recommendation'] == 0 and row['sales_missing']==['ozon']
     assert balance(engine)['free']==10
 
 
@@ -120,13 +120,13 @@ def test_missing_card_uses_the_marketplace_that_is_known(setup):
     with Session(engine) as s:
         rows = {r['item_id']: r for r in calculate(s, dict(location='own', item_ids=['s', 'm']))['rows']}
     assert rows['s']['platforms']['ozon']['absent'] is True and rows['s']['sales_missing'] == [] and rows['s']['net'] == 40 and rows['s']['recommendation'] == 30
-    assert rows['m']['net'] is None and rows['m']['sales_missing'] == ['ozon'] and rows['m']['recommendation'] is None
+    assert rows['m']['net'] == 8 and rows['m']['sales_missing'] == ['ozon'] and rows['m']['recommendation'] == 8
     with transaction(engine) as s:
         for e in s.scalars(select(Entity).where(Entity.kind == 'sales_window', Entity.data['platform'].as_string() == 'ozon')):
             s.delete(e)
     with Session(engine) as s:
         alone = calculate(s, dict(location='own', item_ids=['s']))['rows'][0]
-    assert alone['net'] is None and alone['sales_missing'] == ['ozon'] and not alone['platforms']['ozon'].get('absent')
+    assert alone['net'] == 40 and alone['sales_missing'] == ['ozon'] and alone['recommendation'] == 30 and not alone['platforms']['ozon'].get('absent')
 
 
 def test_confirmed_zero_stock_still_produces_recommendation(setup):
@@ -223,7 +223,8 @@ def test_fbo_reduces_demand_without_touching_own_stock(setup):
         store_window(engine,dict(platform=platform,start=params['start'],end=params['end'],at=datetime.now(MSK).isoformat(),complete=True,verified=True,covered_items=['s'],events=[dict(id=platform,item_id='s',date=params['end'],kind='sale',quantity=30)]))
     with Session(engine) as s:
         row=calculate(s,dict(location='own',item_ids=['s'],include_fbo=True))['rows'][0]
-        assert row['recommendation']==50 and row['recommendation_partial'] and row['fbo_total'] is None and set(row['fbo_missing'])=={'wb','ozon'} and row['fbo_counted']==0
+        assert row['recommendation']==50 and row['recommendation_partial'] is False and row['fbo_total'] is None and set(row['fbo_missing'])=={'wb','ozon'} and row['fbo_counted']==0
+        assert all('основание' not in text for text in calculate(s,dict(location='own',item_ids=['s'],include_fbo=True))['warnings'])
     for platform in ('wb','ozon'):
         store_snapshot(engine,platform,{'s':5},source='verified fixture',data_at=datetime.now(MSK).isoformat())
     with Session(engine) as s:

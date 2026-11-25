@@ -11,7 +11,6 @@ type Row = Record<string, any>;
 type Api = (path: string, body?: any) => Promise<any>;
 const states: Record<string, string> = { draft: 'Черновик', approved: 'Выдано', partial: 'Частично выполнено', complete: 'Завершено', cancelled: 'Отменено' };
 const n = (v: any) => v == null ? '—' : Number(v).toLocaleString('ru-RU');
-const platformLabel = (name: string) => name === 'wb' ? 'Wildberries' : 'Ozon';
 function sourceRemark(label: string, data: Row | undefined, period: Row) {
     if (!data) return '';
     const operational = String(data.reason || '').startsWith('Оперативные продажи');
@@ -19,8 +18,8 @@ function sourceRemark(label: string, data: Row | undefined, period: Row) {
     const failed = Boolean(data.reason) && !operational;
     if (!gap && !failed && ['ready', 'ready_cached'].includes(data.state)) return '';
     const retry = data.next_retry_at ? ' Повтор не раньше ' + new Date(data.next_retry_at).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' }) + '.' : '';
-    const coverage = gap ? ' Сверка покрывает ' + data.start + ' по ' + data.end + ', выбранный период шире. Пропуск не заменён нулём.' : '';
-    return label + ': ' + (data.reason || 'данные ещё загружаются') + '.' + coverage + retry + ' Количество к крою не обнуляется.';
+    const coverage = gap ? ' Сверка покрывает ' + data.start + ' по ' + data.end + ', выбранный период шире. Пропуск посчитан как 0.' : '';
+    return label + ': ' + (data.reason || 'данные ещё загружаются') + '.' + coverage + retry + ' Пропуск посчитан как 0.';
 }
 const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Moscow', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 const createdDay = (r: Row) => r.created_at ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Moscow', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(r.created_at)) : '';
@@ -100,16 +99,14 @@ function DemandTable({ rows, items, qty, previous, targetDate, uncertain, onQty,
         const fbo = Object.entries(row.fbo || {});
         const sales = row.net != null ? n(row.net) : row.net_known != null ? n(row.net_known) : '—';
         const previousRecommendation = previous?.rows.find((x: Row) => x.item_id === item.id)?.recommendation;
-        const fboFresh = Object.values(row.fbo || {}).some((v: any) => v.known && !v.stale);
-        const fboValue = row.fbo_missing?.length ? (fboFresh ? n(row.fbo_counted) : '—') : n(row.fbo_total);
-        const fboNote = row.fbo_missing?.length ? (fboFresh ? 'без ' + row.fbo_missing.map(platformLabel).join(' и ') : 'Нет данных, это не ноль') : '';
+        const fboValue = n(row.fbo_missing?.length ? row.fbo_counted : row.fbo_total);
         return <tr key={item.id}>
             <td><ProductCell item={item}/></td>
-            <td data-label="Продажи − возвраты">{platforms.length ? <details className="cut-disclosure"><summary className="cut-figure"><strong className="cut-num">{sales}</strong><Icon name="down" size={13}/></summary><div className="cut-breakdown">{platforms.map(([key, v]: [string, any]) => <div key={key} title={v.known ? 'Загружено ' + new Date(v.at).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' }) + ' · ' + (v.source || '') : v.reason || undefined}><span>{key === 'wb' ? 'ВБ' : 'Ozon'}</span><strong>{v.absent ? 'Нет карточки' : v.known ? `${v.sales} − ${v.returns} = ${v.net ?? v.sales - v.returns}` : '—'}</strong>{key==='ozon'&&(v.catalog_matches||[]).map((card:Row)=><small key={card.product_id}><a href={'https://www.ozon.ru/product/'+(card.skus?.[0]||card.product_id)+'/'} target="_blank" rel="noreferrer">{card.archived?'Карточка в архиве':'Карточка Ozon'}</a>{card.offer_id&&<span> · {card.offer_id}</span>}</small>)}{v.absent && <small>В расчёт не входит</small>}{!v.absent && (!v.known || v.listed === false) && <small className={!v.known ? 'cut-warning' : ''}>{v.known ? 'Не найдено в подключённом каталоге' : v.reason || 'Нет сверенных данных'}</small>}</div>)}</div></details> : <span className="cut-figure"><strong className="cut-num">{sales}</strong><span/></span>}{row.net == null && row.net_known != null && <small className="cut-warning">Не все площадки. Это не ноль.</small>}</td>
+            <td data-label="Продажи − возвраты">{platforms.length ? <details className="cut-disclosure"><summary className="cut-figure"><strong className="cut-num">{sales}</strong><Icon name="down" size={13}/></summary><div className="cut-breakdown">{platforms.map(([key, v]: [string, any]) => <div key={key} title={v.known ? 'Загружено ' + new Date(v.at).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' }) + ' · ' + (v.source || '') : v.reason || undefined}><span>{key === 'wb' ? 'ВБ' : 'Ozon'}</span><strong>{v.known ? `${v.sales} − ${v.returns} = ${v.net ?? v.sales - v.returns}` : '0'}</strong>{key==='ozon'&&(v.catalog_matches||[]).map((card:Row)=><small key={card.product_id}><a href={'https://www.ozon.ru/product/'+(card.skus?.[0]||card.product_id)+'/'} target="_blank" rel="noreferrer">{card.archived?'Карточка в архиве':'Карточка Ozon'}</a>{card.offer_id&&<span> · {card.offer_id}</span>}</small>)}{!v.known && <small>{v.reason || 'Посчитано как 0'}</small>}{v.known && v.listed === false && <small>Не найдено в подключённом каталоге</small>}</div>)}</div></details> : <span className="cut-figure"><strong className="cut-num">{sales}</strong><span/></span>}</td>
             <td data-label="Доступно у нас"><span className="cut-figure" title={row.stock_assumed_zero ? 'Для рекомендации принято 0. Складской остаток не изменён.' : undefined}><strong className="cut-num">{row.stock_assumed_zero ? '—' : n(row.free)}</strong><span/></span>{row.stock_assumed_zero && <small>Остаток не внесён</small>}</td>
-            <td data-label="ФБО">{fbo.length ? <details className="cut-disclosure"><summary className="cut-figure"><strong className="cut-num">{fboValue}</strong><Icon name="down" size={13}/></summary>{fbo.map(([platform, v]: [string, any]) => <p key={platform}>{platform==='wb'?'Wildberries':'Ozon'}: {v.known?n(v.quantity):'Нет сверенных данных'}{v.stale&&v.known?' · нужно обновить':''}</p>)}</details> : <span className="cut-figure"><strong className="cut-num">{fboValue}</strong><span/></span>}{fboNote && <small>{fboNote}</small>}</td>
+            <td data-label="ФБО">{fbo.length ? <details className="cut-disclosure"><summary className="cut-figure"><strong className="cut-num">{fboValue}</strong><Icon name="down" size={13}/></summary>{fbo.map(([platform, v]: [string, any]) => <p key={platform}>{platform==='wb'?'Wildberries':'Ozon'}: {v.known?n(v.quantity):'Нет сверенных данных'}{v.stale&&v.known?' · нужно обновить':''}</p>)}</details> : <span className="cut-figure"><strong className="cut-num">{fboValue}</strong><span/></span>}</td>
             <td data-label="Ожидается">{row.coverage?.length ? <details className="cut-disclosure"><summary className="cut-figure"><strong className="cut-num">{n(row.future)}</strong><Icon name="down" size={13}/></summary><div className="cut-breakdown">{row.coverage.map((c: Row) => <div key={c.id}><strong>{c.title}</strong><span>{n(c.quantity)} · {c.date ? dateText(c.date) : 'Без даты'}{c.included ? ' · учтено' : ''}</span>{c.date>targetDate&&<small>Позже выбранной даты</small>}{c.uncertain && (!c.date||c.date<=targetDate) && <label className="cut-check"><input type="checkbox" checked={uncertain.includes(c.id)} onChange={e => onUncertain(c.id, e.target.checked)}/><span>Учесть после обновления</span></label>}</div>)}</div></details> : <span className="cut-figure"><strong className="cut-num">{n(row.future)}</strong><span/></span>}</td>
-            <td data-label="Рекомендация"><span className="cut-figure"><strong className="cut-num">{n(row.recommendation)}</strong><span/></span>{row.recommendation==null&&<small className="cut-warning">{row.net_known!=null?'Нет полной выгрузки, рекомендация не обнулена':row.net==null?'Нужны данные продаж':'Нужны данные ФБО'}</small>}{row.recommendation_partial&&<small>Без недостающих остатков ФБО</small>}{previous && previousRecommendation !== row.recommendation && <small>Было {n(previousRecommendation)}</small>}</td>
+            <td data-label="Рекомендация"><span className="cut-figure"><strong className="cut-num">{n(row.recommendation)}</strong><span/></span>{previous && previousRecommendation !== row.recommendation && <small>Было {n(previousRecommendation)}</small>}</td>
             <td data-label="К крою"><input aria-label={'К крою ' + item.name} className="cut-qty" type="number" min="0" step="1" value={qty[item.id] || ''} onChange={e => onQty(item.id, e.target.value)}/></td>
         </tr>;
     })}</tbody></table></div>;
@@ -293,10 +290,8 @@ function CutEditor({ api, items, locations, users, existing, close, saved, onPul
         sourceRemark('Ozon', salesStatus.platforms?.ozon, params),
         sourceRemark('Wildberries', salesStatus.platforms?.wb, params),
         ...(calc?.warnings || []),
-        calc && calc.rows.some((r: Row) => r.stock_assumed_zero) ? 'Невнесённый остаток принят за 0 только для рекомендации. Складской учёт не меняется.' : '',
-        ['ready', 'ready_cached'].includes(salesStatus.platforms?.wb?.state) && String(salesStatus.platforms?.wb?.reason || '').startsWith('Оперативные') ? 'Wildberries: оперативные данные продаж. Итоговый финансовый отчёт ещё не сверён.' : '',
-        calc && params.include_fbo === true && calc.rows.some((r: Row) => Object.values(r.fbo || {}).some((v: any) => !v.known || v.stale)) ? 'Для части товаров нет полных актуальных данных ФБО. Их автоматическая рекомендация недоступна. Можно отключить учёт ФБО в периоде и рассчитать потребность только по нашему складу и ожидаемому выпуску.' : '',
-        previous && calc && previous.fingerprint !== calc.fingerprint ? 'Исходные данные изменились. Ручные количества сохранены. Пустая рекомендация не обнуляет количество к крою.' : '',
+        calc && calc.rows.some((r: Row) => r.stock_assumed_zero) ? 'Свой остаток не внесён у части позиций. Для рекомендации он равен 0. Склад не изменён.' : '',
+        previous && calc && previous.fingerprint !== calc.fingerprint ? 'Исходные данные изменились. Ручные количества сохранены.' : '',
     ].filter(Boolean))] as string[];
     const gapsAreRecent = params.start === shift(-30) && params.end === shift(-1);
     return <div className="cutting cut-editor">
@@ -335,7 +330,6 @@ function CutEditor({ api, items, locations, users, existing, close, saved, onPul
      </div>
      {calc && <div className="cut-result-stack"><div className="cut-result-heading"><span className="cut-hint">Обновлено {new Date(calc.calculated_at).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' })}</span><button className="secondary" onClick={applyRecommendations}>Применить рекомендации</button></div>
       <DemandTable rows={calc.rows} items={items} qty={qty} previous={previous} targetDate={params.target_date} uncertain={params.include_uncertain || []} onQty={(id, value) => { setManualQty(ids => [...new Set([...ids, id])]); setQty({ ...qty, [id]: value }); setGroups([]); changed(); }} onUncertain={(id, checked) => { const current = params.include_uncertain || []; setParams({ ...params, include_uncertain: checked ? [...current, id] : current.filter((item: string) => item !== id) }); clearCalc(); changed(); }}/>
-      <label>Основание при неполных данных<textarea value={reason} onChange={e => { setReason(e.target.value); changed(); }} placeholder="Необязательно для обычной поправки. Укажи основание, если исходных данных недостаточно."/></label>
      </div>}
      {remarksOpen && <DialogFrame title="Замечания к расчёту" close={() => setRemarksOpen(false)} className="cut-remark-dialog"><ul className="cut-remark-list">{remarks.map(text => <li key={text}>{text}</li>)}</ul>{calc && onPulse && <div className="cut-remark-actions">{!gapsAreRecent && <p className="cut-hint">В этом задании другой период. Список пробелов показывает последние 30 дней.</p>}<button type="button" className="secondary" onClick={() => { setRemarksOpen(false); onPulse(); }}>Все пробелы</button></div>}</DialogFrame>}
     </div>}

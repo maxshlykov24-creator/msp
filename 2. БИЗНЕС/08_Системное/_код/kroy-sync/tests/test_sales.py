@@ -184,5 +184,5 @@ def test_old_wb_window_is_not_used_without_end_of_report_proof(setup):
  assert invalidate_unverified_wb_windows(engine)==1
  with Session(engine) as s:
   row=calculate(s,dict(location='own',item_ids=['s']))['rows'][0]
-  assert row['recommendation'] is None and 'полноту' in row['platforms']['wb']['reason']
+  assert row['recommendation'] == 0 and row['platforms']['wb']['known'] is False and 'полноту' in row['platforms']['wb']['reason']
  assert invalidate_unverified_wb_windows(engine)==0
