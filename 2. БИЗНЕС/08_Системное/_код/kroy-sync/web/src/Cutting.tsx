@@ -5,6 +5,7 @@ import './Cutting.css';
 import {compareSizes,compareVariants,productCategory,photoCandidates} from './catalogData';
 import {ItemPhoto as Photo} from './ItemPhoto';
 import {ProductFilters,StockSummary,useProductFilters} from './ProductFilters';
+import {classifyBarcode} from './scanCue';
 import {modelStock, words} from './catalogData';
 type Row = Record<string, any>;
 type Api = (path: string, body?: any) => Promise<any>;
@@ -185,6 +186,9 @@ function CutEditor({ api, items, locations, users, existing, close, saved, onPul
         if (nav && current) nav.scrollTo({ left: Math.max(0, current.offsetLeft - 16), behavior: 'auto' });
     }, [step]);
     const garments = items.filter(i => i.kind === 'garment').sort(compareVariants), materials = items.filter(i => i.kind === 'material');
+    const selectedRef = useRef(selected), scanAdded = useRef(new Set<string>());
+    selectedRef.current = selected;
+    for (const id of scanAdded.current) if (selected.includes(id)) scanAdded.current.delete(id);
     useEffect(() => { api('norms').then(r => setNorms(r.values)).catch(() => { }); }, []);
     useEffect(() => { if (!Object.keys(norms).length) return; setGroups(current => { let touched = false; const next = current.map(g => { if (g.norm) return g; const match = normFor(g.model, norms); if (!match) return g; touched = true; return { ...g, norm: match }; }); return touched ? next : current; }); }, [norms]);
     useEffect(() => { const f = (e: BeforeUnloadEvent) => { if (dirty) {
@@ -210,6 +214,11 @@ function CutEditor({ api, items, locations, users, existing, close, saved, onPul
     function restoreRecovery(){if(!recovery)return;setTitle(recovery.title);setLocation(recovery.location);setSelected(recovery.selected.filter((id:string)=>items.some(i=>i.id===id)));setQty(recovery.qty);setParams(recovery.params);clearCalc();setReason(recovery.reason);setDue(recovery.due);setAvailable(recovery.available);setAssignee(recovery.assignee);setGroups(recovery.groups);setComment(recovery.comment);if(String(recovery.comment||'').trim())setCommentOpen(true);setAllowPurchase(recovery.allowPurchase);setManualQty(recovery.manualQty);setRecovery(null);changed()}
     function changed() { setDirty(true); setConfirmed(false); setPending(null); }
     function toggle(id: string) { changed(); setSelected(selected.includes(id) ? selected.filter(x => x !== id) : [...selected, id]); clearCalc(); setGroups([]); }
+    function acceptScan(code: string) {
+        const result = classifyBarcode(garments.filter(i => !selectedRef.current.includes(i.id) && !scanAdded.current.has(i.id)), code, garments);
+        if (result.hit === 'one' && result.id) { scanAdded.current.add(result.id); changed(); setSelected([...new Set([...selectedRef.current, ...scanAdded.current])]); clearCalc(); setGroups([]); }
+        return result.hit;
+    }
     async function calculate(refresh = false) { setBusy(true); setError(''); try {
         if (refresh) {
         setSyncMessage('Сверяем продажи с площадками…');
@@ -312,7 +321,7 @@ function CutEditor({ api, items, locations, users, existing, close, saved, onPul
 
    {step === 0 && <>
     <section className="panel cut-panel"><div className="cut-section-heading cut-section-heading-slim"><span className="cut-counter">Выбрано {selected.length}</span></div>
-     <ProductFilters filters={productFilters} categoryLabel="Категории товаров для кроя" searchLabel="Найти товар для кроя"/>
+     <ProductFilters filters={productFilters} categoryLabel="Категории товаров для кроя" searchLabel="Найти товар для кроя" onScan={acceptScan}/>
      <div className="cut-picker">{models.map(model => { const variants = productFilters.shown.filter(i => i.model === model), all = variants.every(i => selected.includes(i.id)), count = variants.filter(i => selected.includes(i.id)).length; return <details key={model}><summary><Photo item={variants.find(i=>photoCandidates(i).length)||variants[0]}/><strong>{model}</strong><StockSummary {...modelStock(variants,location)} className="cut-picker-stock"/><span className={'cut-model-count ' + (count ? 'has-selection' : '')}>выбрано {count} из {variants.length}</span>{calc&&<small className="cut-sold">Продано за период: {(() => { const values = variants.map(i => { const row = calc.rows.find((r:Row)=>r.item_id===i.id); return row?.net ?? row?.net_known ?? null; }); return values.every(v => v == null) ? '—' : n(values.reduce((sum, v) => sum + (v || 0), 0)); })()}</small>}<Icon name="down" size={16}/></summary><div className="cut-picker-content"><button className="text-button" onClick={() => { changed(); setSelected([...selected.filter(id => !variants.some(i => i.id === id)), ...(all ? [] : variants.map(i => i.id))]); clearCalc(); setGroups([]); }}>{all ? 'Снять выбор' : 'Выбрать все варианты'}</button><div className="cut-variant-options">{variants.map(i => <label className="cut-check" key={i.id}><input aria-label={(i.color || i.name) + ' · ' + (i.size || 'Без размера')} type="checkbox" checked={selected.includes(i.id)} onChange={() => toggle(i.id)}/><span>{i.color || i.name}<span className="cut-size">{i.size || 'Без размера'}</span></span></label>)}</div></div></details>; })}{!models.length && <div className="cut-inline-empty">Модели не найдены. Попробуй другое название.</div>}</div>
     </section>
    </>}

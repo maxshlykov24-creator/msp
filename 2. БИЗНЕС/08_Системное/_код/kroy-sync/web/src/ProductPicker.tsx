@@ -3,15 +3,17 @@ import {createPortal} from 'react-dom';
 import {Icon,isLastPopupTab,useAnchoredPopup} from './UI';
 import {ItemPhoto} from './ItemPhoto';
 import {compareSizes,compareVariants,productCategory,words} from './catalogData';
+import {classifyBarcode,playScanCue,scanMessages} from './scanCue';
+import {useScanBurst} from './useScanBurst';
 import './Products.css';
 
 type Item=Record<string,any>;
 
-type PickerProps={items:Item[];label:string;disabled?:boolean} & (
+type PickerProps={items:Item[];lookup?:Item[];label:string;disabled?:boolean} & (
  {value:string;onChange:(id:string)=>void;onAdd?:never} |
  {value?:never;onChange?:never;onAdd:(ids:string[])=>void}
 );
-export function ProductPicker({items,value,onChange,onAdd,label,disabled=false}:PickerProps){
+export function ProductPicker({items,lookup,value,onChange,onAdd,label,disabled=false}:PickerProps){
  const [pending,setPending]=useState<Set<string>>(new Set());
  function toggleItems(ids:string[]){
   setPending(current=>{
@@ -20,19 +22,30 @@ export function ProductPicker({items,value,onChange,onAdd,label,disabled=false}:
    return next;
   })
  }
- const[open,setOpen]=useState(false),[query,setQuery]=useState(''),[category,setCategory]=useState('Все'),[closed,setClosed]=useState<Set<string>>(new Set()),[expanded,setExpanded]=useState<Set<string>>(new Set());
- const trigger=useRef<HTMLButtonElement>(null),menu=useRef<HTMLDivElement>(null),input=useRef<HTMLInputElement>(null),id=useId();
+ const[open,setOpen]=useState(false),[query,setQuery]=useState(''),[category,setCategory]=useState('Все'),[closed,setClosed]=useState<Set<string>>(new Set()),[expanded,setExpanded]=useState<Set<string>>(new Set()),[scanNote,setScanNote]=useState('');
+ const trigger=useRef<HTMLButtonElement>(null),menu=useRef<HTMLDivElement>(null),input=useRef<HTMLInputElement>(null),justAdded=useRef(new Set<string>()),leftList=useRef(new Set<string>()),id=useId();
  const selected=items.find(i=>i.id===value);
  const q=query.trim().toLocaleLowerCase('ru');
  const shown=items.filter(i=>!q||[i.model,i.name,i.color,i.size,...(i.barcodes||[])].join(' ').toLocaleLowerCase('ru').includes(q));
  const categories=[...new Set(items.map(productCategory))].sort((a,b)=>a.localeCompare(b,'ru'));
  const groups=(category==='Все'?categories:[category]).filter(c=>shown.some(i=>productCategory(i)===c));
 
- function close(){setOpen(false);setQuery('');setPending(new Set())}
+ function close(){setOpen(false);setQuery('');setPending(new Set());setScanNote('');justAdded.current.clear();leftList.current.clear()}
  const position=useAnchoredPopup(open,trigger,menu,{width:680,height:540},close);
  function toggle(set:Set<string>,update:(next:Set<string>)=>void,key:string){const copy=new Set(set);copy.has(key)?copy.delete(key):copy.add(key);update(copy)}
  function pick(item:Item){if(trigger.current?.matches(':disabled'))return;if(onAdd){toggleItems([item.id]);return}onChange(item.id);close();trigger.current?.focus({preventScroll:true})}
+ function applyScan(code:string){
+  const selectable=items.filter(item=>!justAdded.current.has(item.id));
+  const result=classifyBarcode(selectable,code,lookup||items);
+  setQuery('');
+  if(result.hit!=='one'||!result.id){playScanCue('bad');setScanNote(scanMessages[result.hit==='one'?'none':result.hit]);return}
+  setScanNote(scanMessages.one);playScanCue('ok');
+  if(onAdd){justAdded.current.add(result.id);onAdd([result.id]);setPending(current=>{const next=new Set(current);next.delete(result.id!);return next});input.current?.focus({preventScroll:true});return}
+  onChange(result.id);close();
+ }
+ const scanner=useScanBurst(applyScan);
  useLayoutEffect(()=>{if(open&&trigger.current?.matches(':disabled'))close()});
+ useLayoutEffect(()=>{for(const id of justAdded.current){const present=items.some(item=>item.id===id);if(!present)leftList.current.add(id);else if(leftList.current.has(id)){leftList.current.delete(id);justAdded.current.delete(id)}}});
  useLayoutEffect(()=>{
   if(open)(matchMedia('(pointer:fine)').matches ? input.current : menu.current)?.focus({preventScroll:true});
  },[open]);
@@ -41,5 +54,5 @@ export function ProductPicker({items,value,onChange,onAdd,label,disabled=false}:
   if(e.key==='Escape'){e.preventDefault();e.stopPropagation()}
   else if(!isLastPopupTab(e,e.currentTarget))return;
   close();trigger.current?.focus({preventScroll:true});
- }}><div className="picker-search"><Icon name="search" size={16}/><input ref={input} aria-label="Найти позицию" placeholder="Модель, цвет, размер или штрихкод" value={query} onChange={e=>setQuery(e.target.value)}/></div><div className="picker-tabs" role="group" aria-label="Разделы">{['Все',...categories].map(c=><button type="button" key={c} aria-pressed={category===c} className={category===c?'active':''} onClick={()=>setCategory(c)}>{c==='Все'?'Все разделы':c}</button>)}</div><div className="picker-list">{groups.map(c=>{const rows=shown.filter(i=>productCategory(i)===c),models=[...new Set(rows.map(i=>i.model||i.name))].sort((a,b)=>a.localeCompare(b,'ru'));return <section key={c}><button type="button" className="picker-heading" aria-expanded={!closed.has(c)} onClick={()=>toggle(closed,setClosed,c)}><Icon name={closed.has(c)?'chevron':'down'} size={14}/><span>{c}</span><small>{words(models.length,'модель','модели','моделей')}</small></button>{!closed.has(c)&&models.map(model=>{const variants=rows.filter(i=>(i.model||i.name)===model).sort(compareVariants),photo=variants.find(i=>i.photo||i.photo_preview)||variants[0],key=c+'::'+model,isOpen=expanded.has(key)||!!q,colors=[...new Set(variants.map(i=>i.color))].filter(Boolean).join(' · ');const gridSizes=[...new Set(variants.map(i=>i.size||''))].sort(compareSizes);return <div key={key}><button type="button" className={'picker-model'+(isOpen?' is-open':'')} aria-expanded={isOpen} onClick={()=>toggle(expanded,setExpanded,key)}><ItemPhoto item={photo} className="picker-photo"/><span><b>{model}</b><em>{colors?colors+' · ':''}{words(variants.length,'позиция','позиции','позиций')}</em></span><Icon name={isOpen?'down':'chevron'} size={15}/></button>{isOpen&&<div className="picker-matrix-wrap">{onAdd&&<button type="button" className="text-button" onClick={()=>toggleItems(variants.map(i=>i.id))}>{variants.every(i=>pending.has(i.id))?'Снять выбор':'Выбрать все показанные'} · {variants.length}</button>}<table className="picker-matrix" style={{minWidth:112+gridSizes.length*76}}><colgroup><col className="picker-color"/>{gridSizes.map(size=><col key={size||'—'}/>)}</colgroup><thead><tr><th>Цвет</th>{gridSizes.map(size=><th key={size||'—'}>{size||'—'}</th>)}</tr></thead><tbody>{[...new Set(variants.map(i=>i.color||''))].map(color=><tr key={color||'—'}><th>{color||'—'}</th>{gridSizes.map(size=>{const item=variants.find(i=>(i.color||'')===color&&(i.size||'')===size);if(!item)return <td key={size} className="picker-gap"/>;const on=onAdd?pending.has(item.id):item.id===value;return <td key={size}><button type="button" className={'picker-cell'+(on?' is-selected':'')} aria-label={(color||model)+' '+(size||'без размера')} aria-pressed={on} onClick={()=>pick(item)}>{on?<Icon name="check" size={14}/>:onAdd?(size||'Выбрать'):null}</button></td>})}</tr>)}</tbody></table></div>}</div>})}</section>})}{!groups.length&&<p className="picker-empty">Ничего не найдено</p>}</div>{onAdd&&<div className="picker-footer"><button type="button" className="secondary" onClick={()=>{close();trigger.current?.focus()}}>Отмена</button><button type="button" disabled={!pending.size} onClick={()=>{onAdd([...pending]);close();trigger.current?.focus()}}>Добавить{pending.size?' · '+pending.size:''}</button></div>}</div>,document.body)}</div>
+ }}><div className="picker-search"><Icon name="search" size={16}/><input ref={input} aria-label="Найти позицию" placeholder="Модель, цвет, размер или штрихкод" value={query} onChange={e=>{setQuery(e.target.value);setScanNote('')}} onKeyDown={scanner.onKeyDown} onBeforeInput={scanner.onBeforeInput} autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false}/></div>{scanNote&&<p className={'picker-scan-note'+(scanNote===scanMessages.one?' is-ok':'')} role="status">{scanNote}</p>}<div className="picker-tabs" role="group" aria-label="Разделы">{['Все',...categories].map(c=><button type="button" key={c} aria-pressed={category===c} className={category===c?'active':''} onClick={()=>setCategory(c)}>{c==='Все'?'Все разделы':c}</button>)}</div><div className="picker-list">{groups.map(c=>{const rows=shown.filter(i=>productCategory(i)===c),models=[...new Set(rows.map(i=>i.model||i.name))].sort((a,b)=>a.localeCompare(b,'ru'));return <section key={c}><button type="button" className="picker-heading" aria-expanded={!closed.has(c)} onClick={()=>toggle(closed,setClosed,c)}><Icon name={closed.has(c)?'chevron':'down'} size={14}/><span>{c}</span><small>{words(models.length,'модель','модели','моделей')}</small></button>{!closed.has(c)&&models.map(model=>{const variants=rows.filter(i=>(i.model||i.name)===model).sort(compareVariants),photo=variants.find(i=>i.photo||i.photo_preview)||variants[0],key=c+'::'+model,isOpen=expanded.has(key)||!!q,colors=[...new Set(variants.map(i=>i.color))].filter(Boolean).join(' · ');const gridSizes=[...new Set(variants.map(i=>i.size||''))].sort(compareSizes);return <div key={key}><button type="button" className={'picker-model'+(isOpen?' is-open':'')} aria-expanded={isOpen} onClick={()=>toggle(expanded,setExpanded,key)}><ItemPhoto item={photo} className="picker-photo"/><span><b>{model}</b><em>{colors?colors+' · ':''}{words(variants.length,'позиция','позиции','позиций')}</em></span><Icon name={isOpen?'down':'chevron'} size={15}/></button>{isOpen&&<div className="picker-matrix-wrap">{onAdd&&<button type="button" className="text-button" onClick={()=>toggleItems(variants.map(i=>i.id))}>{variants.every(i=>pending.has(i.id))?'Снять выбор':'Выбрать все показанные'} · {variants.length}</button>}<table className="picker-matrix" style={{minWidth:112+gridSizes.length*76}}><colgroup><col className="picker-color"/>{gridSizes.map(size=><col key={size||'—'}/>)}</colgroup><thead><tr><th>Цвет</th>{gridSizes.map(size=><th key={size||'—'}>{size||'—'}</th>)}</tr></thead><tbody>{[...new Set(variants.map(i=>i.color||''))].map(color=><tr key={color||'—'}><th>{color||'—'}</th>{gridSizes.map(size=>{const item=variants.find(i=>(i.color||'')===color&&(i.size||'')===size);if(!item)return <td key={size} className="picker-gap"/>;const on=onAdd?pending.has(item.id):item.id===value;return <td key={size}><button type="button" className={'picker-cell'+(on?' is-selected':'')} aria-label={(color||model)+' '+(size||'без размера')} aria-pressed={on} onClick={()=>pick(item)}>{on?<Icon name="check" size={14}/>:onAdd?(size||'Выбрать'):null}</button></td>})}</tr>)}</tbody></table></div>}</div>})}</section>})}{!groups.length&&<p className="picker-empty">Ничего не найдено</p>}</div>{onAdd&&<div className="picker-footer"><button type="button" className="secondary" onClick={()=>{close();trigger.current?.focus()}}>Отмена</button><button type="button" disabled={!pending.size} onClick={()=>{onAdd([...pending]);close();trigger.current?.focus()}}>Добавить{pending.size?' · '+pending.size:''}</button></div>}</div>,document.body)}</div>
 }
