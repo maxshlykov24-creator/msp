@@ -205,4 +205,4 @@
 @media(min-width:701px){.cut-narrow-action{display:none}.cut-doc-menu:not(.has-actions){display:none}}
 @media(max-width:700px){.cut-chrome .cut-context{order:0;flex:0 1 auto;flex-basis:auto;font-size:12px}.cut-demand-list-row{grid-template-columns:1fr}.cut-layout-summary>.text-button{margin-left:0}}
 @media(pointer:coarse){.cutting input.cut-qty,.cutting .cut-release-matrix input,.cutting .cut-quantity-grid input{min-height:44px;font-size:16px}}
-@media print{.cut-chrome{display:none!important}}
+@media print{.cut-chrome{display:none!important}.cut-matrix-scroll{overflow:visible}}
