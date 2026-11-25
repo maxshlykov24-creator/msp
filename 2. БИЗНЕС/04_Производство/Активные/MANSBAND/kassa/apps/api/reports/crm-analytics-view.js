@@ -170,7 +170,8 @@ function failReasonNames(rows, mode, period) {
 function outcomeBar(rows, mode, period) {
   const names = failReasonNames(rows, mode, period);
   for (const name of [...state.reasons]) if (!names.includes(name)) state.reasons.delete(name);
-  const checks = [["success", "Успех"], ["fail", "Провал"], ["open", "В работе"]].map(([key, label]) => `<label><input type="checkbox" data-outcome="${key}" ${state.outcomes.has(key) ? "checked" : ""}>${label}</label>`).join("");
+  const openTitle = mode === "results" ? ` title="Пока отмечены все исходы, на экране закрытые за период. Снимите успех или провал, чтобы увидеть заявки, открытые на конец периода."` : "";
+  const checks = [["success", "Успех"], ["fail", "Провал"], ["open", "В работе"]].map(([key, label]) => `<label${key === "open" ? openTitle : ""}><input type="checkbox" data-outcome="${key}" ${state.outcomes.has(key) ? "checked" : ""}>${label}</label>`).join("");
   const summary = state.reasons.size === 0 ? "все" : [...state.reasons].join(", ");
   const menu = names.length ? names.map((name) => `<label><input type="checkbox" data-reason="${esc(name)}" ${state.reasons.has(name) ? "checked" : ""}>${esc(name)}</label>`).join("") + (state.reasons.size ? `<button type="button" class="link" ${reg(() => { state.reasons.clear(); state.reasonMenu = true; render(); })}>Сбросить</button>` : "") : `<p class="note">Провалов в этом периоде нет.</p>`;
   return `<div class="filterbar"><fieldset class="checks"><legend>Исход</legend>${checks}</fieldset><details class="reasonbox" ${state.reasonMenu ? "open" : ""}><summary>Причина провала · ${esc(summary)}</summary><div class="menu">${menu}</div></details></div>`;
