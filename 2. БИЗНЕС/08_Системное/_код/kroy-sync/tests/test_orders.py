@@ -328,6 +328,29 @@ def test_manual_ozon_identity_is_also_used_for_normalized_sales(setup):
  assert skus['999']==['m'] and 'm' in covered and 'm' not in absent
 
 
+def test_garment_barcode_is_counted_before_the_wb_card_exists(setup):
+    from app.order_sync import publish_saved_wb_sales
+    from app.cutting import calculate
+    from app.sales import MSK
+    engine, _, _ = setup
+    day = str(now().astimezone(MSK).date() - timedelta(days=1))
+    with transaction(engine) as s:
+        s.add(Entity(id='raw-known', kind='market_sale_raw', version=1, data=dict(account='seller', row=dict(saleID='S-known', date=day + 'T12:00:00', barcode='001', srid='known'))))
+        s.add(Entity(id='raw-foreign', kind='market_sale_raw', version=1, data=dict(account='seller', row=dict(saleID='S-foreign', date=day + 'T12:00:00', barcode='999', srid='foreign'))))
+        s.add(Entity(id='raw-return', kind='market_sale_raw', version=1, data=dict(account='seller', row=dict(saleID='R-foreign', date=day + 'T12:00:00', barcode='999', srid='foreign'))))
+        s.add(Entity(id='order-foreign', kind='market_order', version=1, data=dict(platform='wb', account='seller', source_ref='foreign', lines=[dict(barcode='999', offer_id='ТП-ТЕСТ', quantity=1)])))
+    assert publish_saved_wb_sales(engine, 'seller', now())
+    with Session(engine) as s:
+        window = s.scalar(select(Entity).where(Entity.kind == 'sales_window', Entity.data['platform'].as_string() == 'wb'))
+        assert window.data['unmatched'] == 2 and 's' in window.data['covered_items']
+        assert sum(event['quantity'] for event in window.data['events'] if event['item_id'] == 's') == 1
+        assert window.data['unmatched_rows'] == [dict(date=day, offer_id='ТП-ТЕСТ', sales=1, returns=1)]
+        assert all('barcode' not in row for row in window.data['unmatched_rows'])
+        calc = calculate(s, dict(location='own', item_ids=['s'], start=day, end=day, include_fbo=False))
+    assert calc['rows'][0]['platforms']['wb']['sales'] == 1
+    assert any(text == 'ТП-ТЕСТ: 1 продажа, 1 возврат' for text in calc['warnings'])
+
+
 def test_saved_sales_make_a_recommendation_while_the_report_is_still_limited(setup):
     from app.cutting import calculate
     from app.db import Balance

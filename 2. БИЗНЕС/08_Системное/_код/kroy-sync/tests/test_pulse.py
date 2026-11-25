@@ -172,6 +172,23 @@ def test_annotate_uses_local_cache_without_touching_version(setup, tmp_path):
     assert annotate_saved_gaps(engine, cache) == {'ozon': 0, 'wb': 0}
 
 
+def test_wb_gap_lists_articles_without_barcodes(setup):
+    engine, _, _ = setup
+    moment = _moment(12)
+    start, yesterday, _ = _period(moment)
+    _fbo(engine)
+    _window(engine, 'ozon', start, yesterday, ['s'], events=[dict(id='sale-s', item_id='s', date=yesterday, kind='sale', quantity=1)], catalog_proof=dict(all_products_matched=True, catalog_products=1, matched_products=1))
+    _window(engine, 'wb', start, yesterday, ['s'], unmatched=3, unmatched_by_day={yesterday: 3}, unmatched_rows=[
+        dict(date=yesterday, offer_id='ТП-ТЕСТ', sales=2, returns=0),
+        dict(date=yesterday, offer_id='', sales=0, returns=1),
+    ])
+    pulse = build_pulse(engine, moment)
+    lines = next(row for row in pulse['topics'] if row['id'] == 'wb-lines')
+    assert lines['count'] == 3 and 'не сопоставлены' in lines['title']
+    assert [(row['offer_id'], row['detail']) for row in lines['rows']] == [('ТП-ТЕСТ', '2 продажи'), ('Артикул в заказе не найден', '1 возврат')]
+    assert 'barcode' not in json.dumps(lines, ensure_ascii=False)
+
+
 def test_cutter_can_read_pulse_without_sale_bodies(setup):
     engine, _, _ = setup
     with transaction(engine) as s:

@@ -22,14 +22,19 @@ function lead(pulse: Row) {
     return 'Продажи за период дошли. Разбирать нечего.';
 }
 
+function amount(row: Row) {
+    if (row.detail) return row.detail;
+    return row.units != null ? row.units + ' шт.' : '';
+}
+
 function Topic({ topic, canMap, onMap }: { topic: Row; canMap: boolean; onMap: (itemId: string) => void }) {
     const rows: Row[] = topic.rows || [];
     const lines = <>
-        {rows.map((row, index) => <div className="pulse-row" key={row.item_id || row.offer_id || index}><span><b>{row.name || row.offer_id}</b>{row.offer_id && row.name ? <small>{row.offer_id}</small> : null}</span><span className="pulse-units">{row.units != null ? row.units + ' шт.' : ''}</span>{topic.action === 'map' && canMap && row.item_id && <button type="button" className="secondary" onClick={() => onMap(row.item_id)}>Сопоставить</button>}</div>)}
+        {rows.map((row, index) => <div className="pulse-row" key={row.item_id || row.offer_id || index}><span><b>{row.name || row.offer_id}</b>{row.offer_id && row.name ? <small>{row.offer_id}</small> : null}</span><span className="pulse-units">{amount(row)}</span>{topic.action === 'map' && canMap && row.item_id && <button type="button" className="secondary" onClick={() => onMap(row.item_id)}>Сопоставить</button>}</div>)}
         {topic.more > 0 && <p className="muted">Ещё {topic.more}. Показаны первые строки.</p>}
     </>;
     if (!rows.length) return <div className="pulse-topic is-plain"><strong>{topic.title}</strong><p>{topic.effect}</p></div>;
-    return <details className="pulse-topic"><summary><span><strong>{topic.title}</strong><small>{topic.effect}</small></span><Icon name="down" size={16}/></summary>{lines}</details>;
+    return <details className="pulse-topic" open={topic.id === 'wb-lines'}><summary><span><strong>{topic.title}</strong><small>{topic.effect}</small></span><Icon name="down" size={16}/></summary>{lines}</details>;
 }
 
 export function AttentionPulse({ pulse, opening, canPlan, canMap, onMap, requestSync }: {
