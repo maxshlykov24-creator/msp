@@ -100,3 +100,141 @@ def bind_order_item(s,doc,p):
             new.append(r)
         if updated:data.update(lines=new,needs_mapping=not new or any(r['mapping']!='matched' or r['quantity'] is None for r in new));save(e,data);changed+=1
     return {'id':order.id,'version':order.version,'changed_orders':changed}
+
+
+def planned_barcode_adoptions(s):
+    """Ozon card whose barcodes all sit on one unique Wildberries size.
+
+    Several cards for one garment, a barcode owned by another garment, or an
+    Ozon card already linked elsewhere are left untouched.
+    """
+    catalog = s.get(Entity, 'card-catalog:ozon')
+    if catalog is None:
+        return []
+    items = {i.id: i for i in s.scalars(select(Item).where(Item.kind == 'garment'))}
+    stored = defaultdict(set)
+    for item in items.values():
+        for code in item.barcodes or []:
+            stored[str(code)].add(item.id)
+    on_size = defaultdict(set)
+    for entry in s.scalars(select(Entity).where(Entity.kind == 'mapping', Entity.data['platform'].as_string() == 'wb')):
+        data = entry.data
+        rows = data.get('candidates') or []
+        if data.get('state') != 'unique' or len(rows) != 1:
+            continue
+        for code in rows[0].get('market_barcodes') or []:
+            on_size[str(code)].add(data['item_id'])
+    ozon = {}
+    for entry in s.scalars(select(Entity).where(Entity.kind == 'mapping', Entity.data['platform'].as_string() == 'ozon')):
+        ozon[entry.data['item_id']] = entry.data
+    found = []
+    for variant in catalog.data.get('variants') or []:
+        codes = [str(code).strip() for code in variant.get('barcodes') or [] if str(code).strip()]
+        if not codes or not variant.get('product_id'):
+            continue
+        owners = set()
+        for code in codes:
+            matches = on_size.get(code) or set()
+            if len(matches) != 1:
+                owners = set()
+                break
+            owners |= matches
+        if len(owners) != 1:
+            continue
+        item_id = next(iter(owners))
+        if any(stored.get(code, set()) - {item_id} for code in codes):
+            continue
+        current = ozon.get(item_id)
+        if current and current.get('state') not in ('missing', 'unique'):
+            continue
+        if current and current.get('state') == 'unique':
+            linked = {str(card.get('product_id')) for card in current.get('candidates') or []}
+            if str(variant['product_id']) not in linked:
+                continue
+        item = items.get(item_id)
+        if item is None:
+            continue
+        have = {str(code) for code in item.barcodes or []}
+        missing = [code for code in codes if code not in have]
+        needs_link = current is None or current.get('state') == 'missing'
+        if not missing and not needs_link:
+            continue
+        found.append(dict(item_id=item_id, product_id=str(variant['product_id']), offer_id=str(variant.get('offer_id') or ''), barcodes=missing, needs_link=needs_link))
+    grouped = defaultdict(list)
+    for row in found:
+        grouped[row['item_id']].append(row)
+    return [rows[0] for rows in grouped.values() if len(rows) == 1]
+
+
+def adopt_barcodes_from_linked_sizes(s):
+    """Write the planned barcode onto the garment and link its Ozon card."""
+    from uuid import uuid4
+    from .catalog_cards import link_card
+    from .db import Document, User
+    from .service import require
+    plans = planned_barcode_adoptions(s)
+    if not plans:
+        return []
+    owner = s.scalar(select(User).where(User.role == 'owner', User.active.is_(True)).order_by(User.id))
+    require(owner is not None, 'Нет владельца для записи штрихкода', 422)
+    applied = []
+    for plan in plans:
+        item = s.get(Item, plan['item_id'])
+        doc = str(uuid4())
+        if plan['barcodes']:
+            version = int((item.source or {}).get('version') or 1)
+            previous = {key: getattr(item, key) for key in ('name', 'model', 'color', 'size', 'category', 'barcodes', 'photo')}
+            previous['barcodes'] = list(item.barcodes or [])
+            s.add(Entity(id='item-revision:' + doc, kind='item_revision', version=version, data={'item_id': item.id, 'previous': previous}))
+            item.barcodes = list(item.barcodes or []) + plan['barcodes']
+            item.source = {**(item.source or {}), 'version': version + 1, 'last_document': doc}
+        s.add(Document(id=doc, kind='item.update' if plan['barcodes'] else 'catalog.link', actor=owner.id, reason='Штрихкод карточки на уже связанном размере Wildberries', payload={'item_id': item.id, 'barcodes': plan['barcodes'], 'ozon_product_id': plan['product_id'], 'offer_id': plan['offer_id']}))
+        if plan['needs_link']:
+            link_card(s, item, 'ozon', plan['product_id'], doc)
+        applied.append(plan)
+    return applied
+
+
+GEISHA_OFFERS = {
+    'ФТБ-ГША-ЧЕРН-S': ('Чёрный', 'S'),
+    'ФТБ-ГША-ЧЕРН-M': ('Чёрный', 'M'),
+    'ФТБ-ГША-Т.КОРИЧ-S': ('Тёмно-коричневый', 'S'),
+    'ФТБ-ГША-Т.КОРИЧ-M': ('Тёмно-коричневый', 'M'),
+}
+
+
+def create_approved_geisha(engine, user, products):
+    """Create the four approved Geisha garments. Any other offer is ignored."""
+    from uuid import uuid4
+    from sqlalchemy.orm import Session
+    from .service import execute, require
+    specs = []
+    with Session(engine) as s:
+        existing = list(s.scalars(select(Item).where(Item.kind == 'garment')))
+    by_variant = {(item.model, item.color, item.size): item for item in existing}
+    by_code = defaultdict(set)
+    for item in existing:
+        for code in item.barcodes or []:
+            by_code[str(code)].add(item.id)
+    for product in products:
+        offer = str(product.get('offer_id') or '')
+        if offer not in GEISHA_OFFERS:
+            continue
+        color, size = GEISHA_OFFERS[offer]
+        codes = [str(code).strip() for code in product.get('barcodes') or [] if str(code).strip()]
+        skus = [str(source.get('sku')) for source in product.get('sources') or [] if source.get('sku')]
+        require(not product.get('is_archived') and not product.get('is_autoarchived'), 'Карточка Гейши в архиве: ' + offer, 422)
+        require(len(codes) == 1 and len(skus) == 1 and product.get('id'), 'Карточка Гейши не однозначна: ' + offer, 422)
+        current = by_variant.get(('Футболка Гейша', color, size))
+        owners = by_code.get(codes[0], set())
+        if current is not None:
+            require(not owners or owners == {current.id}, 'Штрихкод Гейши уже у другого товара', 422)
+            continue
+        require(not owners, 'Штрихкод Гейши уже у другого товара', 422)
+        specs.append(dict(offer=offer, color=color, size=size, code=codes[0], product_id=str(product['id'])))
+    created = []
+    for spec in specs:
+        op = str(uuid4())
+        execute(engine, user, op, 'item.create', dict(id=op, name='Футболка Гейша \u2014 ' + spec['color'] + ' (' + spec['size'] + ')', model='Футболка Гейша', color=spec['color'], size=spec['size'], category='YUJI', kind='garment', unit='piece', barcodes=[spec['code']], cards={'ozon': spec['product_id']}), 'Новая модель Футболка Гейша по артикулу Ozon')
+        created.append(dict(id=op, offer=spec['offer'], color=spec['color'], size=spec['size']))
+    return created

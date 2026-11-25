@@ -235,6 +235,68 @@ def latest_window(engine,platform,start,end):
     return copy.deepcopy(max(windows,key=lambda d:(not bool(d.get('identity_pending')),d.get('at') or ''),default=None))
 
 
+def assemble_ozon_window(engine, catalog, raw, hashes, start, end, certificate):
+    """Attach barcodes that already sit on a linked size, then build the sales window."""
+    from .catalog_cards import ozon_variants, remember
+    from .product_identity import adopt_barcodes_from_linked_sizes
+    require(certificate and certificate.get('verified'), 'Классификация Ozon ещё не сверена с отчётом', 422)
+    with transaction(engine) as s:
+        if catalog.get('complete'):
+            remember(s, 'ozon', catalog['at'], ozon_variants(catalog['items']))
+        adopted = adopt_barcodes_from_linked_sizes(s)
+    skus, ozon_covered, not_listed, catalog_proof = catalog_links(engine, catalog)
+    normalized, blocked, reversed_units = ozon_entries(raw)
+    unmatched = 0
+    events = []
+    catalog_matches = defaultdict(list)
+    for product in catalog['items']:
+        ids = {iid for source in product.get('sources') or [] for iid in skus.get(str(source.get('sku')), [])}
+        if len(ids) == 1:
+            catalog_matches[next(iter(ids))].append(dict(product_id=str(product['id']), offer_id=product.get('offer_id'), skus=[str(v['sku']) for v in product.get('sources') or [] if v.get('sku')], archived=bool(product.get('is_archived') or product.get('is_autoarchived'))))
+    blocked_items = {iid: 'Не найдена исходная продажа для отмены начисления Ozon' for sku in blocked for iid in skus.get(sku, [])}
+    allowed = ozon_covered - set(blocked_items)
+    unknown_skus = {r['sku'] for r in normalized if len(skus.get(r['sku'], [])) != 1} | {sku for sku in blocked if len(skus.get(sku, [])) != 1}
+    proven_not_listed = not_listed if catalog_proof['all_products_matched'] and not unknown_skus else set()
+    allowed |= proven_not_listed
+    for event in normalized:
+        matches = skus.get(event['sku'], [])
+        if len(matches) != 1 or matches[0] not in allowed:
+            unmatched += event['quantity']
+            continue
+        events.append({k: v for k, v in event.items() if k != 'sku'} | {'item_id': matches[0]})
+    gaps = ozon_gap_cards(catalog, skus, normalized)
+    data = dict(platform='ozon', start=start, end=end, at=now().isoformat(), complete=True, verified=True, covered_items=list(allowed), blocked_items=blocked_items, not_listed_items=sorted(proven_not_listed), catalog_matches=dict(catalog_matches), catalog_proof={**catalog_proof, 'unmatched_financial_skus': len(unknown_skus)}, events=events, source=OZON_SOURCE, unmatched=unmatched, gaps=gaps, reconciliation=certificate, reversed_deliveries=reversed_units, source_hashes=hashes)
+    return data, adopted
+
+
+def reattribute_cached_ozon_window(engine, cache_dir, start, end):
+    """Rebuild one saved Ozon window from complete cached days. Does not call Ozon."""
+    cache = Path(cache_dir)
+    catalog = json.loads((cache / 'ozon-catalog.json').read_text())
+    require(catalog.get('catalog_schema') == 2 and catalog.get('complete') and catalog.get('items'), 'Каталог Ozon в кэше неполный', 422)
+    raw, hashes = [], []
+    day, last = date.fromisoformat(start), date.fromisoformat(end)
+    while day <= last:
+        path = cache / ('ozon-' + str(day) + '.json')
+        require(path.exists(), 'Нет сохранённого дня Ozon ' + str(day), 422)
+        chunk = json.loads(path.read_text())
+        require(chunk.get('complete') and chunk.get('date') == str(day), 'Неполный день Ozon ' + str(day), 422)
+        raw.extend(chunk.get('accruals') or [])
+        hashes.extend(chunk.get('source_hashes') or [])
+        day += timedelta(days=1)
+    with transaction(engine) as s:
+        cert_row = s.get(Entity, 'sales-reconciliation:ozon:v2')
+        certificate = copy.deepcopy(cert_row.data) if cert_row else None
+        old = s.get(Entity, 'sales:ozon:' + start + ':' + end)
+        old_events = len(old.data.get('events') or []) if old else 0
+        old_unmatched = int(old.data.get('unmatched') or 0) if old else 0
+    data, adopted = assemble_ozon_window(engine, catalog, raw, hashes, start, end, certificate)
+    require(len(data['events']) >= old_events, 'Новое окно потеряло продажи', 422)
+    require(int(data['unmatched']) <= old_unmatched, 'Несопоставленных продаж стало больше', 422)
+    store_window(engine, data)
+    return dict(events=len(data['events']), unmatched=data['unmatched'], gaps=len(data['gaps']), adopted=len(adopted), covered=len(data['covered_items']), previous_events=old_events, previous_unmatched=old_unmatched)
+
+
 def sync(engine, env, start=None, end=None):
     today=datetime.now(MSK).date();start=start or str(today-timedelta(days=30));end=end or str(today-timedelta(days=1))
     require(date.fromisoformat(start)<=date.fromisoformat(end)<today and (date.fromisoformat(end)-date.fromisoformat(start)).days<90,'Проверь период продаж',422)
@@ -276,26 +338,9 @@ def sync(engine, env, start=None, end=None):
                 for offset in range((date.fromisoformat(end)-date.fromisoformat(start)).days+1):
                     day=str(date.fromisoformat(start)+timedelta(days=offset));chunk=collect_ozon_day(day,headers,env.get('KROY_SALES_CACHE','.runtime/sales-cache'));raw.extend(chunk['accruals']);hashes.extend(chunk['source_hashes'])
                 catalog=collect_ozon_catalog(headers,env.get('KROY_SALES_CACHE','.runtime/sales-cache'))
-                skus,ozon_covered,not_listed,catalog_proof=catalog_links(engine,catalog)
-                normalized,blocked,reversed_units=ozon_entries(raw);unmatched=0;events=[]
-                catalog_matches=defaultdict(list)
-                for product in catalog['items']:
-                    ids={iid for source in product.get('sources') or [] for iid in skus.get(str(source.get('sku')),[])}
-                    if len(ids)==1:
-                        catalog_matches[next(iter(ids))].append(dict(product_id=str(product['id']),offer_id=product.get('offer_id'),skus=[str(v['sku']) for v in product.get('sources') or [] if v.get('sku')],archived=bool(product.get('is_archived') or product.get('is_autoarchived'))))
-                blocked_items={iid:'Не найдена исходная продажа для отмены начисления Ozon' for sku in blocked for iid in skus.get(sku,[])}
-                allowed=ozon_covered-set(blocked_items)
-                unknown_skus={r['sku'] for r in normalized if len(skus.get(r['sku'],[]))!=1}|{sku for sku in blocked if len(skus.get(sku,[]))!=1}
                 # Known zero is justified only when the entire account catalog AND every
                 # financial sale/return SKU are identified. Missing mapping alone is never zero.
-                proven_not_listed=not_listed if catalog_proof['all_products_matched'] and not unknown_skus else set()
-                allowed|=proven_not_listed
-                for event in normalized:
-                    matches=skus.get(event['sku'],[])
-                    if len(matches)!=1 or matches[0] not in allowed:unmatched+=event['quantity'];continue
-                    events.append({k:v for k,v in event.items() if k!='sku'}|{'item_id':matches[0]})
-                gaps=ozon_gap_cards(catalog,skus,normalized)
-                data=dict(platform='ozon',start=start,end=end,at=now().isoformat(),complete=True,verified=True,covered_items=list(allowed),blocked_items=blocked_items,not_listed_items=sorted(proven_not_listed),catalog_matches=dict(catalog_matches),catalog_proof={**catalog_proof,'unmatched_financial_skus':len(unknown_skus)},events=events,source=OZON_SOURCE,unmatched=unmatched,gaps=gaps,reconciliation=certificate,reversed_deliveries=reversed_units,source_hashes=hashes)
+                data,_adopted=assemble_ozon_window(engine,catalog,raw,hashes,start,end,certificate)
             store_window(engine,data)
             results[platform]=dict(state='ready',at=data['at'],start=start,end=end,events=len(data['events']),covered=len(data['covered_items']),unmatched=data['unmatched'])
         except RateLimited as e:
