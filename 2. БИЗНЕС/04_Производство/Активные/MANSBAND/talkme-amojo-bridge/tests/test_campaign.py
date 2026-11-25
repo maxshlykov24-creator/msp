@@ -190,11 +190,33 @@ def test_technical_channel_unavailability_falls_back_before_post(db):
     assert m.send_part(db,j,c,0,'text','asset')=='absent'
     assert not c.wz.posts and not db.get(m.Control,'campaign-halt')
 
-def test_channel_block_preflight_stops_whole_campaign(db):
+def test_blocked_text_channel_skips_without_stopping_campaign(db):
     j=job(db);c=Client((500,))
     c.wz.get=lambda _:httpx.Response(200,json=[{'channelId':'one','transport':'tgapi','state':'blocked'}],request=httpx.Request('GET','https://example.com'))
-    assert m.send_part(db,j,c,0,'text','asset')=='halt'
-    assert not c.wz.posts and db.get(m.Control,'campaign-halt')
+    assert m.send_part(db,j,c,0,'text','asset')=='absent'
+    assert not c.wz.posts and not m.account_halt(db) and j.state=='prepared'
+
+def test_inactive_photo_channel_stops_only_that_recipient(db):
+    j=job(db)
+    db.add(m.Part(recipient_id=j.id,position=0,kind='text',state='sent',crm_id='prior',at=m.now()-timedelta(seconds=30)))
+    db.add(m.Control(id='confirmed-prior',data={'at':(m.now()-timedelta(seconds=30)).isoformat()}));db.commit()
+    c=Client((500,))
+    c.wz.get=lambda _:httpx.Response(200,json=[{'channelId':'one','transport':'tgapi','state':'qr'}],request=httpx.Request('GET','https://example.com'))
+    assert m.send_part(db,j,c,0,'photo','asset')=='halt'
+    assert j.state=='attention' and j.reason=='channel_not_active'
+    assert not c.wz.posts and not m.account_halt(db)
+
+def test_one_deal_attention_does_not_hold_the_queue(db):
+    j=job(db);j.test=False;j.state='attention';j.reason='channel_not_active';db.commit()
+    assert m.open_bundle(db) is None
+    j.reason='provider_confirmation_missing';db.commit()
+    assert m.open_bundle(db)==j.id
+
+def test_old_channel_halt_is_not_an_account_stop(db):
+    db.add(m.Control(id='campaign-halt',data={'reason':'channel_not_active','at':m.now().isoformat()}));db.commit()
+    assert m.account_halt(db) is None and m.mode(db)=='paused'
+    m.dismiss_person_halt(db)
+    assert db.get(m.Control,'campaign-halt') is None
 
 def test_async_spam_freezes_other_recipients(db):
     j=job(db);db.add(m.Part(recipient_id=j.id,position=0,kind='text',state='pending',crm_id='spam',message_id='spam-msg'))

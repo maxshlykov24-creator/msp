@@ -28,6 +28,18 @@ SHEET = 'https://docs.google.com/spreadsheets/d/1l9x4zC_AsiKZXcSRyraqfd36HHvepKZ
 OWNERS = {'Нина':14292162, 'Ангелина':14077886}
 ABSENT = {'CHANNEL_TGAPI_PHONE_NOT_OCCUPIED', 'CHANNEL_MAX_PHONE_NOT_OCCUPIED'}
 SUCCESS = {'sent','delivered','read'}
+PERSON_ATTENTION = ('ambiguous_crm_contacts','channel_not_active','photo_delay_exceeded','photo_next_day_forbidden')
+
+def account_halt(db):
+    row=db.get(Control,'campaign-halt')
+    if row and row.data.get('reason')=='channel_not_active':return None
+    return row
+
+def dismiss_person_halt(db):
+    row=db.get(Control,'campaign-halt')
+    if not row or row.data.get('reason')!='channel_not_active':return
+    db.delete(row);db.commit()
+    notice(db,'person-halt-channel_not_active','MANSBAND · Рассылка от 11.11\nОбщая остановка снята.\nКанал был недоступен у одной сделки, эта сделка остаётся в проблемах.\nОстальным отправка продолжится в своём окне.\nУже отправленный текст повторно не уходит.')
 
 def now(): return datetime.now(timezone.utc)
 def aware(x): return x.replace(tzinfo=timezone.utc) if x.tzinfo is None else x
@@ -266,12 +278,13 @@ def send_part(db,j,c,position,kind,asset):
     channels=c.wz.get('/channels');channels.raise_for_status()
     channel=next((x for x in channels.json() if x['channelId']==route['channelId']),{})
     if channel.get('state')!='active':
-        if kind=='text' and channel.get('state') in {'init','phoneUnavailable','disabled','notEnoughMoney'}:
-            db.add(Part(recipient_id=j.id,position=position,kind=kind,state='absent',crm_id=f'{CAMPAIGN}-{j.id}-{position}-{kind}',reason='preflight_'+channel['state']))
+        # One channel or one photo is this recipient only. Account-wide stops stay on the provider response below.
+        if kind=='text':
+            state=channel.get('state') or 'missing'
+            db.add(Part(recipient_id=j.id,position=position,kind=kind,state='absent',crm_id=f'{CAMPAIGN}-{j.id}-{position}-{kind}',reason=('preflight_'+state)[:100]))
             j.state='prepared';db.commit()
-            notice(db,'technical-channel-'+route['transport']+'-'+str(now().astimezone(MSK).date()),f'MANSBAND · Канал временно недоступен: {route["transport"]}\nЗапрос на отправку не выполнялся. Используется следующий канал по плану.\nПричина: {channel["state"]}')
+            notice(db,'technical-channel-'+route['transport']+'-'+str(now().astimezone(MSK).date()),f'MANSBAND · Канал временно недоступен: {route["transport"]}\nЗапрос на отправку не выполнялся. Используется следующий канал по плану.\nПричина: {state}')
             return 'absent'
-        if not db.get(Control,'campaign-halt'):db.add(Control(id='campaign-halt',data={'reason':'channel_not_active','at':now().isoformat()}))
         stop(db,j,'channel_not_active');return 'halt'
     if channel.get('transport')!=('tgapi' if route['transport']=='telegram' else route['transport']):
         stop(db,j,'channel_transport_mismatch');return 'halt'
@@ -304,7 +317,7 @@ def send_part(db,j,c,position,kind,asset):
 def dispatch(db,j,c,asset):
     if j.state not in {'prepared','photo_ready'} or aware(j.due_at)>now():return
     # Until production eligibility/automation audit is complete, fail closed.
-    if db.get(Control,'campaign-halt'):return
+    if account_halt(db):return
     ctl=db.get(Control,'pilot')
     if j.test:
         if not ctl or j.person not in ctl.data.get('allowlist',[]):return
@@ -433,6 +446,7 @@ def tick(asset):
             with get_session_factory()() as db:
                 c=Clients(db,ReminderSettings())
                 try:
+                    dismiss_person_halt(db)
                     reconcile(db);handle_replies(db,c);sync_reply_notes(db,c)
                     production_tick(db,c,asset)
                     for j in db.scalars(select(Recipient).where(Recipient.state.in_(['prepared','photo_ready'])).order_by(Recipient.due_at)):
@@ -574,7 +588,12 @@ def production_enabled(db):
     row=db.get(Control,'production')
     return bool(row and row.data.get('enabled') and row.data.get('audit_complete') and row.data.get('source_sha256'))
 
-def mode(db):return 'attention' if db.get(Control,'campaign-halt') else 'production' if production_enabled(db) else 'paused'
+def mode(db):return 'attention' if account_halt(db) else 'production' if production_enabled(db) else 'paused'
+
+def open_bundle(db):
+    segment=active_segment(db)
+    if not segment:return None
+    return db.scalar(select(Recipient.id).where(Recipient.test==False,Recipient.segment==segment,Recipient.state.in_(['prepared','pending','inflight','photo_ready','crm_inflight','attention']),Recipient.reason.notin_(PERSON_ATTENTION)).limit(1))
 
 def daily_usage(db,stamp):
     start=datetime.combine(stamp.astimezone(MSK).date(),datetime.min.time(),MSK).astimezone(timezone.utc)
@@ -687,14 +706,14 @@ def production_tick(db,c,asset):
     for _ in range(5):
         enrich_one(db,c)
         if time.monotonic()-started>15:break
-    if not production_enabled(db) or db.get(Control,'campaign-halt'):return
+    if not production_enabled(db) or account_halt(db):return
     local=now().astimezone(MSK)
     if local.date()>date(2026,12,31):
         notice(db,'offer-expired','MANSBAND · Очередь остановлена\nСрок исходных шаблонов закончился. Нужны новые утверждённые тексты и изображение.');return
     if not in_campaign_window(local):return
     if not in_campaign_window(local,starting=True):return
     # No parallel bundle: finish or reconcile the current one first.
-    pending=db.scalar(select(Recipient.id).where(Recipient.test==False,Recipient.segment==active_segment(db),Recipient.state.in_(['prepared','pending','inflight','photo_ready','crm_inflight','attention']),Recipient.reason.notin_(['ambiguous_crm_contacts'])).limit(1))
+    pending=open_bundle(db)
     if pending:return
     first=db.get(Control,'segment-start-1')
     pilot_day=active_segment(db)==1 and (not first or first.data['day']==local.date().isoformat())
@@ -839,7 +858,7 @@ def queue_status(state: str='', page: int=1, segment: int=0, search: str=''):
             .where(Recipient.test==False,Recipient.segment.between(1,6)).group_by(Recipient.segment).order_by(Recipient.segment))
         for n,count,sent,done,attention,existing,checked in grouped:
             segments.append({'segment':n,'total':count,'sent':sent,'processed':done,'attention':attention,'existing':existing,'checked':checked})
-        ctl=db.get(Control,'production');halt=db.get(Control,'campaign-halt')
+        ctl=db.get(Control,'production');halt=account_halt(db)
         start=(ctl.data.get('start_day') if ctl else None)
         local=now().astimezone(MSK)
         day=max(local.date(),date.fromisoformat(start)) if start else local.date()
@@ -879,7 +898,7 @@ def queue_command(body: QueueCommand):
             row.data={**row.data,'enabled':False,'reason':body.reason,'changed_at':now().isoformat()}
         else:
             if not row or not row.data.get('audit_complete') or not row.data.get('source_sha256'):raise HTTPException(409,'Техническая приёмка ещё не закрыта')
-            if db.get(Control,'campaign-halt'):raise HTTPException(409,'Есть ограничение канала. Нужна техническая сверка, кнопка не снимает блокировку.')
+            if account_halt(db):raise HTTPException(409,'Есть ограничение аккаунта. Нужна техническая сверка, кнопка не снимает блокировку.')
             if now().astimezone(MSK).date()>date(2026,12,31):raise HTTPException(409,'Срок шаблонов закончился')
             row.data={**row.data,'enabled':True,'reason':body.reason,'changed_at':now().isoformat()}
         db.add(Control(id='operator-'+secrets.token_hex(16),data=body.model_dump()|{'at':now().isoformat()}));db.commit()
