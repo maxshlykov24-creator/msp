@@ -16,6 +16,7 @@ import {
   rentalEndPassed,
   rentalEndYmd,
   nextKassaNumber,
+  isTestDeal,
 } from "@kassa/shared";
 import type { Deal, DealKind, FunnelType, Store } from "@kassa/shared";
 import { getFieldIdByName } from "./bootstrap.js";
@@ -65,6 +66,18 @@ function presentDeal(deal: Deal): Deal {
 export async function listLocal(): Promise<Deal[]> {
   const rows = await db.select().from(dealsTable).orderBy(desc(dealsTable.number)).limit(500);
   return rows.map((r) => presentDeal(r.data as Deal));
+}
+
+/** Номера и amo-id тестовых заявок. Админ видит их, остальные роли нет. */
+export async function testDealKeys(): Promise<{ numbers: Set<number>; amoIds: Set<number> }> {
+  const numbers = new Set<number>();
+  const amoIds = new Set<number>();
+  for (const deal of await listLocal()) {
+    if (!isTestDeal(deal)) continue;
+    numbers.add(deal.number);
+    if (deal.amoLeadId) amoIds.add(deal.amoLeadId);
+  }
+  return { numbers, amoIds };
 }
 
 export async function getByNumber(n: number): Promise<Deal | null> {

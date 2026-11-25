@@ -11,6 +11,7 @@ import {
 } from "@kassa/shared";
 import * as q from "../services/queue.js";
 import * as deals from "../services/deals.js";
+import { isTestDeal } from "@kassa/shared";
 import { appendAudit } from "../services/audit.js";
 
 export default async function queueRoutes(app: FastifyInstance) {

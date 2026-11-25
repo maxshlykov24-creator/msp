@@ -51,6 +51,11 @@ function toTask(row: typeof tasks.$inferSelect): Task {
   };
 }
 
+export async function getTask(id: string): Promise<Task | null> {
+  const [row] = await db.select().from(tasks).where(eq(tasks.id, id)).limit(1);
+  return row ? toTask(row) : null;
+}
+
 function isReadableProductName(name: string | undefined | null): boolean {
   const s = (name ?? "").trim();
   if (!s) return false;

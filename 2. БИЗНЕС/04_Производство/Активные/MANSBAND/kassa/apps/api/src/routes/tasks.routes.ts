@@ -1,7 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { movementTaskSchema, taskSchema } from "@kassa/shared";
+import { isTestDeal, movementTaskSchema, taskSchema } from "@kassa/shared";
 import * as taskService from "../services/tasks.js";
+import * as deals from "../services/deals.js";
 import { appendAudit } from "../services/audit.js";
 
 const querySchema = z.object({
@@ -11,11 +12,20 @@ const querySchema = z.object({
   dealNumber: z.coerce.number().int().positive().optional(),
 });
 
+async function testDealHidden(dealNumber: number | null | undefined, role: string): Promise<boolean> {
+  if (role === "admin" || dealNumber == null) return false;
+  const deal = await deals.getByNumber(dealNumber);
+  return !!deal && isTestDeal(deal);
+}
+
 export default async function tasksRoutes(app: FastifyInstance) {
   app.get("/tasks", { preHandler: [app.authenticate] }, async (req, reply) => {
     const parsed = querySchema.safeParse(req.query);
     if (!parsed.success) return reply.code(400).send({ message: "Некорректный фильтр задач" });
-    return taskService.listTasks(parsed.data);
+    const tasks = await taskService.listTasks(parsed.data);
+    if (req.user.role === "admin") return tasks;
+    const hidden = await deals.testDealKeys();
+    return tasks.filter((task) => task.dealNumber == null || !hidden.numbers.has(task.dealNumber));
   });
 
   // Включая CDEK: задачи создаются только этим ручным endpoint, без авто-событий.
@@ -25,6 +35,9 @@ export default async function tasksRoutes(app: FastifyInstance) {
     const dueDate = parsed.data.metadata?.dueDate;
     if (typeof dueDate !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) {
       return reply.code(400).send({ message: "Укажите срок" });
+    }
+    if (await testDealHidden(parsed.data.dealNumber, req.user.role)) {
+      return reply.code(404).send({ message: "Заявка не найдена" });
     }
     // createdBy = ФИО из JWT; в metadata дублируем userId — чтобы отличить одноимённых.
     const task = await taskService.createTask(
@@ -50,6 +63,9 @@ export default async function tasksRoutes(app: FastifyInstance) {
   app.post("/tasks/movement", { preHandler: [app.authenticate] }, async (req, reply) => {
     const parsed = movementTaskSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ message: parsed.error.issues[0]?.message });
+    if (await testDealHidden(parsed.data.dealNumber, req.user.role)) {
+      return reply.code(404).send({ message: "Заявка не найдена" });
+    }
     const authorRole =
       req.user.role === "supply" || req.user.role === "logist"
         ? "logist"
@@ -84,6 +100,10 @@ export default async function tasksRoutes(app: FastifyInstance) {
 
   app.patch("/tasks/:id/reopen", { preHandler: [app.authenticate] }, async (req, reply) => {
     const { id } = req.params as { id: string };
+    const current = await taskService.getTask(id);
+    if (current && (await testDealHidden(current.dealNumber, req.user.role))) {
+      return reply.code(404).send({ message: "Задача не найдена" });
+    }
     try {
       const task = await taskService.reopenTask(id, req.user.name);
       if (!task) return reply.code(404).send({ message: "Задача не найдена" });
@@ -103,6 +123,10 @@ export default async function tasksRoutes(app: FastifyInstance) {
 
   app.patch("/tasks/:id/complete", { preHandler: [app.authenticate] }, async (req, reply) => {
     const { id } = req.params as { id: string };
+    const current = await taskService.getTask(id);
+    if (current && (await testDealHidden(current.dealNumber, req.user.role))) {
+      return reply.code(404).send({ message: "Задача не найдена" });
+    }
     try {
       const task = await taskService.completeTask(id, req.user.name);
       if (!task) return reply.code(404).send({ message: "Задача не найдена" });

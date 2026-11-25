@@ -14,6 +14,7 @@ import {
   isPaidHold,
   stageDateError,
   visibleLocalDeals,
+  isTestDeal,
   HOLD_DEAL_KINDS,
   AUTOMATIC_HOLD_STAGES,
   RESERVE_UNTIL_KINDS,
@@ -86,41 +87,57 @@ export default async function dealsRoutes(app: FastifyInstance, dependencies: {
   resolveDeal?: typeof deals.resolve;
 } = {}) {
   const resolveDeal = dependencies.resolveDeal ?? deals.resolve;
+  async function openDeal(ref: string, role: string) {
+    const deal = await resolveDeal(ref);
+    if (!deal || (role !== "admin" && isTestDeal(deal))) return null;
+    return deal;
+  }
   app.post("/deals/:ref/money-cancellation",{preHandler:[app.requireRoles(["admin","rop"])]},async(req,reply)=>{
     const parsed=z.object({amount:z.number().positive().finite(),reason:z.string().trim().min(3).max(500),destination:z.string().trim().min(2).max(300)}).strict().safeParse(req.body);
     if(!parsed.success)return reply.code(400).send({message:"Укажите сумму, причину отмены и получателя возврата"});
-    const deal=await resolveDeal((req.params as {ref:string}).ref);
+    const deal=await openDeal((req.params as {ref:string}).ref, req.user.role);
     if(!deal)return reply.code(404).send({message:"Заявка не найдена"});
     return queueService.approveMoneyCancellation(deal.number,parsed.data,{id:req.user.sub,name:req.user.name,role:req.user.role});
   });
   app.post("/deals/:ref/cancelled-rental-received",{preHandler:[app.authenticate]},async(req,reply)=>{
-    const deal=await resolveDeal((req.params as {ref:string}).ref);
+    const deal=await openDeal((req.params as {ref:string}).ref, req.user.role);
     if(!deal)return reply.code(404).send({message:"Заявка не найдена"});
     return queueService.receiveCancelledRental(deal.number,req.user.name);
   });
   // Список заявок: локальное зеркало + amo (короткий потолок — иначе мобильный логин/первый экран стопорятся).
-  app.get("/deals", { preHandler: [app.authenticate] }, async () => {
+  app.get("/deals", { preHandler: [app.authenticate] }, async (req) => {
     const local = visibleLocalDeals(await deals.listLocal());
     // Открытые: тёплый кэш сразу, холодный старт до 40с. Закрытые с июня
     // подмешиваются из отдельного снимка и этот запрос не ждут.
     const amoDeals = await withTimeout(deals.listAmoBoardDeals().catch(() => [] as Deal[]), 40_000, []);
     const localAmoIds = new Set(local.map((d) => d.amoLeadId).filter(Boolean));
     const merged = [...local, ...amoDeals.filter((d) => !localAmoIds.has(d.amoLeadId))];
-    merged.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
-    return merged;
+    const visible = req.user.role === "admin" ? merged : merged.filter((deal) => !isTestDeal(deal));
+    visible.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+    return visible;
   });
 
   // Реальные открытые заявки из amoCRM (экран «Заявки»).
-  app.get("/deals/amo", { preHandler: [app.authenticate] }, async () => {
+  app.get("/deals/amo", { preHandler: [app.authenticate] }, async (req) => {
     const list = await deals.listAmoOpen();
-    list.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
-    return list;
+    const visible = req.user.role === "admin" ? list : list.filter((deal) => !isTestDeal(deal));
+    visible.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+    return visible;
   });
 
   app.get("/deals/search", { preHandler: [app.authenticate] }, async (req, reply) => {
     const parsed = dealsSearchSchema.safeParse(req.query);
     if (!parsed.success) return reply.code(400).send({ message: parsed.error.issues[0]?.message });
-    return deals.searchAmo(parsed.data);
+    const found = await deals.searchAmo(parsed.data);
+    if (req.user.role === "admin") return found;
+    const hidden = await deals.testDealKeys();
+    return found.filter(
+      (deal) =>
+        !isTestDeal(deal) &&
+        !hidden.numbers.has(deal.number) &&
+        !(deal.amoLeadId && hidden.amoIds.has(deal.amoLeadId)) &&
+        !hidden.amoIds.has(deal.number)
+    );
   });
 
   app.post("/deals/kassa-link", { preHandler: [app.authenticate] }, async (req, reply) => {
@@ -138,7 +155,7 @@ export default async function dealsRoutes(app: FastifyInstance, dependencies: {
 
   app.get("/deals/:ref", { preHandler: [app.authenticate] }, async (req, reply) => {
     const { ref } = req.params as { ref: string };
-    const deal = await resolveDeal(ref);
+    const deal = await openDeal(ref, req.user.role);
     if (!deal) return reply.code(404).send({ message: "Заявка не найдена" });
     return deal;
   });
@@ -147,7 +164,7 @@ export default async function dealsRoutes(app: FastifyInstance, dependencies: {
   // для карточки — где физически лежит каждая позиция.
   app.get("/deals/:ref/item-state", { preHandler: [app.authenticate] }, async (req, reply) => {
     const { ref } = req.params as { ref: string };
-    const deal = await resolveDeal(ref);
+    const deal = await openDeal(ref, req.user.role);
     if (!deal) return reply.code(404).send({ message: "Заявка не найдена" });
     const rows = await db
       .select()
@@ -163,7 +180,7 @@ export default async function dealsRoutes(app: FastifyInstance, dependencies: {
 
   app.get("/deals/:ref/return-items", { preHandler: [app.authenticate] }, async (req, reply) => {
     const { ref } = req.params as { ref: string };
-    const source = await resolveDeal(ref);
+    const source = await openDeal(ref, req.user.role);
     if (!source) return reply.code(404).send({ message: "Исходная заявка не найдена" });
     if (!isReturnSource(source)) return reply.code(400).send({ message: "Возврат возможен только по успешной выдаче товара" });
     return { ...source, items: returnableItems(source, await deals.listLocal()) };
@@ -252,7 +269,7 @@ export default async function dealsRoutes(app: FastifyInstance, dependencies: {
     const { ref } = req.params as { ref: string };
     const parsed = updateDealSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ message: parsed.error.issues[0]?.message ?? "Некорректные данные" });
-    const existing = await resolveDeal(ref);
+    const existing = await openDeal(ref, req.user.role);
     if (!existing) return reply.code(404).send({ message: "Заявка не найдена" });
     const editError = completedDealEditError(existing.stage, req.user.role, parsed.data.reason);
     if (editError) return reply.code(editError.status).send({ message: editError.message });
@@ -351,7 +368,7 @@ export default async function dealsRoutes(app: FastifyInstance, dependencies: {
     const { ref } = req.params as { ref: string };
     const parsed = convertKindSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ message: parsed.error.issues[0]?.message });
-    const existing = await resolveDeal(ref);
+    const existing = await openDeal(ref, req.user.role);
     if (!existing) return reply.code(404).send({ message: "Заявка не найдена" });
     const editError = completedDealEditError(existing.stage, req.user.role, parsed.data.reason);
     if (editError) return reply.code(editError.status).send({ message: editError.message });
@@ -395,7 +412,7 @@ export default async function dealsRoutes(app: FastifyInstance, dependencies: {
     const { ref } = req.params as { ref: string };
     const parsed = updateStageSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ message: parsed.error.issues[0]?.message ?? "Некорректный этап" });
-    const existing = await resolveDeal(ref);
+    const existing = await openDeal(ref, req.user.role);
     if (!existing) return reply.code(404).send({ message: "Заявка не найдена" });
     const editError = completedDealEditError(existing.stage, req.user.role, parsed.data.reason);
     if (editError) return reply.code(editError.status).send({ message: editError.message });
@@ -459,7 +476,7 @@ export default async function dealsRoutes(app: FastifyInstance, dependencies: {
       const { ref } = req.params as { ref: string };
       const parsed = companyStatusSchema.safeParse(req.body);
       if (!parsed.success) return reply.code(400).send({ message: parsed.error.issues[0]?.message });
-      const existing = await resolveDeal(ref);
+      const existing = await openDeal(ref, req.user.role);
       if (!existing) return reply.code(404).send({ message: "Заявка не найдена" });
       const editError = completedDealEditError(existing.stage, req.user.role, parsed.data.reason);
       if (editError) return reply.code(editError.status).send({ message: editError.message });
@@ -497,7 +514,7 @@ export default async function dealsRoutes(app: FastifyInstance, dependencies: {
     const { ref } = req.params as { ref: string };
     const parsed = companyHandoverSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ message: parsed.error.issues[0]?.message });
-    const existing = await resolveDeal(ref);
+    const existing = await openDeal(ref, req.user.role);
     if (!existing) return reply.code(404).send({ message: "Заявка не найдена" });
     const editError = completedDealEditError(existing.stage, req.user.role, parsed.data.reason);
     if (editError) return reply.code(editError.status).send({ message: editError.message });
@@ -547,7 +564,7 @@ export default async function dealsRoutes(app: FastifyInstance, dependencies: {
     { preHandler: [app.requireRoles(["rop", "admin"])] },
     async (req, reply) => {
       const { ref } = req.params as { ref: string };
-      const deal = await resolveDeal(ref);
+      const deal = await openDeal(ref, req.user.role);
       if (!deal) return reply.code(404).send({ message: "Заявка не найдена" });
       const paidOk = deal.total <= 0 || deal.paid >= deal.total;
       const fulfillmentStage =
