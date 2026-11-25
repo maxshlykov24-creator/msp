@@ -764,7 +764,7 @@ export function ProductPicker({
     }
     const searchingNext = (searchInputRef.current?.value ?? "").trim().length > 0;
     if (!watch.needs && (open || searchingNext)) {
-      trace.push(`picker clear watch open=${open} searching=${searchingNext}`);
+      trace.push(`picker clear watch open=${open} q=${JSON.stringify(q)} dom=${JSON.stringify(searchInputRef.current?.value ?? "")}`);
       watchRef.current = null;
       return;
     }

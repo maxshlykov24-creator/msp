@@ -168,7 +168,9 @@ function run(root: HTMLElement, request: RevealRequest, runtime: Runtime) {
   });
   runtime.last = request;
   runtime.lastAt = Date.now();
-  trace.push(`run delta=${delta} kept=${companionKept} priority=${request.priority ?? "commit"} keep=${Math.round(keep.top)}-${Math.round(keep.bottom)}`);
+  trace.push(
+    `run delta=${delta} kept=${companionKept} priority=${request.priority ?? "commit"} scroller=${scrollTarget(root).id || scrollTarget(root).className.slice(0, 24)} keep=${Math.round(keep.top)}-${Math.round(keep.bottom)} zone=${Math.round(visibleZone(root).bottom)}`,
+  );
   const input = request.companionInput;
   if (!companionKept && delta !== 0 && input?.isConnected && document.activeElement === input) input.blur();
   if (delta === 0) return;
@@ -201,6 +203,8 @@ export function RevealScope({
     if (next.priority !== "commit" && prev?.priority === "commit") return;
     runtimeRef.retried = false;
     runtimeRef.pending = next;
+    const trace = (window as unknown as { __reveal?: string[] }).__reveal ?? ((window as unknown as { __reveal: string[] }).__reveal = []);
+    trace.push(`schedule ${next.priority} raf=${runtimeRef.raf ? 1 : 0}`);
     if (runtimeRef.raf) return;
     runtimeRef.raf = requestAnimationFrame(() => {
       runtimeRef.raf = 0;
@@ -245,6 +249,7 @@ export function RevealScope({
     const root = rootRef.current;
     if (!root) return;
     const runtimeRef = runtime.current;
+    scheduleRef.current = schedule;
 
     const onFocus = (event: FocusEvent) => {
       const target = event.target;
