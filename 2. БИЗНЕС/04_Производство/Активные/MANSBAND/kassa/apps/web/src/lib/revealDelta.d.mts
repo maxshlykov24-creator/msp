@@ -7,4 +7,5 @@ export function revealDelta(input: {
   companion?: RevealBox | null;
   minDelta?: number;
   showPeek?: number;
+  cushion?: number;
 }): { delta: number; companionKept: boolean };
