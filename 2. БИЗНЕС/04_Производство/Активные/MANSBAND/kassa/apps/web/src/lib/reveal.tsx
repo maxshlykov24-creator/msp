@@ -151,7 +151,11 @@ function animate(scroller: HTMLElement, delta: number, runtime: Runtime) {
 }
 
 function run(root: HTMLElement, request: RevealRequest, runtime: Runtime) {
-  if (!request.keep.isConnected || overlayBlocks(root)) return;
+  const trace = (window as unknown as { __reveal?: string[] }).__reveal ?? ((window as unknown as { __reveal: string[] }).__reveal = []);
+  if (!request.keep.isConnected || overlayBlocks(root)) {
+    trace.push(`skip connected=${request.keep.isConnected} overlay=${overlayBlocks(root)} priority=${request.priority ?? "commit"}`);
+    return;
+  }
   const keep = boxOf(request.keep);
   if (!keep) return;
   const show = boxOf(request.show);
@@ -164,6 +168,7 @@ function run(root: HTMLElement, request: RevealRequest, runtime: Runtime) {
   });
   runtime.last = request;
   runtime.lastAt = Date.now();
+  trace.push(`run delta=${delta} kept=${companionKept} priority=${request.priority ?? "commit"} keep=${Math.round(keep.top)}-${Math.round(keep.bottom)}`);
   const input = request.companionInput;
   if (!companionKept && delta !== 0 && input?.isConnected && document.activeElement === input) input.blur();
   if (delta === 0) return;

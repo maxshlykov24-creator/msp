@@ -753,16 +753,25 @@ export function ProductPicker({
   useLayoutEffect(() => {
     const watch = watchRef.current;
     if (!watch || !revealApi || readOnly) return;
-    if (scannerOpen || moveOpen || stockModal) return;
-    if (open && watch.needs) return;
+    const trace = (window as unknown as { __reveal?: string[] }).__reveal ?? ((window as unknown as { __reveal: string[] }).__reveal = []);
+    if (scannerOpen || moveOpen || stockModal) {
+      trace.push("picker wait overlay");
+      return;
+    }
+    if (open && watch.needs) {
+      trace.push("picker wait open");
+      return;
+    }
     const searchingNext = (searchInputRef.current?.value ?? "").trim().length > 0;
     if (!watch.needs && (open || searchingNext)) {
+      trace.push(`picker clear watch open=${open} searching=${searchingNext}`);
       watchRef.current = null;
       return;
     }
     const root = rootRef.current;
     if (!root) return;
     if (!items.some((it) => it.productId === watch.productId && !it.isReturn)) {
+      trace.push("picker product gone");
       watchRef.current = null;
       return;
     }
@@ -773,11 +782,13 @@ export function ProductPicker({
     const userMoved = revealApi.userScrolledAt() > watch.at;
     const grouped = Boolean(group && group !== watch.seenGroup && !watch.needs);
     if (grouped && (userMoved || focusLeft || Date.now() - watch.at > 8000)) {
+      trace.push("picker suit skipped");
       watchRef.current = null;
       return;
     }
     if (!watch.needs && !grouped) {
       if (group) watch.seenGroup = group;
+      trace.push("picker idle");
       return;
     }
     const rows = root.querySelectorAll<HTMLElement>("[data-reveal-product]");
@@ -789,7 +800,11 @@ export function ProductPicker({
         break;
       }
     }
-    if (!row) return;
+    if (!row) {
+      trace.push(`picker no row ${watch.productId}`);
+      return;
+    }
+    trace.push(`picker reveal ${watch.productId}`);
     revealApi.reveal({
       keep: row,
       companion: root.querySelector<HTMLElement>('[data-reveal-companion="search"]'),
