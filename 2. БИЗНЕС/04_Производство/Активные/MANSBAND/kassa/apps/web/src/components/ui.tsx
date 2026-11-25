@@ -1,4 +1,4 @@
-import { useEffect, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
+import { useEffect, useState, type ButtonHTMLAttributes, type HTMLAttributes, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { getStageGroup } from "../lib/stageColors";
 import { Select, opts } from "./Select";
@@ -30,14 +30,12 @@ export function Button({
   );
 }
 
-export function Card({
-  className = "",
-  children,
-}: {
-  className?: string;
-  children: ReactNode;
-}) {
-  return <div className={`card p-5 ${className}`}>{children}</div>;
+export function Card({ className = "", children, ...rest }: HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div className={`card p-5 ${className}`} {...rest}>
+      {children}
+    </div>
+  );
 }
 
 export function Field({

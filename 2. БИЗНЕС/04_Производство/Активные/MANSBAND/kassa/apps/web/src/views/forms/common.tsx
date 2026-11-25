@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ArrowLeft,
   Camera,
@@ -36,6 +36,7 @@ import { filesToAttachments, type PhotoAttachment } from "../../lib/photo";
 import { api, USE_MOCK } from "../../api/client";
 import { useAppSettings } from "../../lib/appSettings";
 import { useHints } from "../../lib/hints";
+import { RevealScope, useReveal } from "../../lib/reveal";
 
 // ── Хелперы ──────────────────────────────────────────────────────────
 
