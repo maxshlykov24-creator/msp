@@ -76,8 +76,13 @@
 .cut-data-table{width:100%;white-space:normal;font-size:12px;table-layout:auto}.cut-data-table th{padding:15px 18px;font-size:10px;font-weight:500;line-height:1.6;white-space:normal}
 .cut-data-table td{padding:19px 18px;line-height:1.65;vertical-align:middle;font-variant-numeric:tabular-nums}.cut-data-table th:not(:first-child),.cut-data-table td:not(:first-child){text-align:right}
 .cut-data-table td:first-child{width:48%;min-width:240px}.cut-data-table td>small{display:block;margin-top:7px}.cut-data-table td input{max-width:110px;margin-left:auto;text-align:right}
-.cut-demand-table td:first-child{width:29%;min-width:220px}.cut-demand-table th,.cut-demand-table td{padding-inline:14px}.cut-demand-table td:not(:first-child){min-width:95px}
-.cut-demand-table .cut-qty{width:88px;max-width:88px}
+.cut-demand-table td:first-child{width:29%;min-width:220px}.cut-demand-table th,.cut-demand-table td{padding-inline:14px}.cut-demand-table td:not(:first-child){min-width:95px;vertical-align:top}
+.cut-demand-table .cut-figure{display:grid;grid-template-columns:minmax(0,1fr) 13px;align-items:center;column-gap:6px;width:100%;min-height:22px}
+.cut-demand-table .cut-disclosure>summary.cut-figure{display:grid;cursor:pointer}
+.cut-demand-table .cut-num{font-weight:550;line-height:22px;text-align:right;font-variant-numeric:tabular-nums}
+.cut-demand-table .cut-disclosure{display:block}
+.cut-demand-table td>small{margin-top:4px;text-align:right;line-height:1.35}
+.cut-demand-table .cut-qty{width:88px;max-width:88px;margin-top:0}
 .cut-entry-table td:first-child{width:70%}.cut-entry-table td input{max-width:150px}
 .cut-result-heading{display:flex;align-items:center;justify-content:space-between;gap:18px;padding-top:4px}.cut-result-heading>.cut-hint{max-width:450px}
 .cut-disclosure{min-width:0}.cut-disclosure>summary{display:inline-flex;align-items:center;justify-content:flex-end;gap:8px;list-style:none;cursor:pointer;min-height:28px;color:var(--text)}.cut-disclosure summary strong{font-size:12px;font-weight:550}.cut-disclosure summary svg{color:var(--muted)}.cut-disclosure[open] summary svg{transform:rotate(180deg)}
@@ -206,7 +211,7 @@
  .cut-chrome .cut-context{order:0;flex:0 1 auto;flex-basis:auto;font-size:12px}.cut-layout-summary>.text-button{margin-left:0}
  .cut-demand-table{display:block;min-width:0;width:100%}.cut-demand-table>thead{display:none}.cut-demand-table>tbody{display:block}.cut-demand-table>tbody>tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px 18px;padding:18px;border-bottom:1px solid var(--border)}.cut-demand-table>tbody>tr:last-child{border:0}
  .cut-demand-table td{display:block;width:auto!important;min-width:0!important;padding:0;border:0;text-align:left;overflow-wrap:anywhere}.cut-demand-table td:first-child{grid-column:1/-1;padding-bottom:16px;border-bottom:1px solid var(--border)}.cut-demand-table td[data-label]:before{content:attr(data-label);display:block;font-size:10px;color:var(--muted);line-height:1.6;margin-bottom:8px}.cut-demand-table td:last-child{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:18px;padding-top:16px;border-top:1px solid var(--border)}.cut-demand-table td:last-child:before{margin:0;font-size:12px;color:var(--text)}.cut-demand-table .cut-qty{width:115px;max-width:115px;margin:0}
- .cut-demand-table .cut-disclosure>summary{justify-content:flex-start}.cut-demand-table .cut-breakdown{min-width:0}.cut-demand-table .cut-breakdown>div{grid-template-columns:1fr;gap:4px}.cut-demand-table .cut-breakdown>div>strong{text-align:left}.cut-demand-table .cut-breakdown>div>span{color:var(--muted)}.cut-demand-table .cut-breakdown small,.cut-demand-table .cut-breakdown label{grid-column:auto}
+ .cut-demand-table .cut-figure{grid-template-columns:auto 13px;width:auto;justify-content:start}.cut-demand-table .cut-num,.cut-demand-table td>small{text-align:left}.cut-demand-table .cut-breakdown{min-width:0}.cut-demand-table .cut-breakdown>div{grid-template-columns:1fr;gap:4px}.cut-demand-table .cut-breakdown>div>strong{text-align:left}.cut-demand-table .cut-breakdown>div>span{color:var(--muted)}.cut-demand-table .cut-breakdown small,.cut-demand-table .cut-breakdown label{grid-column:auto}
 }
 @media(pointer:coarse){.cutting input.cut-qty,.cutting .cut-release-matrix input,.cutting .cut-quantity-grid input{min-height:44px;font-size:16px}}
 @media print{.cut-chrome{display:none!important}.cut-matrix-scroll{overflow:visible}}

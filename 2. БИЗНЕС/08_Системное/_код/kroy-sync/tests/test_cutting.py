@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 import pytest
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.cutting import calculate, MSK
 from app.db import Entity, User, transaction
@@ -101,6 +102,31 @@ def test_issue_tolerance_and_stable_document_identity(setup):
     cmd('task.issue',p)
     with pytest.raises(DomainError,match='существует'):cmd('task.issue',p)
     assert balance(engine,'cloth')['reserved']==2
+
+
+def test_missing_card_uses_the_marketplace_that_is_known(setup):
+    from app.sales import store_window
+    engine, _, _ = setup
+    with Session(engine) as s:
+        params = calculate(s, dict(location='own', item_ids=['s', 'm']))['parameters']
+    at = datetime.now(MSK).isoformat()
+    store_window(engine, dict(platform='wb', start=params['start'], end=params['end'], at=at, complete=True, verified=True, covered_items=['s', 'm'], events=[
+        dict(id='wb-s', item_id='s', date=params['end'], kind='sale', quantity=40),
+        dict(id='wb-m', item_id='m', date=params['end'], kind='sale', quantity=8)]))
+    store_window(engine, dict(platform='ozon', start=params['start'], end=params['end'], at=at, complete=True, verified=True, covered_items=[], events=[]))
+    with transaction(engine) as s:
+        s.add(Entity(id='mapping:ozon:s', kind='mapping', version=1, data=dict(item_id='s', platform='ozon', state='missing', candidates=[])))
+        s.add(Entity(id='mapping:ozon:m', kind='mapping', version=1, data=dict(item_id='m', platform='ozon', state='ambiguous', candidates=[dict(product_id='1'), dict(product_id='2')])))
+    with Session(engine) as s:
+        rows = {r['item_id']: r for r in calculate(s, dict(location='own', item_ids=['s', 'm']))['rows']}
+    assert rows['s']['platforms']['ozon']['absent'] is True and rows['s']['sales_missing'] == [] and rows['s']['net'] == 40 and rows['s']['recommendation'] == 30
+    assert rows['m']['net'] is None and rows['m']['sales_missing'] == ['ozon'] and rows['m']['recommendation'] is None
+    with transaction(engine) as s:
+        for e in s.scalars(select(Entity).where(Entity.kind == 'sales_window', Entity.data['platform'].as_string() == 'ozon')):
+            s.delete(e)
+    with Session(engine) as s:
+        alone = calculate(s, dict(location='own', item_ids=['s']))['rows'][0]
+    assert alone['net'] is None and alone['sales_missing'] == ['ozon'] and not alone['platforms']['ozon'].get('absent')
 
 
 def test_confirmed_zero_stock_still_produces_recommendation(setup):

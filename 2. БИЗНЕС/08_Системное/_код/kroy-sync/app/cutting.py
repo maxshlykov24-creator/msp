@@ -119,9 +119,19 @@ def calculate(s, raw):
                 elif mapping and mapping.get('state') != 'unique': reason = 'Нужно сопоставить товар с площадкой'
                 else: reason = source_status.get(platform, {}).get('reason') or 'Нет полной сверенной выгрузки за выбранный период'
             platforms[platform] = dict(known=bool(w), sales=sales if w else None, returns=returns if w else None, at=w.data['at'] if w else None, net=sales-returns if w else None, reason=reason, source=w.data.get('source') if w else None, listed=iid not in w.data.get('not_listed_items',[]) if w else None, catalog_matches=w.data.get('catalog_matches',{}).get(iid,[]) if w else [])
+        # A marketplace without a card is not a failed download: the goods may simply not be sold there.
+        if any(v['known'] for v in platforms.values()):
+            for platform, v in platforms.items():
+                if v['known']: continue
+                mapping = mappings.get((platform, iid))
+                if not mapping or mapping.get('state') != 'missing' or (platform == 'wb' and not item.barcodes): continue
+                readable = [e for e in windows if e.data.get('platform') == platform and e.data.get('start', '') <= p['start'] and e.data.get('end', '') >= p['end'] and e.data.get('complete') and e.data.get('verified')]
+                if not readable or any(iid in (e.data.get('blocked_items') or {}) for e in readable): continue
+                v['absent'] = True
+                v['reason'] = 'Карточки на площадке нет. Продажи этой площадки в расчёт не входят.'
         known_sales=[v for v in platforms.values() if v['known']]
-        sales_missing=[name for name,v in platforms.items() if not v['known']]
-        net = sum(v['sales']-v['returns'] for v in platforms.values()) if known_sales and not sales_missing else None
+        sales_missing=[name for name,v in platforms.items() if not v['known'] and not v.get('absent')]
+        net = sum(v['sales']-v['returns'] for v in known_sales) if known_sales and not sales_missing else None
         net_known = sum(v['sales']-v['returns'] for v in known_sales) if known_sales else None
         future = sum((Decimal(c.get('included_quantity', c['quantity'])) for c in coverage[iid] if c['included']), Decimal(0))
         stock_assumed_zero = not (b and b.known)
