@@ -102,6 +102,49 @@ export function ClientFields({
   const lastLookupDigitsRef = useRef<string>("");
   const dataRef = useRef(data);
   dataRef.current = data;
+  const reveal = useReveal();
+  const blockRef = useRef<HTMLDivElement>(null);
+  const phoneBoxRef = useRef<HTMLDivElement>(null);
+  const revealedPhone = useRef("");
+  const armUntil = useRef(0);
+  const revealRef = useRef(reveal);
+  revealRef.current = reveal;
+
+  function revealPhone() {
+    const api = revealRef.current;
+    const keep = phoneBoxRef.current;
+    if (!api || !keep) return;
+    const card = keep.closest(".card");
+    const active = document.activeElement;
+    if (card && active instanceof Node && !card.contains(active)) return;
+    const show = keep.closest("[data-reveal-root]")?.querySelector<HTMLElement>('[data-reveal-companion="search"]');
+    api.reveal({ keep, show });
+  }
+
+  useLayoutEffect(() => {
+    const digits = data.phone.replace(/\D/g, "");
+    if (digits.length < 11) {
+      revealedPhone.current = "";
+      return;
+    }
+    const full = digits.slice(0, 11);
+    if (revealedPhone.current === full) return;
+    revealedPhone.current = full;
+    armUntil.current = Date.now() + 2500;
+    revealPhone();
+  }, [data.phone]);
+
+  useEffect(() => {
+    if (!reveal) return;
+    const card = blockRef.current?.closest(".card");
+    if (!card) return;
+    const observer = new ResizeObserver(() => {
+      if (Date.now() > armUntil.current) return;
+      revealPhone();
+    });
+    observer.observe(card);
+    return () => observer.disconnect();
+  }, [reveal]);
 
   function handlePhone(raw: string) {
     const phone = formatPhone(raw);
@@ -156,13 +199,15 @@ export function ClientFields({
   }
 
   return (
-    <div className="grid sm:grid-cols-2 gap-4">
+    <div ref={blockRef} data-reveal-client className="grid sm:grid-cols-2 gap-4">
+      <div ref={phoneBoxRef} className="min-w-0">
       <Field label="Телефон клиента" required={phoneRequired}>
         <input
           className="input"
           value={data.phone}
           placeholder="+7 (___) ___-__-__"
           inputMode="tel"
+          data-reveal-phone=""
           onChange={(e) => handlePhone(e.target.value)}
         />
         {found && (
@@ -179,10 +224,12 @@ export function ClientFields({
           </div>
         )}
       </Field>
+      </div>
       <Field label={nameLabel} required={nameRequired}>
         <input
           className="input"
           value={data.name}
+          data-reveal-enter="next"
           onChange={(e) => onChange({ ...data, name: e.target.value.replace(/[0-9]/g, "") })}
         />
       </Field>
@@ -289,13 +336,16 @@ export function SourceFields({
 }) {
   const set = (patch: Partial<ClientData>) => onChange({ ...data, ...patch });
   return (
-    <div className="grid sm:grid-cols-2 gap-4">
+    <div className="grid sm:grid-cols-2 gap-4" data-reveal-block>
       {withChannel && (
         channelFixed ? (
+          <div data-reveal-channel>
           <Field label="Источник рекламы">
             <input className="input opacity-70" readOnly value={channelFixed} />
           </Field>
+          </div>
         ) : (
+          <div data-reveal-channel>
           <Field label="Источник рекламы" required={required}>
             <Select
               value={data.channel}
@@ -316,6 +366,7 @@ export function SourceFields({
               searchable
             />
           </Field>
+          </div>
         )
       )}
       {withPurpose && (
@@ -436,6 +487,14 @@ function SarafanField({
   const lookupRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dataRef = useRef(data);
   dataRef.current = data;
+  const sarafanRef = useRef<HTMLDivElement>(null);
+  const reveal = useReveal();
+  useLayoutEffect(() => {
+    const el = sarafanRef.current;
+    if (!el || !reveal) return;
+    const channel = el.closest("[data-reveal-root]")?.querySelector<HTMLElement>("[data-reveal-channel]");
+    reveal.reveal({ keep: channel ?? el, show: el });
+  }, [reveal]);
 
   const phone = data.saryPhone ?? "";
   const digits = phone.replace(/\D/g, "");
@@ -499,7 +558,7 @@ function SarafanField({
   }
 
   return (
-    <div className="rounded-lg border border-ink-700 p-4 space-y-3">
+    <div ref={sarafanRef} className="rounded-lg border border-ink-700 p-4 space-y-3">
       <div className="text-[13px] font-semibold text-white">Сарафан: кто направил</div>
       <div className="grid sm:grid-cols-2 gap-4 items-start">
         <Field label="Телефон друга">
@@ -653,7 +712,7 @@ export function TotalsBlock({
   const gross = subtotal + Math.max(0, itemsDiscount) + delivery;
   const total = Math.max(0, Math.max(0, subtotal - checkDiscount) + delivery - saryBonus);
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" data-reveal-block>
       <div className="grid sm:grid-cols-2 gap-4">
         <Field label="Скидка на весь чек %">
           <div className="relative">
@@ -661,6 +720,7 @@ export function TotalsBlock({
               className="input pr-8"
               inputMode="numeric"
               placeholder="0"
+              data-reveal-enter="next"
               value={state.discPct}
               onChange={(e) => onChange({ discPct: e.target.value.replace(/[^\d]/g, ""), discRub: "" })}
             />
@@ -672,6 +732,7 @@ export function TotalsBlock({
             className="input"
             inputMode="numeric"
             placeholder="0"
+            data-reveal-enter="next"
             value={state.discRub}
             onChange={(e) => onChange({ discRub: e.target.value.replace(/[^\d]/g, ""), discPct: "" })}
           />
@@ -979,20 +1040,31 @@ export function PaymentSection({
   const change = Math.max(0, paid - total);
   // Чаевые вычитаются из сдачи; клиенту уходит остаток.
   const toClient = Math.max(0, change - Math.min(tips.amount || 0, change));
+  const sectionRef = useRef<HTMLDivElement>(null);
   const changeBlockRef = useRef<HTMLDivElement>(null);
   const prevChange = useRef(0);
-  useEffect(() => {
-    if (change > 0 && prevChange.current <= 0) {
-      changeBlockRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    }
+  const reveal = useReveal();
+  useLayoutEffect(() => {
+    const appeared = change > 0 && prevChange.current <= 0;
     prevChange.current = change;
-  }, [change]);
+    const section = sectionRef.current;
+    if (!appeared || !reveal || !section) return;
+    const lines = section.querySelectorAll<HTMLElement>("[data-payment-id]");
+    const keep = lines.length > 0 ? lines[lines.length - 1]! : changeBlockRef.current;
+    if (!keep) return;
+    reveal.reveal({
+      keep,
+      show: changeBlockRef.current,
+      companion: section.querySelector<HTMLElement>('[data-reveal-companion="pay"]'),
+    });
+  }, [change, reveal]);
   return (
-    <div className="space-y-4">
+    <div ref={sectionRef} className="space-y-4" data-reveal-block>
       <PaymentBlock total={total} payments={payments} onChange={onPayments} />
       {change > 0 && (
         <div
           ref={changeBlockRef}
+          data-reveal-change=""
           className="rounded-xl border border-ink-700 p-3 sm:p-4 space-y-4"
         >
           <div className="text-[13px] font-semibold text-white tracking-wide">
@@ -1422,14 +1494,18 @@ export function FormShell({
   headerActions?: ReactNode;
   embedded?: boolean;
 }) {
+  const rootRef = useRef<HTMLDivElement>(null);
   const hasDock = !!(summary || footer);
   const missing = (missingRequired ?? []).filter(Boolean);
   return (
     <div
+      ref={rootRef}
+      data-reveal-root=""
       className={`max-w-3xl mx-auto ${
         hasDock ? "pb-[calc(9.5rem+env(safe-area-inset-bottom))] sm:pb-36" : ""
       }`}
     >
+      <RevealScope rootRef={rootRef}>
       {!embedded && (
         <button
           onClick={onBack}
@@ -1481,6 +1557,7 @@ export function FormShell({
           </div>
         </div>
       )}
+      </RevealScope>
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { cartLineTotal, catalogSearchTerms, matchesCatalogTerms } from "@kassa/shared";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowRightLeft,
   Search,
@@ -26,6 +26,7 @@ import { useStore } from "../store";
 import { BarcodeScannerModal } from "./BarcodeScanner";
 import { Modal } from "./ui";
 import { MovementModal } from "./MovementModal";
+import { useReveal } from "../lib/reveal";
 
 const SEARCH_PAGE_SIZE = 30;
 
@@ -385,6 +386,10 @@ export function ProductPicker({
   movementStore?: string;
 }) {
   const { activeStore } = useStore();
+  const revealApi = useReveal();
+  const rootRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const watchRef = useRef<{ productId: string; at: number; seenGroup?: string; needs: boolean } | null>(null);
   const suitGroupMeta = useSuitGrouping(items, onChange);
   const [expandedSuits, setExpandedSuits] = useState<Record<string, boolean>>({});
   const [q, setQ] = useState("");
@@ -522,6 +527,10 @@ export function ProductPicker({
     };
   }, [q, activeStore, allowedMap, allowedList, items]);
 
+  function armReveal(productId: string) {
+    watchRef.current = { productId, at: Date.now(), needs: true };
+  }
+
   function addProduct(p: Product) {
     if (allowedMap) {
       const entry = allowedMap.get(p.id);
@@ -535,6 +544,7 @@ export function ProductPicker({
         return;
       }
       setAvailableById((prev) => ({ ...prev, [p.id]: entry.maxQty }));
+      armReveal(p.id);
       if (used > 0) {
         const target = items.find((i) => i.productId === p.id && i.lineId) ?? items.find((i) => i.productId === p.id);
         onChange(items.map((i) => (target && itemKey(i) === itemKey(target) ? { ...i, qty: i.qty + 1 } : i)));
@@ -556,6 +566,7 @@ export function ProductPicker({
     }
 
     setAvailableById((prev) => ({ ...prev, [p.id]: p.stock }));
+    armReveal(p.id);
     const existing = items.find((i) => i.productId === p.id && i.lineId) ?? items.find((i) => i.productId === p.id);
     if (existing) {
       onChange(items.map((i) => (itemKey(i) === itemKey(existing) ? { ...i, qty: i.qty + 1 } : i)));
