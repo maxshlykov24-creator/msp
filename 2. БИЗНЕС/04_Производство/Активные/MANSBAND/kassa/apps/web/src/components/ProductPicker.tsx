@@ -751,7 +751,9 @@ export function ProductPicker({
   }
 
   useLayoutEffect(() => {
+    const bag = ((window as unknown as { __why?: string[] }).__why ??= []);
     const watch = watchRef.current;
+    bag.push(`api=${Boolean(revealApi)} watch=${Boolean(watch)} ro=${readOnly} open=${open} n=${items.length}`);
     if (!watch || !revealApi || readOnly) return;
     if (scannerOpen || moveOpen || stockModal) return;
     if (open && watch.needs) {

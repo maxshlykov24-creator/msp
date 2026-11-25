@@ -134,7 +134,7 @@ function focusField(target: HTMLElement): HTMLElement | null {
   return el;
 }
 
-function animate(scroller: HTMLElement, delta: number, runtime: Runtime): number {
+function animate(scroller: HTMLElement, delta: number, runtime: Runtime) {
   const gen = ++runtime.gen;
   const start = readTop(scroller);
   if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
@@ -190,18 +190,9 @@ function run(root: HTMLElement, request: RevealRequest, runtime: Runtime, getRoo
   runtime.last = request;
   runtime.lastAt = Date.now();
   const input = request.companionInput;
-  const restoreFocus = Boolean(companionKept && delta !== 0 && input?.isConnected && document.activeElement === input);
   if (delta !== 0 && input?.isConnected && document.activeElement === input) input.blur();
   if (delta === 0) return;
-  const gen = animate(scrollTarget(root), delta, runtime);
-  if (restoreFocus && input) {
-    window.setTimeout(() => {
-      if (runtime.gen !== gen || !input.isConnected) return;
-      const active = document.activeElement;
-      if (active && active !== document.body) return;
-      input.focus({ preventScroll: true });
-    }, 360);
-  }
+  animate(scrollTarget(root), delta, runtime);
 }
 
 export function RevealScope({
