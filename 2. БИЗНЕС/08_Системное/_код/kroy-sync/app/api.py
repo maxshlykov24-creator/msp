@@ -289,6 +289,11 @@ def create_app(engine=None):
                                      'balances': records(Balance), 'documents': records(Document),
                                      'movements': records(Movement), 'entities': [e for e in records(Entity) if not e['kind'].startswith('auth_')]}, custom_encoder={Decimal: str})
 
+    @app.get('/api/attention/pulse')
+    def attention_pulse(user=Depends(auth)):
+        from .pulse import build_pulse
+        return build_pulse(engine)
+
     @app.get('/api/status')
     def status(user=Depends(auth)):
         with Session(engine) as s:
