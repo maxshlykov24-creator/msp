@@ -789,11 +789,7 @@ export function ProductPicker({
         break;
       }
     }
-    if (!row) {
-      (window as unknown as { __hit?: string }).__hit = "no-row";
-      return;
-    }
-    (window as unknown as { __hit?: string }).__hit = "reveal";
+    if (!row) return;
     revealApi.reveal({
       keep: row,
       companion: root.querySelector<HTMLElement>('[data-reveal-companion="search"]'),
