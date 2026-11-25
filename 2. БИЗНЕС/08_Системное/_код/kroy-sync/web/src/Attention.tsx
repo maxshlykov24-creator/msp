@@ -10,8 +10,9 @@ function when(value?: string) {
     return date.toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' });
 }
 
-export function AttentionPulse({ pulse, canPlan, canMap, onMap, requestSync }: {
+export function AttentionPulse({ pulse, opening, canPlan, canMap, onMap, requestSync }: {
     pulse: Row | null;
+    opening?: boolean;
     canPlan: boolean;
     canMap: boolean;
     onMap: (itemId: string) => void;
@@ -26,7 +27,7 @@ export function AttentionPulse({ pulse, canPlan, canMap, onMap, requestSync }: {
         } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
         finally { setBusy(false); }
     }
-    if (!pulse) return <section className="panel"><h3>Пульс не прочитан</h3><p className="muted">Кнопка «Обновить» только перечитывает этот экран. На площадки она не ходит.</p></section>;
+    if (!pulse) return <section className="panel"><h3>{opening ? 'Открываю раздел…' : 'Пульс не прочитан'}</h3><p className="muted">Кнопка «Обновить» только перечитывает этот экран. На площадки она не ходит.</p></section>;
     const salesWaiting = (pulse.sources || []).some((source: Row) => (source.id === 'ozon-sales' || source.id === 'wb-sales') && source.tone === 'waiting');
     return <div className="pulse">
         <div className="pulse-head">
