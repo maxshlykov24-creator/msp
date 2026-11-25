@@ -141,8 +141,8 @@ def calculate(s, raw):
     fingerprint_body = {**body, 'rows': [{**r, 'fbo': {k:{x:v for x,v in values.items() if x not in ('at','data_at','source')} for k,values in r['fbo'].items()}, 'platforms': {k:{x:v for x,v in values.items() if x not in ('at','reason','source','catalog_matches')} for k,values in r['platforms'].items()}} for r in rows]}
     names={'wb':'Wildberries','ozon':'Ozon'}
     warnings=[]
-    sales_gap=sorted({name for row in rows for name in row['sales_missing']})
-    if sales_gap: warnings.append('Нет полной выгрузки за выбранный период: '+', '.join(names[name] for name in sales_gap)+'. В строке показаны только известные продажи. Пропуск не заменён нулём, рекомендация по неполным продажам не строится.')
+    incomplete=sum(1 for row in rows if row['sales_missing'])
+    if incomplete: warnings.append(str(incomplete)+' из '+str(len(rows))+' позиций без полной выгрузки продаж. По ним рекомендация не строится и количество к крою не обнуляется. Пропуск не заменён нулём.')
     if p['include_fbo']:
         fbo_gap=sorted({name for row in rows for name in row['fbo_missing']})
         if fbo_gap: warnings.append('Нет актуальных остатков ФБО: '+', '.join(names[name] for name in fbo_gap)+'. Они не вычитаются из рекомендации и не заменяются нулём. Перед выдачей укажи основание.')

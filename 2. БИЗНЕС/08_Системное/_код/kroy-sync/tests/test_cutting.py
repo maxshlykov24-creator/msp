@@ -88,7 +88,7 @@ def test_sales_import_deduplicates_and_preserves_returns_date(setup):
     store_window(engine,data);store_window(engine,data)
     with Session(engine) as s:
         row=calculate(s,dict(location='own',item_ids=['s']))['rows'][0]
-        assert row['platforms']['wb']['returns']==1 and row['net'] is None
+        assert row['platforms']['wb']['returns']==1 and row['net'] is None and row['net_known']==-1 and row['recommendation'] is None and row['sales_missing']==['ozon']
     assert balance(engine)['free']==10
 
 
@@ -196,7 +196,8 @@ def test_fbo_reduces_demand_without_touching_own_stock(setup):
     for platform in ('wb','ozon'):
         store_window(engine,dict(platform=platform,start=params['start'],end=params['end'],at=datetime.now(MSK).isoformat(),complete=True,verified=True,covered_items=['s'],events=[dict(id=platform,item_id='s',date=params['end'],kind='sale',quantity=30)]))
     with Session(engine) as s:
-        assert calculate(s,dict(location='own',item_ids=['s'],include_fbo=True))['rows'][0]['recommendation'] is None
+        row=calculate(s,dict(location='own',item_ids=['s'],include_fbo=True))['rows'][0]
+        assert row['recommendation']==50 and row['recommendation_partial'] and row['fbo_total'] is None and set(row['fbo_missing'])=={'wb','ozon'} and row['fbo_counted']==0
     for platform in ('wb','ozon'):
         store_snapshot(engine,platform,{'s':5},source='verified fixture',data_at=datetime.now(MSK).isoformat())
     with Session(engine) as s:
@@ -334,3 +335,23 @@ def test_norm_scope_does_not_leak_to_other_sizes_or_materials(setup):
     cmd('norm.set',dict(item_id='s',material_id='cloth',effective_date=str(datetime.now(MSK).date()),**{'yield':100},confirmed=False))
     with Session(engine) as s:
         with pytest.raises(DomainError,match='не подтверждена'):resolve(s,'Лонг скимс',['s'],{'s':'cloth'})
+
+
+def test_empty_refresh_keeps_previous_sales_and_explains_the_gap(setup):
+    from app.sales import store_window, wb_events
+    engine,_,_=setup
+    with Session(engine) as s:params=calculate(s,dict(location='own',item_ids=['s']))['parameters']
+    events,_=wb_events([dict(date=params['end']+'T12:00:00Z',saleID='S-live',barcode='001')],params['start'],params['end'],{'001':['s']})
+    assert events[0]['date']==params['end'] and events[0]['kind']=='sale'
+    store_window(engine,dict(platform='wb',start=params['start'],end=params['end'],at='2026-11-01T00:00:00+00:00',complete=True,verified=True,covered_items=['s'],events=events))
+    with pytest.raises(DomainError,match='пустая'):
+        store_window(engine,dict(platform='wb',start=params['start'],end=params['end'],at='2026-11-25T00:00:00+00:00',complete=True,verified=True,covered_items=['s'],events=[]))
+    wider=str(datetime.fromisoformat(params['start']).date()-timedelta(days=5))
+    store_window(engine,dict(platform='wb',start=wider,end=params['end'],at='2026-11-25T03:00:00+00:00',complete=True,verified=True,covered_items=['s'],events=[]))
+    store_window(engine,dict(platform='ozon',start=params['start'],end=params['end'],at='2026-11-25T03:00:00+00:00',complete=True,verified=True,covered_items=['s'],events=[dict(id='oz',item_id='s',date=params['end'],kind='sale',quantity=2)]))
+    with Session(engine) as s:
+        row=calculate(s,dict(location='own',item_ids=['s'],include_fbo=True))['rows'][0]
+    assert row['platforms']['wb']['sales']==1 and row['kept_previous_sales'] and row['net']==3
+    with Session(engine) as s:
+        body=calculate(s,dict(location='own',item_ids=['s'],include_fbo=True))
+    assert any('пустая' in text for text in body['warnings']) and any('ФБО' in text for text in body['warnings'])
