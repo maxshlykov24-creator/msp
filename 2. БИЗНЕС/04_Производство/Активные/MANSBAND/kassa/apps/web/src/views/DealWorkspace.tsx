@@ -572,8 +572,7 @@ export function DealWorkspace({
         <StageBadge stage={stage} options={stageChoices.filter((s) => !HOLD_DEAL_KINDS.includes(live.kind) || !AUTOMATIC_HOLD_STAGES.includes(s))} onChange={live.moneyCancellation ? undefined : setStage} className="text-[16px] px-3.5 py-2 font-semibold shrink-0 self-center" />
       </div>
       <Hint>
-        Карточка заявки: клиент, товары, оплата и этап. Задачу, смену вида и историю — кнопки
-        сверху. Этап меняется в цветной плашке. Перемещение сохраняет вид заявки.
+        Этап меняется в цветной плашке. Перемещение сохраняет вид заявки.
       </Hint>
 
       {cancelEligible && <Card className="my-5">

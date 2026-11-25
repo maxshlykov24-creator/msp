@@ -7,7 +7,6 @@ import { Badge, Button, Modal, Field, StageBadge, StatTile, Select, opts } from 
 import type { Certificate } from "../data/types";
 import { moscowTodayYmd } from "@kassa/shared";
 import { api, USE_MOCK } from "../api/client";
-import { Hint } from "../lib/hints";
 
 interface ImportPreview {
   valid: number;
@@ -155,11 +154,6 @@ export function Certificates() {
           </Button>
         </div>
       </div>
-      <Hint>
-        Актуальные балансы пластиковых и электронных сертификатов. Поиск и фильтр по сроку.
-        «Не погашено» — сумма остатков на балансах.
-      </Hint>
-
       {reserved.length>0 && <details className="card my-4 p-4"><summary className="cursor-pointer font-semibold">Требуют сверки · {reserved.length}</summary><p className="my-3 text-sm text-mute">Номера заняты. Номиналы, остатки и сроки не подтверждены; списание недоступно. Для подтверждения используй импорт с проверенными данными.</p><div className="flex flex-wrap gap-2">{reserved.filter(r=>!q||r.number.includes(q.trim())).map(r=><span key={r.number} className="rounded-lg border border-ink-600 px-3 py-2 font-mono">{r.number}</span>)}</div></details>}
       <div className="grid sm:grid-cols-3 gap-3 mb-4 mt-4">
         <StatTile label="Активных" value={String(active.length)} tone="green" />
