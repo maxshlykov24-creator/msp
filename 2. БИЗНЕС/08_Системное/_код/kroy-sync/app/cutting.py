@@ -115,6 +115,7 @@ def calculate(s, raw):
                 mapping = mappings.get((platform, iid))
                 if latest and iid in latest.data.get('blocked_items', {}): reason = latest.data['blocked_items'][iid]
                 elif platform == 'wb' and not item.barcodes: reason = 'В карточке товара нет штрихкода для сверки с ВБ'
+                elif mapping and mapping.get('state') == 'missing': reason = 'Карточка площадки не подтверждена. Ноль не подставлен.'
                 elif mapping and mapping.get('state') != 'unique': reason = 'Нужно сопоставить товар с площадкой'
                 else: reason = source_status.get(platform, {}).get('reason') or 'Нет полной сверенной выгрузки за выбранный период'
             platforms[platform] = dict(known=bool(w), sales=sales if w else None, returns=returns if w else None, at=w.data['at'] if w else None, net=sales-returns if w else None, reason=reason, source=w.data.get('source') if w else None, listed=iid not in w.data.get('not_listed_items',[]) if w else None, catalog_matches=w.data.get('catalog_matches',{}).get(iid,[]) if w else [])
