@@ -146,7 +146,7 @@ export const DICTIONARY = [
   { id: "overdueTasks", name: "Просроченные задачи", period: "Задачи сделок, закрытых в периоде, включая уже выполненные.", source: "complete_till и updated_at выполненной задачи. Отдельного времени выполнения amo не отдаёт.", empty: "Нет задач — ноль. Не путать с открытыми задачами на сейчас." },
   { id: "overdueStages", name: "Просроченные этапы", period: "Закрытые в периоде, только сохранившийся срок.", source: "Поля STAGE_DATE_FIELDS и задачи. Поле 3279145 для прошлого этапа не используется.", empty: "Нет сохранённого срока — строка «срок не сохранился», не просрочка." },
   { id: "digest", name: "Сейчас просрочено", period: "Открытые сделки и задачи на момент среза.", source: "Те же правила, что ежедневная сводка моста, календарь Москвы.", empty: "Пропуски сводки показываются отдельно и не добиваются." },
-  { id: "response", name: "Среднее время ответа", period: "Сделки, закрытые в выбранном периоде.", source: "Сообщения Wazzup за 90 дней до начала недели и до среза: от первого входящего в серии до следующего исходящего. Звонки и прочие каналы не входят.", empty: "Нет пары входящее и ответ: прочерк, не ноль. Неотвеченная серия в среднее не входит." },
+  { id: "response", name: "Среднее время ответа", period: "Сделки, закрытые в выбранном периоде.", source: "Сообщения Wazzup за 90 дней до начала недели и до среза: от первого входящего в серии до следующего исходящего. В среднее входят минуты с 10:00 до 23:00 МСК, каждый день. С 23:00 до 10:00 счёт стоит. Звонки и прочие каналы не входят.", empty: "Нет пары входящее и ответ: прочерк, не ноль. Неотвеченная серия в среднее не входит." },
 ];
 
 export function canonicalStage(name) {
@@ -563,8 +563,31 @@ export function kassaCases(crmDeals, sales, from, to) {
   return { onlyKassa, closedOpen, amoMissing };
 }
 
-/** Минуты до ответа Wazzup. Повторные входящие в той же серии таймер не сбрасывают. Исходящее без вопроса не считается. */
-export function wazzupReplies(messages) {
+function shiftDay(y, m, d) {
+  const date = new Date(Date.UTC(y, m - 1, d + 1));
+  return { y: date.getUTCFullYear(), m: date.getUTCMonth() + 1, d: date.getUTCDate() };
+}
+
+/** Минуты внутри 10:00–23:00. С 23:00 до 10:00 интервал не растёт и продолжается на следующий день. */
+export function workingMinutes(fromMs, toMs, timeZone = "Europe/Moscow") {
+  if (!Number.isFinite(fromMs) || !Number.isFinite(toMs) || toMs <= fromMs) return 0;
+  const end = zonedParts(toMs, timeZone);
+  let cursor = zonedParts(fromMs, timeZone);
+  let total = 0;
+  for (let guard = 0; guard < 400; guard += 1) {
+    const open = zonedTimeToUtc(cursor.y, cursor.m, cursor.d, 10, 0, 0, timeZone);
+    const close = zonedTimeToUtc(cursor.y, cursor.m, cursor.d, 23, 0, 0, timeZone);
+    const sliceFrom = Math.max(fromMs, open);
+    const sliceTo = Math.min(toMs, close);
+    if (sliceTo > sliceFrom) total += (sliceTo - sliceFrom) / 60000;
+    if (cursor.y === end.y && cursor.m === end.m && cursor.d === end.d) break;
+    cursor = shiftDay(cursor.y, cursor.m, cursor.d);
+  }
+  return total;
+}
+
+/** Минуты до ответа Wazzup внутри рабочего окна. Повторные входящие в той же серии таймер не сбрасывают. Исходящее без вопроса не считается. */
+export function wazzupReplies(messages, timeZone = "Europe/Moscow") {
   const sorted = [...(messages ?? [])].filter((item) => item && (item.dir === "in" || item.dir === "out") && Number.isFinite(item.at)).sort((a, b) => a.at - b.at);
   const minutes = [];
   let waiting = null;
@@ -572,20 +595,20 @@ export function wazzupReplies(messages) {
     if (message.dir === "in") {
       if (waiting == null) waiting = message.at;
     } else if (waiting != null) {
-      minutes.push((message.at - waiting) / 60000);
+      minutes.push(workingMinutes(waiting, message.at, timeZone));
       waiting = null;
     }
   }
   return { minutes, pending: waiting == null ? 0 : 1 };
 }
 
-export function responseSummary(deals) {
+export function responseSummary(deals, timeZone = "Europe/Moscow") {
   const minutes = [];
   const answered = [];
   let pending = 0;
   for (const deal of deals) {
     if (!Array.isArray(deal.messages)) continue;
-    const stat = wazzupReplies(deal.messages);
+    const stat = wazzupReplies(deal.messages, timeZone);
     pending += stat.pending;
     if (!stat.minutes.length) continue;
     minutes.push(...stat.minutes);

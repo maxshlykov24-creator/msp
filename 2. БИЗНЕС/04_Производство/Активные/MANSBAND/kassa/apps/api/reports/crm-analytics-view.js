@@ -43,9 +43,12 @@ function reg(fn, dialog = false) { const key = String(++serial); (dialog ? dialo
 function nav(next) { if (!Object.hasOwn(titles, next)) return; if (drawer.open) drawer.close(); if (!embedded && location.hash !== "#" + next) { location.hash = next; return; } page = next; render(); window.scrollTo(0, 0); }
 addEventListener("hashchange", () => { page = Object.hasOwn(titles, location.hash.slice(1)) ? location.hash.slice(1) : "home"; if (drawer.open) drawer.close(); render(); window.scrollTo(0, 0); });
 document.addEventListener("click", (event) => { const el = event.target.closest("[data-page],[data-act]"); if (!el) return; if (el.dataset.page) nav(el.dataset.page); else (dialogActions.get(el.dataset.act) ?? actions.get(el.dataset.act))?.(); });
+drawer.addEventListener("click", (event) => { if (event.target === drawer) drawer.close(); });
+drawer.addEventListener("keydown", (event) => { if (event.key === "Escape") drawer.close(); });
+document.addEventListener("keydown", (event) => { if (event.key === "Escape" && drawer.open) drawer.close(); }, true);
 document.querySelector("#close").onclick = () => drawer.close();
 drawer.addEventListener("close", () => { dialogActions.clear(); document.body.style.overflow = ""; });
-function show(title, note, html) { document.querySelector("#dlgtitle").textContent = title; document.querySelector("#dlgmeta").textContent = note; document.querySelector("#dlgbody").innerHTML = html; if (!drawer.open) { drawer.showModal(); document.body.style.overflow = "hidden"; } drawer.scrollTop = 0; }
+function show(title, note, html) { document.querySelector("#dlgtitle").textContent = title; document.querySelector("#dlgmeta").textContent = note; document.querySelector("#dlgbody").innerHTML = html; if (!drawer.open) { drawer.showModal(); document.body.style.overflow = "hidden"; } drawer.querySelector(".sheet").scrollTop = 0; }
 const empty = (text) => `<div class="empty"><strong>Нет записей</strong>${text}</div>`;
 const bounds = () => periodBounds(state.kind, state.date, builtAt, tz, meta.weekStartsOn);
 const modeOf = () => state.mode === "created" ? "sources" : "results";
@@ -161,10 +164,10 @@ function qualityReport() {
   const group = cohort(deals, "results", bounds(), {});
   const tasks = overdueTasks(group);
   const stages = overdueStages(group, builtAt);
-  const replies = responseSummary(group);
+  const replies = responseSummary(group, tz);
   const chatReady = meta.chat === "wazzup";
   const cards = [
-    metric("Среднее время ответа", chatReady ? (replies.mean == null ? "—" : fmt(replies.mean) + " мин") : "нет источника", chatReady ? (replies.count ? fmt(replies.count) + " " + plural(replies.count, "ответ", "ответа", "ответов") : "нет ответов") : "Wazzup не прочитан", () => chatReady ? list("Ответы Wazzup", replies.deals, "Серии сообщений Wazzup, в которых был ответ.") : missingSource("Среднее время ответа", QUALITY_SOURCES.response.reason)),
+    metric("Среднее время ответа", chatReady ? (replies.mean == null ? "—" : fmt(replies.mean) + " мин") : "нет источника", chatReady ? (replies.count ? fmt(replies.count) + " " + plural(replies.count, "ответ", "ответа", "ответов") + " · 10–23" : "нет ответов") : "Wazzup не прочитан", () => chatReady ? list("Ответы Wazzup", replies.deals, "Серии сообщений Wazzup, в которых был ответ. С 23:00 до 10:00 МСК минуты не идут.") : missingSource("Среднее время ответа", QUALITY_SOURCES.response.reason)),
     metric("Просроченные задачи", fmt(tasks.length), "задач", () => list("Просроченные задачи", tasks.map((row) => row.deal), "Время выполнения взято из updated_at: отдельного поля amo не отдаёт.")),
     metric("Просроченные этапы", fmt(stages.overdue.length), "этапов", () => list("Просроченные этапы", stages.overdue.map((row) => row.deal), "Сегодняшний календарный день ещё не просрочка. Срок без сохранившейся даты сюда не входит.")),
   ];
@@ -175,7 +178,7 @@ function qualityReport() {
   const digest = meta.digest?.complete
     ? `<p class="note">Сейчас просрочено: задачи ${fmt(meta.digest.tasks)}, этапы ${fmt(meta.digest.stages)}.</p><p class="note aside">Это другое число и с периодом не складывается. Без обязательной даты: ${fmt(meta.digest.missing)}. Задач с недоступной карточкой: ${fmt(meta.digest.unavailable)}.${chatReady ? ` Неотвеченных серий Wazzup: ${fmt(replies.pending)}.` : ""}</p>`
     : `<p class="note">Сейчас просрочено в этот срез не вошло.</p><p class="note aside">Список открытых задач собран не полностью.</p>`;
-  return `<p class="hintline aside">По дате завершения. Просрочка периода включает уже выполненные задачи. Срок, который не сохранился, в просрочку не ставится: таких пребываний ${fmt(stages.missing.length)}. Ответ считается от первого входящего Wazzup в серии до следующего исходящего, по сообщениям за 90 дней до начала недели. Звонки не входят.</p><div class="metrics">${cards.join("")}</div><div class="double">${groupPanel("Какие задачи просрочили?", byName, tasks.length)}${groupPanel("На каких этапах задержались?", byStage, stages.overdue.length)}</div>${digest}`;
+  return `<p class="hintline aside">По дате завершения. Просрочка периода включает уже выполненные задачи. Срок, который не сохранился, в просрочку не ставится: таких пребываний ${fmt(stages.missing.length)}. Ответ считается от первого входящего Wazzup в серии до следующего исходящего, по сообщениям за 90 дней до начала недели. С 23:00 до 10:00 МСК счёт стоит и продолжается в 10:00. Звонки не входят.</p><div class="metrics">${cards.join("")}</div><div class="double">${groupPanel("Какие задачи просрочили?", byName, tasks.length)}${groupPanel("На каких этапах задержались?", byStage, stages.overdue.length)}</div>${digest}`;
 }
 function groupPanel(title, map, total) {
   const entries = [...map.entries()].sort((a, b) => b[1].length - a[1].length);

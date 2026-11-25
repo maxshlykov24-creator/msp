@@ -177,11 +177,16 @@ const stageRows = overdueStages([deal({ id: 24, status: 142, closed: monday + 2 
 })], now);
 assert.equal(stageRows.overdue.length, 1);
 assert.equal(medianHours([], ["Дано обещание", "Доставлен"]).hours, null);
-const replies = wazzupReplies([{ at: 0, dir: "in" }, { at: 60_000, dir: "in" }, { at: 5 * 60_000, dir: "out" }, { at: 10 * 60_000, dir: "out" }, { at: 11 * 60_000, dir: "in" }]);
+const noonReply = zonedTimeToUtc(2026, 11, 16, 12, 0, 0, TZ);
+const replies = wazzupReplies([{ at: noonReply, dir: "in" }, { at: noonReply + 60_000, dir: "in" }, { at: noonReply + 5 * 60_000, dir: "out" }, { at: noonReply + 10 * 60_000, dir: "out" }, { at: noonReply + 11 * 60_000, dir: "in" }]);
 assert.deepEqual(replies.minutes, [5]);
 assert.equal(replies.pending, 1);
-assert.equal(responseSummary([{ messages: [{ at: 0, dir: "in" }, { at: 2 * 60_000, dir: "out" }] }, { messages: null }, { messages: [] }]).mean, 2);
-assert.equal(responseSummary([{ messages: [{ at: 0, dir: "out" }] }]).mean, null);
+assert.equal(wazzupReplies([{ at: zonedTimeToUtc(2026, 11, 16, 22, 50, 0, TZ), dir: "in" }, { at: zonedTimeToUtc(2026, 11, 17, 10, 20, 0, TZ), dir: "out" }]).minutes[0], 30);
+assert.equal(wazzupReplies([{ at: zonedTimeToUtc(2026, 11, 16, 23, 30, 0, TZ), dir: "in" }, { at: zonedTimeToUtc(2026, 11, 17, 10, 5, 0, TZ), dir: "out" }]).minutes[0], 5);
+assert.equal(wazzupReplies([{ at: zonedTimeToUtc(2026, 11, 16, 9, 0, 0, TZ), dir: "in" }, { at: zonedTimeToUtc(2026, 11, 16, 10, 5, 0, TZ), dir: "out" }]).minutes[0], 5);
+assert.equal(wazzupReplies([{ at: zonedTimeToUtc(2026, 11, 20, 22, 50, 0, TZ), dir: "in" }, { at: zonedTimeToUtc(2026, 11, 21, 10, 10, 0, TZ), dir: "out" }]).minutes[0], 20);
+assert.equal(responseSummary([{ messages: [{ at: noonReply, dir: "in" }, { at: noonReply + 2 * 60_000, dir: "out" }] }, { messages: null }, { messages: [] }]).mean, 2);
+assert.equal(responseSummary([{ messages: [{ at: noonReply, dir: "out" }] }]).mean, null);
 const paced = deal({ id: 25, status: 142, closed: monday + 5 * 3600000 }, {
   historyComplete: true,
   history: [{ stage: "Дано обещание", at: monday }, { stage: "Доставлен", at: monday + 5 * 3600000 }],
