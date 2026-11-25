@@ -304,7 +304,15 @@ export function normalizeLead(lead, users, extras = {}) {
     duplicate: reason === DUPLICATE_REASON,
     owner: users.get(ownerId) ?? (ownerId ? `Сотрудник ${ownerId}` : "Не указан"),
     messages: Array.isArray(extras.messages)
-      ? extras.messages.filter((item) => item && (item.dir === "in" || item.dir === "out") && Number.isFinite(Number(item.at))).map((item) => ({ at: Number(item.at), dir: item.dir }))
+      ? extras.messages.flatMap((item) => {
+          if (!item || !Number.isFinite(Number(item.at))) return [];
+          if (item.dir !== "in" && item.dir !== "out" && item.dir !== "dismiss") return [];
+          const message = { at: Number(item.at), dir: item.dir };
+          const talk = Number(item.talk);
+          if (Number.isFinite(talk) && talk > 0) message.talk = talk;
+          if (item.dir === "dismiss") message.reason = item.reason === "closed" ? "closed" : "no_reply";
+          return [message];
+        })
       : null,
   };
 }
@@ -622,20 +630,36 @@ export function workingMinutes(fromMs, toMs, timeZone = "Europe/Moscow") {
   return total;
 }
 
-/** Минуты до ответа Wazzup внутри рабочего окна. Повторные входящие в той же серии таймер не сбрасывают. Исходящее без вопроса не считается. */
+/** Минуты до ответа Wazzup внутри рабочего окна. Повторные входящие в той же серии таймер не сбрасывают. Исходящее без вопроса не считается. Отметка «не требует ответа» и закрытие беседы заканчивают серию в этот момент. */
 export function wazzupReplies(messages, timeZone = "Europe/Moscow") {
-  const sorted = [...(messages ?? [])].filter((item) => item && (item.dir === "in" || item.dir === "out") && Number.isFinite(item.at)).sort((a, b) => a.at - b.at);
-  const series = [];
-  let waiting = null;
-  for (const message of sorted) {
-    if (message.dir === "in") {
-      if (waiting == null) waiting = message.at;
-    } else if (waiting != null) {
-      series.push({ from: waiting, to: message.at, minutes: workingMinutes(waiting, message.at, timeZone) });
-      waiting = null;
-    }
+  const usable = [...(messages ?? [])].filter((item) => item && (item.dir === "in" || item.dir === "out" || item.dir === "dismiss") && Number.isFinite(item.at));
+  const groups = new Map();
+  for (const message of usable) {
+    const key = Number.isFinite(message.talk) ? message.talk : 0;
+    const list = groups.get(key) ?? [];
+    list.push(message);
+    groups.set(key, list);
   }
-  return { minutes: series.map((item) => item.minutes), series, pending: waiting == null ? 0 : 1, pendingFrom: waiting };
+  const series = [];
+  const waiting = [];
+  const order = { in: 0, out: 1, dismiss: 2 };
+  for (const list of groups.values()) {
+    const sorted = list.sort((a, b) => a.at - b.at || (order[a.dir] ?? 9) - (order[b.dir] ?? 9));
+    let open = null;
+    for (const message of sorted) {
+      if (message.dir === "in") {
+        if (open == null) open = message.at;
+      } else if (open != null) {
+        const close = message.dir === "out" ? "reply" : (message.reason === "closed" ? "closed" : "no_reply");
+        series.push({ from: open, to: message.at, minutes: workingMinutes(open, message.at, timeZone), close });
+        open = null;
+      }
+    }
+    if (open != null) waiting.push(open);
+  }
+  series.sort((a, b) => a.from - b.from);
+  waiting.sort((a, b) => a - b);
+  return { minutes: series.map((item) => item.minutes), series, pending: waiting.length, pendingFrom: waiting[0] ?? null, waiting };
 }
 
 export function responseSummary(deals, timeZone = "Europe/Moscow") {
@@ -666,7 +690,7 @@ export function slowReplyCutoff(dealMaxMinutes) {
   return Math.max(60, mean * 1.5);
 }
 
-/** Сделки с ответом Wazzup: сортировка по самому долгому ответу, отдельно список на проверку. */
+/** Сделки с ответом Wazzup: от большего времени к меньшему, серии без ответа сверху. */
 export function replyAudit(deals, timeZone = "Europe/Moscow") {
   const rows = [];
   for (const deal of deals) {
@@ -674,11 +698,12 @@ export function replyAudit(deals, timeZone = "Europe/Moscow") {
     const stat = wazzupReplies(deal.messages, timeZone);
     if (!stat.series.length && !stat.pending) continue;
     const max = stat.series.length ? Math.max(...stat.series.map((item) => item.minutes)) : null;
-    rows.push({ deal, stat, max, pending: stat.pending > 0 });
+    const at = stat.series.reduce((latest, item) => (item.minutes === max && item.to > latest ? item.to : latest), 0);
+    rows.push({ deal, stat, max, at, pending: stat.pending > 0 });
   }
   const cutoff = slowReplyCutoff(rows.map((row) => row.max).filter((value) => value != null));
   const rank = (row) => (row.pending ? Number.POSITIVE_INFINITY : row.max ?? -1);
-  rows.sort((a, b) => rank(b) - rank(a));
+  rows.sort((a, b) => rank(b) - rank(a) || (b.at ?? 0) - (a.at ?? 0) || a.deal.id - b.deal.id);
   const slow = rows.filter((row) => row.pending || (row.max != null && row.max >= cutoff));
   return { cutoff, rows, slow: slow.map((row) => row.deal), all: rows.map((row) => row.deal) };
 }

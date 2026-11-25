@@ -313,15 +313,39 @@ function taskTitle(text) {
   const title = String(text ?? "").replace(/\d{5,}/g, "••••").replace(/\r\n/g, "\n").trim();
   return title || "Задача";
 }
-function wazzupMessages(rows) {
+function talkMarks(rows) {
+  const byTalk = new Map();
+  for (const event of rows) {
+    if (event.entity_type !== "talk") continue;
+    if (event.type !== "conversation_answered" && event.type !== "talk_closed") continue;
+    const talk = Number(event.entity_id);
+    const at = Number(event.created_at) * 1000;
+    if (!Number.isFinite(talk) || talk <= 0 || !Number.isFinite(at)) continue;
+    const list = byTalk.get(talk) ?? [];
+    list.push({ at, reason: event.type === "talk_closed" ? "closed" : "no_reply" });
+    byTalk.set(talk, list);
+  }
+  return byTalk;
+}
+function wazzupMessages(rows, byTalk = new Map()) {
   const messages = [];
+  const talks = new Set();
   for (const event of rows) {
     if (event.type !== "incoming_chat_message" && event.type !== "outgoing_chat_message") continue;
     const origin = String(event.value_after?.[0]?.message?.origin ?? "");
     if (!origin.startsWith("com.wazzup24")) continue;
     const at = Number(event.created_at) * 1000;
     if (!Number.isFinite(at)) continue;
-    messages.push({ at, dir: event.type === "incoming_chat_message" ? "in" : "out" });
+    const talk = Number(event.value_after?.[0]?.message?.talk_id);
+    const item = { at, dir: event.type === "incoming_chat_message" ? "in" : "out" };
+    if (Number.isFinite(talk) && talk > 0) {
+      item.talk = talk;
+      talks.add(talk);
+    }
+    messages.push(item);
+  }
+  for (const talk of talks) {
+    for (const mark of byTalk.get(talk) ?? []) messages.push({ at: mark.at, dir: "dismiss", talk, reason: mark.reason });
   }
   return messages;
 }
@@ -404,18 +428,26 @@ for (const id of weekIds) {
 }
 try {
   const journal = await collectWazzup(weekIds, chatFrom, now + 1000);
-  if (journal.complete) {
+  const marks = await pages("/events", "events", {
+    "filter[type][]": ["conversation_answered", "talk_closed"],
+    "filter[created_at][from]": Math.floor(chatFrom / 1000),
+    "filter[created_at][to]": Math.floor((now + 1000) / 1000),
+  }, 40);
+  if (journal.complete && marks.complete) {
+    const byTalk = talkMarks(marks.rows);
     let leadsWithMessages = 0;
+    let dismissals = 0;
     for (const id of weekIds) {
       const saved = checkpoint.leads[id];
       if (!saved) continue;
-      saved.messages = wazzupMessages(journal.byLead.get(Number(id)) ?? []);
+      saved.messages = wazzupMessages(journal.byLead.get(Number(id)) ?? [], byTalk);
       saved.messagesComplete = true;
+      dismissals += saved.messages.filter((item) => item.dir === "dismiss").length;
       if (saved.messages.length) leadsWithMessages += 1;
     }
-    console.log(JSON.stringify({ chat: "wazzup", leadsWithMessages }));
+    console.log(JSON.stringify({ chat: "wazzup", leadsWithMessages, dismissals, markEvents: marks.rows.length }));
   } else {
-    console.log(JSON.stringify({ chat: "partial" }));
+    console.log(JSON.stringify({ chat: journal.complete ? "marks-partial" : "partial", markEvents: marks.rows.length, marksComplete: marks.complete }));
   }
 } catch (error) {
   console.log(JSON.stringify({ chat: "error", message: error.message }));

@@ -188,6 +188,47 @@ assert.equal(wazzupReplies([{ at: zonedTimeToUtc(2026, 11, 16, 22, 50, 0, TZ), d
 assert.equal(wazzupReplies([{ at: zonedTimeToUtc(2026, 11, 16, 23, 30, 0, TZ), dir: "in" }, { at: zonedTimeToUtc(2026, 11, 17, 10, 5, 0, TZ), dir: "out" }]).minutes[0], 5);
 assert.equal(wazzupReplies([{ at: zonedTimeToUtc(2026, 11, 16, 9, 0, 0, TZ), dir: "in" }, { at: zonedTimeToUtc(2026, 11, 16, 10, 5, 0, TZ), dir: "out" }]).minutes[0], 5);
 assert.equal(wazzupReplies([{ at: zonedTimeToUtc(2026, 11, 20, 22, 50, 0, TZ), dir: "in" }, { at: zonedTimeToUtc(2026, 11, 21, 10, 10, 0, TZ), dir: "out" }]).minutes[0], 20);
+const marked = wazzupReplies([
+  { at: noonReply, dir: "in", talk: 7 },
+  { at: noonReply + 3 * 60_000, dir: "dismiss", talk: 7, reason: "no_reply" },
+  { at: noonReply + 50 * 60_000, dir: "out", talk: 7 },
+]);
+assert.deepEqual(marked.minutes, [3]);
+assert.equal(marked.pending, 0);
+assert.equal(marked.series[0].close, "no_reply");
+const closedTalk = wazzupReplies([
+  { at: noonReply, dir: "in", talk: 8 },
+  { at: noonReply + 4 * 60_000, dir: "dismiss", talk: 8, reason: "closed" },
+]);
+assert.deepEqual(closedTalk.minutes, [4]);
+assert.equal(closedTalk.series[0].close, "closed");
+assert.equal(closedTalk.pending, 0);
+const otherTalk = wazzupReplies([
+  { at: noonReply, dir: "in", talk: 1 },
+  { at: noonReply + 2 * 60_000, dir: "dismiss", talk: 2, reason: "closed" },
+  { at: noonReply + 9 * 60_000, dir: "out", talk: 1 },
+]);
+assert.deepEqual(otherTalk.minutes, [9]);
+assert.equal(otherTalk.pending, 0);
+const sameSecond = wazzupReplies([
+  { at: noonReply, dir: "in", talk: 3 },
+  { at: noonReply + 6 * 60_000, dir: "dismiss", talk: 3, reason: "no_reply" },
+  { at: noonReply + 6 * 60_000, dir: "out", talk: 3 },
+]);
+assert.equal(sameSecond.series[0].close, "reply");
+assert.equal(sameSecond.minutes[0], 6);
+const stored = deal({}, {
+  messages: [
+    { at: noonReply, dir: "in", talk: 7 },
+    { at: noonReply + 3 * 60_000, dir: "dismiss", talk: 7, reason: "closed" },
+    { at: noonReply, dir: "note" },
+  ],
+});
+assert.equal(stored.messages.length, 2);
+assert.equal(stored.messages[1].dir, "dismiss");
+assert.equal(stored.messages[1].reason, "closed");
+assert.equal(stored.messages[1].talk, 7);
+assert.deepEqual(wazzupReplies(stored.messages).minutes, [3]);
 assert.equal(responseSummary([{ messages: [{ at: noonReply, dir: "in" }, { at: noonReply + 2 * 60_000, dir: "out" }] }, { messages: null }, { messages: [] }]).mean, 2);
 assert.equal(responseSummary([{ messages: [{ at: noonReply, dir: "out" }] }]).mean, null);
 assert.equal(slowReplyCutoff([5, 8, 12, 200]), 84.375);
