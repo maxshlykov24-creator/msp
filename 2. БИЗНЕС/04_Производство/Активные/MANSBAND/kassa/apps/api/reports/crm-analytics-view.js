@@ -203,7 +203,8 @@ function generalReport() {
   let html = `<div class="filterbar">${segment("mode", [["results", "Результаты"], ["created", "Источники"]])}${select("touch", "Касание", [["*", "Все заявки"], ["yes", "С касанием"], ["no", "Без касания"]])}${state.mode === "created" ? select("source", "Источник", [["*", "Все источники"], ...sources.map((source) => [source, source])]) : ""}</div>${outcomeBar(narrowed, mode, period)}`;
   if (addedOpen) html += `<p class="note">В работе здесь — заявки, которые на конец периода ещё не закрыты.</p>`;
   html += `<p class="hintline aside">${state.mode === "created" ? "По дате создания. Исход на конец периода берётся из событий этапа." : "По дате завершения. Успех и провал в сумме равны всем закрытым сделкам."}</p>`;
-  html += `<div class="metrics">${order.map(([key, label], index) => metric(label, fmt(groups[key].length), key === "all" ? (state.mode === "created" ? "создано за период" : "завершено за период") : percent(groups[key].length, den[key]) + " " + suffix[key], () => list(label, groups[key], "Состав показателя."), index === 3 ? "accent" : index === 4 ? "bad" : "")).join("")}</div>`;
+  const allCaption = addedOpen ? "в выборке, с открытыми на конец периода" : (state.mode === "created" ? "создано за период" : "завершено за период");
+  html += `<div class="metrics">${order.map(([key, label], index) => metric(label, fmt(groups[key].length), key === "all" ? allCaption : percent(groups[key].length, den[key]) + " " + suffix[key], () => list(label, groups[key], "Состав показателя."), index === 3 ? "accent" : index === 4 ? "bad" : "")).join("")}</div>`;
   if (state.mode === "created") {
     const outside = qualOutsideTarget(groups, "sources", period);
     const ranked = (state.source === "*" ? sources : [state.source]).map((source) => [source, general(groups.all, "sources", period, { source })]).sort((a, b) => b[1].all.length - a[1].all.length);

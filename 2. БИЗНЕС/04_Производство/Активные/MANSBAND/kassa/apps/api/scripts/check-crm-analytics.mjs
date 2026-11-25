@@ -213,6 +213,13 @@ assert.deepEqual(restrictDeals(closedRows, [stillOpen, closedLater], "results", 
 assert.deepEqual(restrictDeals(closedRows, [stillOpen], "results", bounds, { outcomes: ["success", "fail", "open"], reasons: ["Спам"] }).map((deal) => deal.id), [1, 4]);
 assert.deepEqual(restrictDeals(closedRows, [stillOpen], "results", bounds, { outcomes: [] }).map((deal) => deal.id), []);
 assert.equal(general(restrictDeals(closedRows, [], "results", bounds, { reasons: ["Спам"] }), "results", bounds, { ready: true }).fail.length, 1);
+const sourceFail = deal({ id: 41, status: 143, created: monday, closed: monday + 86400_000, fields: [field(3134051, "Спам")] }, { history: [{ stage: "Провал", at: monday + 86400_000 }], historyComplete: true });
+const sourceOpen = deal({ id: 42, status: 100, created: monday }, { history: [{ stage: "Новая заявка", at: monday }], historyComplete: true });
+const sourceWon = deal({ id: 43, status: 142, created: monday, closed: monday + 86400_000 }, { history: [{ stage: "Успех", at: monday + 86400_000 }], historyComplete: true });
+const sourceRows = cohort([sourceFail, sourceOpen, sourceWon], "sources", bounds, {});
+assert.deepEqual(restrictDeals(sourceRows, [], "sources", bounds, { outcomes: ["fail"], reasons: ["Спам"] }).map((item) => item.id), [41]);
+assert.deepEqual(restrictDeals(sourceRows, [], "sources", bounds, { outcomes: ["open"] }).map((item) => item.id), [42]);
+assert.equal(general(restrictDeals(sourceRows, [], "sources", bounds, { outcomes: ["success", "open"] }), "sources", bounds, { ready: true }).success.length, 1);
 const paced = deal({ id: 25, status: 142, closed: monday + 5 * 3600000 }, {
   historyComplete: true,
   history: [{ stage: "Дано обещание", at: monday }, { stage: "Доставлен", at: monday + 5 * 3600000 }],
