@@ -276,7 +276,7 @@ export function ExchangeForm({
             onTips={setTips}
           />
           {reserve.partial && (
-            <div className="mt-4 max-w-xs">
+            <div className="mt-4 max-w-xs" data-reveal-mount="">
               <Field label="Отложка до" hint="Частичная оплата — две недели вперёд, дату можно изменить">
                 <DatePicker className="input" value={reserve.until} onChange={reserve.onChange} />
               </Field>

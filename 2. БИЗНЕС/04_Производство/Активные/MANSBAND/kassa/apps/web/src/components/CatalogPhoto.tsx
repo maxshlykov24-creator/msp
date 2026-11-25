@@ -2,69 +2,27 @@ import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Images } from "lucide-react";
 import type { SuitModel } from "@kassa/shared";
+import {
+  catalogThumbMode,
+  prepareCatalogPhotos,
+  resolveCatalogPhoto,
+  type PhotoChoice,
+  type PhotoIndex,
+} from "../lib/catalogPhotoMatch";
 
 type PhotoProps = { name: string; suit?: SuitModel; groupNames?: string[] };
-type PhotoChoice = { asset: string; name: string };
-type PhotoIndex = {
-  products: Record<string, Record<string, Record<string, string>>>;
-  suits: Record<string, string>;
-};
-
-const normalize = (value: string | null) =>
-  (value ?? "").normalize("NFC").trim().toLowerCase().replace(/\s+/g, " ");
-const dimension = /^(?:[0-9]{1,3}(?:[./–-][0-9]{1,3})?|[2-9]?x{0,4}[sl]|m|one size|onesize)$/i;
-
-function productAsset(index: PhotoIndex, name: string) {
-  const label = normalize(name);
-  const start = label.lastIndexOf(" (");
-  if (start < 0 || !label.endsWith(")")) return;
-  const layouts = index.products[label.slice(0, start)];
-  if (!layouts) return;
-  const tokens = label.slice(start + 2, -1).split(",").map((t) => t.trim());
-  let asset: string | undefined;
-  for (const [mask, rules] of Object.entries(layouts)) {
-    const positions = mask.split(",").map(Number);
-    if (!positions.every((i) => dimension.test(tokens[i] ?? ""))) continue;
-    const key = tokens.filter((_, i) => !positions.includes(i)).join("|");
-    const match = rules[key];
-    if (match) {
-      if (asset && match !== asset) return;
-      asset = match;
-    }
-  }
-  return asset;
-}
 
 // The catalogue index is fetched once, when a product list is first displayed.
 const PhotoWithIndex = lazy(async () => {
   const { default: index }: { default: PhotoIndex } = await import("../data/catalogPhotos.json")
     .catch(() => ({ default: { products: {}, suits: {} } }));
-  const jacketPhotos = new Set(Object.values(index.suits));
-  const suitOptions = new Map<string, { asset: string; color: string; pattern: string }[]>();
-  for (const [key, asset] of Object.entries(index.suits)) {
-    const [line, variation, color, pattern, fit] = key.split("|");
-    const family = [line, variation, fit].join("|");
-    const options = suitOptions.get(family) ?? [];
-    options.push({ asset, color, pattern });
-    suitOptions.set(family, options);
-  }
+  const prepared = prepareCatalogPhotos(index);
   return { default: function IndexedPhoto({ name, suit, groupNames }: PhotoProps) {
-    if (suit?.mixed) {
-      const options = suitOptions.get([suit.line, suit.variation, suit.fit].map(normalize).join("|"));
-      if (!options?.length) return null;
-      const cover = options.find(option => option.color === normalize(suit.color) && option.pattern === normalize(suit.pattern));
-      const ordered = cover ? [cover, ...options.filter(option => option !== cover)] : options;
-      const choices = ordered.map(({ asset, color, pattern }) => ({
-        asset, name: [color, pattern].filter(Boolean).join(" · "),
-      }));
-      return <PhotoButton key={suit.modelId} asset={ordered[0]!.asset} name={suit.variation}
-        jacket choices={choices} differentAppearance={!cover} />;
-    }
-    const asset = suit
-      ? index.suits[[suit.line, suit.variation, suit.color, suit.pattern, suit.fit].map(normalize).join("|")]
-      : productAsset(index, name);
-    if (!asset || groupNames?.some((item) => productAsset(index, item) !== asset)) return null;
-    return <PhotoButton key={asset} name={name} asset={asset} jacket={jacketPhotos.has(asset)} />;
+    const photo = resolveCatalogPhoto(prepared, { name, suit, groupNames });
+    if (!photo) return null;
+    return <PhotoButton key={suit?.mixed ? suit.modelId : photo.asset}
+      name={suit?.mixed ? suit.variation : name} asset={photo.asset} jacket={photo.jacket}
+      choices={photo.choices} differentAppearance={photo.differentAppearance} />;
   } };
 });
 
@@ -81,7 +39,8 @@ function PhotoButton({ name, asset, jacket, choices, differentAppearance = false
 }) {
   const [pinned, setPinned] = useState(false);
   const [anchor, setAnchor] = useState<{ top: number; left: number } | null>(null);
-  const [missing, setMissing] = useState(false);
+  const [useLargeThumb, setUseLargeThumb] = useState(false);
+  const [thumbFailed, setThumbFailed] = useState(false);
   const [previewFailed, setPreviewFailed] = useState(false);
   const [selected, setSelected] = useState(0);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -91,7 +50,7 @@ function PhotoButton({ name, asset, jacket, choices, differentAppearance = false
   const current = choices?.[selected];
   const photoName = [name, current?.name].filter(Boolean).join(" · ");
   const action = differentAppearance ? "Открыть фото других расцветок" : "Открыть фото вариации";
-  const buttonName = [action, name, differentAppearance ? undefined : choices?.[0]?.name].filter(Boolean).join(" · ");
+  const buttonName = [action, name, choices?.[0]?.name].filter(Boolean).join(" · ");
 
   function hideHover() {
     clearTimeout(timer.current);
@@ -128,18 +87,23 @@ function PhotoButton({ name, asset, jacket, choices, differentAppearance = false
     };
   }, [anchor]);
 
-  const iconCover = differentAppearance || missing;
-  if (missing && (!choices || choices.length < 2)) return null;
+  const mode = catalogThumbMode(thumbFailed, choices?.length ?? 0);
+  if (mode === "hidden") return null;
+  const thumb = prefix + (useLargeThumb ? "-l.webp" : "-s.webp");
   return <>
-    <button type="button" className={`catalog-photo-thumb${iconCover ? " catalog-photo-icon" : ""}`}
-      aria-label={buttonName} title={iconCover ? buttonName : undefined}
+    <button type="button" className={`catalog-photo-thumb${mode === "icon" ? " catalog-photo-icon" : ""}`}
+      aria-label={buttonName} title={differentAppearance ? buttonName : undefined}
       aria-haspopup="dialog"
-      onPointerEnter={(e) => { if (e.pointerType === "mouse" && !pinned && !iconCover) showHover(e.currentTarget); }}
+      onPointerEnter={(e) => { if (e.pointerType === "mouse" && !pinned && mode === "image") showHover(e.currentTarget); }}
       onPointerLeave={hideHover} onBlur={hideHover}
       onClick={(e) => { e.stopPropagation(); hideHover(); setSelected(0); setPreviewFailed(false); setPinned(true); }}>
-      {iconCover ? <Images size={19} aria-hidden /> :
-        <img src={prefix + "-s.webp"} width="40" height="48" loading="lazy" decoding="async" alt=""
-          onError={() => setMissing(true)} />}
+      {mode === "icon" ? <Images size={19} aria-hidden /> :
+        <img src={thumb} width="40" height="48" loading="lazy" decoding="async" alt=""
+          onError={(event) => {
+            const url = event.currentTarget.currentSrc || event.currentTarget.src;
+            if (url.endsWith("-s.webp")) setUseLargeThumb(true);
+            else setThumbFailed(true);
+          }} />}
       {choices && choices.length > 1 && <span className="catalog-photo-count" aria-hidden>{choices.length}</span>}
     </button>
     {anchor && !pinned && createPortal(<div className="catalog-photo-hover" style={anchor} aria-hidden="true">

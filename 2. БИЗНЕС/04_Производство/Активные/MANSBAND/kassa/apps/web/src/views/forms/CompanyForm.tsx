@@ -235,7 +235,7 @@ export function CompanyForm({ onDone, onBack = onDone }: { onDone: () => void; o
         <div className="mt-4 grid sm:grid-cols-2 gap-4">
           <AtelierAmountField value={atelier} onChange={setAtelier} />
           <Field label="Доставка, ₽">
-            <input className="input" inputMode="numeric" value={delivery} onChange={(e) => setDelivery(e.target.value.replace(/\D/g, ""))} placeholder="0" />
+            <input className="input" inputMode="numeric" data-reveal-enter="next" value={delivery} onChange={(e) => setDelivery(e.target.value.replace(/\D/g, ""))} placeholder="0" />
           </Field>
         </div>
         <div className="mt-4">
@@ -284,9 +284,9 @@ export function CompanyForm({ onDone, onBack = onDone }: { onDone: () => void; o
         <CommentField value={comment} onChange={setComment} required={stage === "Дано обещание"} />
       </Card>
 
-      {stage === "Дано обещание" && <Card><Field label="Актуально до" required><DatePicker className="input" value={actualUntil} onChange={(value) => setActualUntil(value)} /></Field></Card>}
+      {stage === "Дано обещание" && <Card data-reveal-mount=""><Field label="Актуально до" required><DatePicker className="input" value={actualUntil} onChange={(value) => setActualUntil(value)} /></Field></Card>}
       {reserve.partial && stage !== "Успех" && (
-        <Card>
+        <Card data-reveal-mount="">
           <Field label="Отложка до" hint={reserve.hint}>
             <DatePicker className="input" value={reserve.until} onChange={reserve.onChange} />
           </Field>

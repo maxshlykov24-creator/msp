@@ -171,6 +171,21 @@ export function RevealScope({
   });
   const scheduleRef = useRef<(request: RevealRequest) => void>(() => {});
 
+  const schedule = (request: RevealRequest) => {
+    const runtimeRef = runtime.current;
+    runtimeRef.pending = request;
+    if (runtimeRef.raf) return;
+    runtimeRef.raf = requestAnimationFrame(() => {
+      runtimeRef.raf = 0;
+      const next = runtimeRef.pending;
+      runtimeRef.pending = null;
+      const current = rootRef.current;
+      if (!next || !current) return;
+      run(current, next, runtimeRef);
+    });
+  };
+  scheduleRef.current = schedule;
+
   const api = useMemo<RevealApi>(
     () => ({
       reveal: (request) => scheduleRef.current(request),
@@ -204,33 +219,19 @@ export function RevealScope({
     if (!root) return;
     const runtimeRef = runtime.current;
 
-    const schedule = (request: RevealRequest) => {
-      runtimeRef.pending = request;
-      if (runtimeRef.raf) return;
-      runtimeRef.raf = requestAnimationFrame(() => {
-        runtimeRef.raf = 0;
-        const next = runtimeRef.pending;
-        runtimeRef.pending = null;
-        const current = rootRef.current;
-        if (!next || !current) return;
-        run(current, next, runtimeRef);
-      });
-    };
-    scheduleRef.current = schedule;
-
     const onFocus = (event: FocusEvent) => {
       const target = event.target;
       if (!(target instanceof HTMLElement) || !root.contains(target)) return;
       const field = focusField(target);
       if (!field) return;
-      schedule({ keep: field });
+      scheduleRef.current({ keep: field });
     };
 
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Enter" || event.shiftKey || event.altKey || event.ctrlKey || event.metaKey || event.isComposing) return;
       const target = event.target;
       if (!(target instanceof HTMLInputElement) || target.dataset.revealEnter !== "next") return;
-      schedule({ keep: target, show: nextBlock(target, root) });
+      scheduleRef.current({ keep: target, show: nextBlock(target, root) });
     };
 
     const seen = new WeakSet<HTMLElement>();
@@ -244,7 +245,7 @@ export function RevealScope({
           for (const el of found) {
             if (seen.has(el)) continue;
             seen.add(el);
-            schedule({ keep: el });
+            scheduleRef.current({ keep: el });
           }
         });
       }
@@ -284,6 +285,7 @@ export function RevealScope({
       window.visualViewport?.removeEventListener("resize", onViewport);
       mo.disconnect();
       if (runtimeRef.raf) cancelAnimationFrame(runtimeRef.raf);
+      runtimeRef.raf = 0;
       scheduleRef.current = () => {};
     };
   }, [rootRef]);

@@ -132,7 +132,7 @@ function CityCombobox({ value, onChange }: { value: string; onChange: (v: string
         }}
       />
       {open && filtered.length > 0 && (
-        <ul className="absolute z-20 mt-1 w-full max-h-56 overflow-auto rounded-lg border border-ink-600 bg-ink-900 shadow-lg">
+        <ul className="absolute z-20 mt-1 w-full max-h-56 overflow-auto rounded-lg border border-ink-600 bg-ink-900 shadow-lg" data-reveal-popover>
           {filtered.map((c) => (
             <li key={c}>
               <button
@@ -323,6 +323,7 @@ export function DeliveryForm({ onDone, onBack = onDone }: { onDone: () => void; 
             className="input"
             inputMode="numeric"
             placeholder="0"
+            data-reveal-enter="next"
             value={delivery}
             onChange={(e) => setDelivery(e.target.value.replace(/[^\d]/g, ""))}
           />

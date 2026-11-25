@@ -39,3 +39,7 @@
 .picker-footer{display:flex;justify-content:space-between;align-items:center;gap:12px}.picker-footer button{min-height:38px}.picker-matrix-wrap>.text-button{margin-bottom:6px}
 
 .workspace-header .catalog-header-actions{gap:6px}.workspace-header .catalog-header-actions>button{padding:5px 10px;min-height:34px;gap:6px;font-size:11px;line-height:1.25}.catalog-header-actions>button svg{width:15px;height:15px;flex:none}@media(pointer:coarse){.workspace-header .catalog-header-actions>button{min-height:44px}}
+.workspace-header h1{font-size:22px;letter-spacing:-.45px}
+main[data-page="tasks"] .workspace-header h1{font-size:20px}
+main[data-page="tasks"] .workspace-header-actions .refresh-button>span{display:flex!important;flex-direction:row;align-items:baseline;gap:6px;text-align:left}
+@media screen{html[data-cut-focus] .workspace-header{display:none}html[data-cut-focus] main{padding-top:12px}}

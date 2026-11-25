@@ -1,10 +1,11 @@
-import { useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Plus, Trash2, Banknote, CreditCard, Landmark, Gift } from "lucide-react";
 import type { Payment } from "../data/types";
 import { findPaymentMethod } from "../data/mock";
 import { PaymentMethodSelect } from "./PaymentMethodSelect";
 import { dateCompact, money } from "../lib/format";
 import { useStore } from "../store";
+import { useReveal } from "../lib/reveal";
 
 function methodIcon(kind: string) {
   if (kind === "cash") return <Banknote size={15} />;
@@ -50,7 +51,7 @@ export function PaymentLines({
         const certNo = p.certificateNumber?.trim();
         const rem = certNo && certRemainders ? certRemainders[p.id] : undefined;
         return (
-          <div key={p.id} className="flex items-center gap-3 px-3 py-2.5 bg-ink-900/50">
+          <div key={p.id} data-payment-id={p.id} className="flex items-center gap-3 px-3 py-2.5 bg-ink-900/50">
             <span className="text-gold shrink-0">{methodIcon(m?.kind ?? "card")}</span>
             <div className="flex-1 min-w-0">
               <div className="text-[14px] text-white truncate">
@@ -93,6 +94,11 @@ export function PaymentBlock({
   const [amount, setAmount] = useState("");
   const [certNo, setCertNo] = useState("");
   const [certError, setCertError] = useState<string | null>(null);
+  const entryRef = useRef<HTMLDivElement>(null);
+  const certRef = useRef<HTMLDivElement>(null);
+  const pendingId = useRef<string | null>(null);
+  const wasCert = useRef(false);
+  const reveal = useReveal();
 
   const paid = payments.reduce((s, p) => s + p.amount, 0);
   const remainder = total - paid;
@@ -157,10 +163,12 @@ export function PaymentBlock({
       a = Math.min(a, available);
       setCertError(null);
     }
+    const id = crypto.randomUUID();
+    pendingId.current = id;
     onChange([
       ...payments,
       {
-        id: crypto.randomUUID(),
+        id,
         methodId,
         amount: a,
         certificateNumber: m.kind === "certificate" ? certNo.trim() : undefined,
@@ -175,9 +183,31 @@ export function PaymentBlock({
   const certBlocked = Boolean(isCert && (!certNo.trim() || !cert || available <= 0));
   const addBlocked = methodMissing || certBlocked;
 
+  useLayoutEffect(() => {
+    const id = pendingId.current;
+    if (!id) return;
+    pendingId.current = null;
+    if (!reveal) return;
+    const row = entryRef.current?.parentElement?.querySelector<HTMLElement>(`[data-payment-id="${CSS.escape(id)}"]`);
+    if (!row) return;
+    const form = entryRef.current?.closest("[data-reveal-root]");
+    reveal.reveal({
+      keep: row,
+      show: form?.querySelector<HTMLElement>("[data-reveal-change]") ?? null,
+      companion: entryRef.current,
+    });
+  }, [payments, reveal]);
+
+  useLayoutEffect(() => {
+    if (isCert && !wasCert.current && reveal && entryRef.current && certRef.current) {
+      reveal.reveal({ keep: entryRef.current, show: certRef.current });
+    }
+    wasCert.current = isCert;
+  }, [isCert, reveal]);
+
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap gap-2 items-end">
+      <div ref={entryRef} data-reveal-companion="pay" className="flex flex-wrap gap-2 items-end">
         <div className="flex-1 min-w-[180px]">
           <div className="field-label">Способ оплаты</div>
           <PaymentMethodSelect
@@ -243,7 +273,7 @@ export function PaymentBlock({
       </div>
 
       {isCert && (
-        <div className="rounded-lg border border-ink-700 bg-ink-900/40 p-3 space-y-3">
+        <div ref={certRef} className="rounded-lg border border-ink-700 bg-ink-900/40 p-3 space-y-3">
           <div className="grid sm:grid-cols-[minmax(140px,180px)_1fr] gap-3 items-end">
             <div>
               <div className="field-label">№ сертификата</div>

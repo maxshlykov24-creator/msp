@@ -750,8 +750,51 @@ export function ProductPicker({
     }
   }
 
+  useLayoutEffect(() => {
+    const watch = watchRef.current;
+    if (!watch || !revealApi || readOnly) return;
+    if (scannerOpen || moveOpen || stockModal) return;
+    if (open && watch.needs) return;
+    const searchingNext = (searchInputRef.current?.value ?? "").trim().length > 0;
+    if (!watch.needs && (open || searchingNext)) {
+      watchRef.current = null;
+      return;
+    }
+    const root = rootRef.current;
+    if (!root) return;
+    if (!items.some((it) => it.productId === watch.productId && !it.isReturn)) {
+      watchRef.current = null;
+      return;
+    }
+    const item = items.find((it) => it.productId === watch.productId && !it.isReturn);
+    const group = item?.suitGroupId;
+    const active = document.activeElement;
+    const focusLeft = active instanceof HTMLElement && active !== document.body && !root.contains(active);
+    const userMoved = revealApi.userScrolledAt() > watch.at;
+    const grouped = Boolean(group && group !== watch.seenGroup && !watch.needs);
+    if (grouped && (userMoved || focusLeft || Date.now() - watch.at > 8000)) {
+      watchRef.current = null;
+      return;
+    }
+    if (!watch.needs && !grouped) {
+      if (group) watch.seenGroup = group;
+      return;
+    }
+    const row = [...root.querySelectorAll<HTMLElement>("[data-reveal-product]")].find((el) =>
+      (el.getAttribute("data-reveal-product") ?? "").split(" ").includes(watch.productId),
+    );
+    if (!row) return;
+    revealApi.reveal({
+      keep: row,
+      companion: root.querySelector<HTMLElement>('[data-reveal-companion="search"]'),
+      companionInput: searchInputRef.current,
+    });
+    watch.needs = false;
+    watch.seenGroup = group;
+  }, [items, open, scannerOpen, moveOpen, stockModal, revealApi, readOnly, suitGroupMeta]);
+
   return (
-    <div className="space-y-3">
+    <div ref={rootRef} data-reveal-block className="space-y-3">
       {scannerOpen && (
         <BarcodeScannerModal onDetected={handleScanned} onClose={() => setScannerOpen(false)} />
       )}
@@ -760,11 +803,12 @@ export function ProductPicker({
           {notice}
         </div>
       )}
-      {!readOnly && <div className="relative">
+      {!readOnly && <div className="relative" data-reveal-companion="search">
         <div className="flex gap-2">
           <div className="relative flex-1">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-mute" />
             <input
+              ref={searchInputRef}
               className="input pl-9"
               placeholder={
                 allowedMap
@@ -789,7 +833,7 @@ export function ProductPicker({
           </button>
         </div>
         {open && (allowedMap || q) && (
-          <div className="absolute z-20 mt-1 w-full card p-1 max-h-64 overflow-y-auto">
+          <div className="absolute z-20 mt-1 w-full card p-1 max-h-64 overflow-y-auto" data-reveal-popover>
             <div className="flex justify-end px-2 pt-1">
               <button onClick={() => setOpen(false)} className="text-mute hover:text-white">
                 <X size={14} />
@@ -858,7 +902,7 @@ export function ProductPicker({
                 const groupDiscountRub = first?.discountRub;
                 const groupIsGift = !!first?.isGift;
                 return (
-                  <div key={groupId} className="px-3 py-2.5 bg-ink-900/50">
+                  <div key={groupId} data-reveal-product={groupItems.map((part) => part.productId).join(" ")} className="px-3 py-2.5 bg-ink-900/50">
                     <div className="flex items-start gap-3">
                       <CatalogPhoto name={jacketItem.name} />
                       <button
@@ -958,7 +1002,7 @@ export function ProductPicker({
               const it = row.item;
               const avail = availableById[it.productId];
               return (
-                <div key={itemKey(it)} className="px-3 py-2.5 bg-ink-900/50">
+                <div key={itemKey(it)} data-reveal-product={it.productId} className="px-3 py-2.5 bg-ink-900/50">
                   <div className="flex items-start gap-3">
                     <CatalogPhoto name={it.name} />
                     <button

@@ -284,6 +284,7 @@ export function SaleForm({ onDone, onBack = onDone }: { onDone: () => void; onBa
             className="input"
             inputMode="numeric"
             placeholder="0"
+            data-reveal-enter="next"
             value={delivery}
             onChange={(e) => setDelivery(e.target.value.replace(/[^\d]/g, ""))}
           />
@@ -330,16 +331,16 @@ export function SaleForm({ onDone, onBack = onDone }: { onDone: () => void; onBa
         </div>
       </Card>
 
-      {stage === "Дано обещание" && <Card><Field label="Актуально до" required><DatePicker className="input" value={actualUntil} onChange={(value) => setActualUntil(value)} /></Field></Card>}
+      {stage === "Дано обещание" && <Card data-reveal-mount=""><Field label="Актуально до" required><DatePicker className="input" value={actualUntil} onChange={(value) => setActualUntil(value)} /></Field></Card>}
       {reserve.partial && stage !== "Успех" && (
-        <Card>
+        <Card data-reveal-mount="">
           <Field label="Отложка до" hint={reserve.hint}>
             <DatePicker className="input" value={reserve.until} onChange={reserve.onChange} />
           </Field>
         </Card>
       )}
-      {isApproxDateStage(stage) && <Card><Field label="Примерная дата встречи или заказа" required><DatePicker className="input" value={approxMeetingDate} onChange={(value) => setApproxMeetingDate(value)} /></Field></Card>}
-      {stage === "Встреча назначена" && !slivFound && <Card><Field label="Дата встречи" required><DatePicker className="input" value={meetingDate} onChange={(value) => setMeetingDate(value)} /></Field></Card>}
+      {isApproxDateStage(stage) && <Card data-reveal-mount=""><Field label="Примерная дата встречи или заказа" required><DatePicker className="input" value={approxMeetingDate} onChange={(value) => setApproxMeetingDate(value)} /></Field></Card>}
+      {stage === "Встреча назначена" && !slivFound && <Card data-reveal-mount=""><Field label="Дата встречи" required><DatePicker className="input" value={meetingDate} onChange={(value) => setMeetingDate(value)} /></Field></Card>}
       {toast}
     </FormShell>
   );

@@ -352,9 +352,9 @@ export function RentalForm({ onDone, onBack = onDone }: { onDone: () => void; on
         <PhotoField photos={photos} onChange={setPhotos} label="Фото паспорта / прав" />
       </Card>
 
-      {stage === "Дано обещание" && <Card><Field label="Актуально до" required><DatePicker className="input" value={actualUntil} onChange={(value) => setActualUntil(value)} /></Field></Card>}
+      {stage === "Дано обещание" && <Card data-reveal-mount=""><Field label="Актуально до" required><DatePicker className="input" value={actualUntil} onChange={(value) => setActualUntil(value)} /></Field></Card>}
       {reserve.partial && stage !== "Успех" && (
-        <Card>
+        <Card data-reveal-mount="">
           <Field label="Отложка до" hint={reserve.hint}>
             <DatePicker className="input" value={reserve.until} onChange={reserve.onChange} />
           </Field>

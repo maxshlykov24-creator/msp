@@ -265,6 +265,7 @@ export function CertificateForm({
             className="input"
             inputMode="numeric"
             placeholder="0"
+            data-reveal-enter="next"
             value={delivery}
             onChange={(e) => setDelivery(e.target.value.replace(/[^\d]/g, ""))}
           />
