@@ -100,7 +100,7 @@ function AttentionList({items,place,notices,name,canCount,onCount}:{items:Row[];
  const garments=items.filter(i=>i.kind==='garment');
  const low=garments.filter(i=>{const stock=stockFigures(i,place);return stock.available!==null&&stock.available>=1&&stock.available<=10});
  const notes=notices.filter(r=>r.message);
- return <section className="panel pulse-quiet"><h3>Сроки и короткий остаток</h3>{low.map(i=><p key={'low-'+i.id}>Остаток {stockFigures(i,place).available} шт.: {name(i.id)}</p>)}{notes.map(r=><p key={r.id}>{r.message}{r.item_id?': '+name(r.item_id):''}</p>)}{!low.length&&!notes.length&&<p className="muted">Коротких остатков и сроков заморозки нет.</p>}{!!low.length&&canCount&&onCount&&<button className="secondary" onClick={onCount}>Пересчёт</button>}</section>
+ return <section className="panel pulse-quiet"><div className="pulse-section-head"><h3>Сроки и короткий остаток</h3>{!!low.length&&canCount&&onCount&&<button className="secondary" onClick={onCount}>Пересчёт</button>}</div>{!low.length&&!notes.length&&<p>Коротких остатков и сроков заморозки нет.</p>}{(low.length>0||notes.length>0)&&<ul>{low.map(i=><li key={'low-'+i.id}>Остаток {stockFigures(i,place).available} шт.: {name(i.id)}</li>)}{notes.map(r=><li key={r.id}>{r.message}{r.item_id?': '+name(r.item_id):''}</li>)}</ul>}</section>
 }
 function Empty({text}:{text:string}){return <div className="empty"><p>{text}</p></div>}
 function Mappings({items,rows,canMap,onMap}:{items:Row[];rows:Row[];canMap:boolean;onMap:(item:Row,platform:string)=>void}){
