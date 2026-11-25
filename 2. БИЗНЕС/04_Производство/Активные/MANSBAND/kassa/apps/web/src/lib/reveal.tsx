@@ -172,6 +172,7 @@ function run(root: HTMLElement, request: RevealRequest, runtime: Runtime, getRoo
   if (!request.keep.isConnected) return;
   if (overlayBlocks(root)) {
     const waits = (request.waits ?? 0) + 1;
+    (window as unknown as { __lastReveal?: unknown }).__lastReveal = { overlay: true, waits };
     if (waits > 8) return;
     enqueue(runtime, { ...request, waits }, getRoot);
     return;
@@ -188,6 +189,11 @@ function run(root: HTMLElement, request: RevealRequest, runtime: Runtime, getRoo
   });
   runtime.last = request;
   runtime.lastAt = Date.now();
+  (window as unknown as { __lastReveal?: unknown }).__lastReveal = {
+    delta,
+    companionKept,
+    keep: [Math.round(keep.top), Math.round(keep.bottom)],
+  };
   const input = request.companionInput;
   if (!companionKept && delta !== 0 && input?.isConnected && document.activeElement === input) input.blur();
   if (delta === 0) return;
