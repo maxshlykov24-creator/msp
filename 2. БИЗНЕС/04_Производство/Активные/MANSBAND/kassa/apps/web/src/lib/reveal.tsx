@@ -43,9 +43,19 @@ function boxOf(el: HTMLElement | null | undefined): { top: number; bottom: numbe
   return { top: rect.top, bottom: rect.bottom };
 }
 
+function scrollable(el: HTMLElement): boolean {
+  const overflow = getComputedStyle(el).overflowY;
+  return (overflow === "auto" || overflow === "scroll" || overflow === "overlay") && el.scrollHeight > el.clientHeight + 2;
+}
+
 export function scrollTarget(root: HTMLElement): HTMLElement {
   const modal = root.closest(".kassa-modal-body");
   if (modal instanceof HTMLElement) return modal;
+  let node: HTMLElement | null = root.parentElement;
+  while (node) {
+    if (scrollable(node)) return node;
+    node = node.parentElement;
+  }
   return (document.scrollingElement as HTMLElement | null) ?? document.documentElement;
 }
 
