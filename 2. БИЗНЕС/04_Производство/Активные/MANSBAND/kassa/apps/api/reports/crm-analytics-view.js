@@ -212,7 +212,7 @@ function outcomeBar(rows, mode, period) {
   const failNote = state.outcomes.has("fail") ? "" : `<p class="reason-note">Причина применится, когда отмечен провал.</p>`;
   const reset = state.reasons.size ? `<button type="button" class="reason-reset" ${reg(() => { state.reasons.clear(); state.reasonMenu = true; render(); })}>Сбросить</button>` : "";
   const menu = state.reasonMenu ? `<div class="reason-menu" role="listbox" aria-multiselectable="true">${search}<div class="reason-list">${items}${empty}</div>${failNote}${reset}</div>` : "";
-  return `<div class="filterbar"><fieldset class="checks"><legend>Исход</legend>${checks}</fieldset><div class="reasonbox${state.reasonMenu ? " is-open" : ""}"><button type="button" class="reason-trigger" aria-haspopup="listbox" aria-expanded="${state.reasonMenu}" ${reg(() => { state.reasonMenu = !state.reasonMenu; if (state.reasonMenu) state.reasonFocus = true; else state.reasonQuery = ""; render(); })}><span class="reason-kicker">Причина провала</span><span class="reason-value${picked.length ? "" : " is-all"}">${esc(summary)}</span><svg class="reason-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>${menu}</div></div>`;
+  return `<div class="filterbar"><fieldset class="checks"><span class="checks-kicker">Исход</span>${checks}</fieldset><div class="reasonbox${state.reasonMenu ? " is-open" : ""}"><button type="button" class="reason-trigger" aria-haspopup="listbox" aria-expanded="${state.reasonMenu}" ${reg(() => { state.reasonMenu = !state.reasonMenu; if (state.reasonMenu) state.reasonFocus = true; else state.reasonQuery = ""; render(); })}><span class="reason-kicker">Причина провала</span><span class="reason-value${picked.length ? "" : " is-all"}">${esc(summary)}</span><svg class="reason-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>${menu}</div></div>`;
 }
 function pickedDeals(rows, mode, period) {
   const openRows = mode === "results" ? queueAt(deals, Math.max(period.from, period.cut - 1)) : [];
@@ -316,7 +316,7 @@ function funnelReport(logistics) {
   const group = filtered.filter((deal) => deal.lane === state.lane);
   const report = funnel(group, stages);
   const aside = filtered.filter((deal) => deal.lane !== state.lane);
-  const rowsHtml = report.analysis.map((item) => `<button class="stage" ${reg(() => stageDetail(item, report.goal))}><span><strong>${esc(item.stage)}</strong><small>Побывали · ${item.visited.length}</small></span><span class="track"><i style="width:${item.visited.length ? 100 * item.hit.length / item.visited.length : 0}%"></i></span><span class="alignr"><b>${item.hit.length}</b> до цели<small>${percent(item.hit.length, item.visited.length)} от этапа</small></span></button>`).join("");
+  const rowsHtml = report.analysis.map((item) => `<button class="stage" ${reg(() => stageDetail(item, report.goal))}><span><strong>${esc(item.stage)}</strong><small>Побывали · ${item.visited.length}</small></span><span class="track"><i style="width:${item.visited.length ? 100 * item.hit.length / item.visited.length : 0}%"></i></span><span class="alignr"><b>${item.hit.length}</b><small>до цели · ${percent(item.hit.length, item.visited.length)}</small></span></button>`).join("");
   const rest = `<div class="stack">${barRow("Не были ни на одном этапе цепочки", report.remainder.length, group.length, () => list("Вне цепочки", report.remainder, ""))}${barRow("История этапа неполная", report.incomplete.length, group.length, () => list("История неполная", report.incomplete, ""))}</div>`;
   const speed = logistics && stages.length ? medianHours(group, stages) : null;
   const speedPanel = speed ? panel("Сколько времени занимает путь?", `От «${stages[0]}» до «${stages.at(-1)}».`, `<button class="item" ${reg(() => list("Полный путь", speed.ids.map((id) => byId.get(id)).filter(Boolean), ""))}><span>Медианное время<small>${fmt(speed.ids.length)} заявок с полным путём</small></span><strong>${speed.hours == null ? "—" : fmt(speed.hours) + " ч"}</strong></button>`) : "";
@@ -375,6 +375,7 @@ function uncovered() { return `<div class="empty"><strong>Этот период 
 function render() {
   actions.clear();
   document.body.classList.toggle("hub", page === "home");
+  document.body.classList.toggle("report", page !== "home");
   document.body.classList.toggle("explain", state.explain);
   const inCrm = ["quality", "general", "effect"].includes(page);
   const report = inCrm || page === "log";
