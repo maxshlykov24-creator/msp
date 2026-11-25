@@ -18,14 +18,14 @@ const CHANNEL = { off: "Офлайн", on: "Онлайн", unknown: "Канал 
 const touchText = { yes: "С касанием", no: "Без касания", unknown: "Касание не определено" };
 const titles = { home: "Статистика", crm: "Статистика CRM", quality: "Качество работы CRM", general: "Общая статистика", effect: "Эффективность CRM", log: "Логистика", queue: "Сейчас в работе", review: "Границы среза" };
 const intro = {
-  home: "Цифры этого среза посчитаны из amoCRM. Где источника нет, на экране так и написано.",
-  crm: "Выбери вопрос, на который нужен ответ.",
-  quality: "Сроки задач и этапов по закрытым сделкам. Время ответа считается по сообщениям Wazzup.",
-  general: "Сколько обращений становятся покупками и из каких источников они приходят.",
-  effect: "С каких этапов заявки доходят до встречи или передачи на сборку.",
-  log: "Как товар доходит до магазина и до клиента по этапам CRM.",
-  queue: "Открытые заявки трёх воронок продаж, включая неразобранное.",
-  review: "Что в этом срезе сверено, а что ещё нельзя называть готовой цифрой.",
+  home: "Цифры этого среза из amoCRM.",
+  crm: "",
+  quality: "Задачи, этапы и ответ Wazzup по закрытым сделкам.",
+  general: "",
+  effect: "",
+  log: "",
+  queue: "Открытые заявки трёх воронок, включая неразобранное.",
+  review: "",
 };
 const icons = { crm: '<path d="M4 19V5m0 14h16M8 15v-4m5 4V7m5 8v-6"/>', log: '<path d="M3 6h11v10H3zM14 10h4l3 4v2h-7z"/><circle cx="7" cy="18" r="2"/><circle cx="18" cy="18" r="2"/>', queue: '<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M8 4v16m4-11h5m-5 4h3"/>', right: '<path d="m9 5 7 7-7 7"/>', left: '<path d="m15 5-7 7 7 7"/>', goods: '<path d="m3 8 9-5 9 5v9l-9 5-9-5zM3 8l9 5 9-5m-9 5v9"/>', users: '<circle cx="10" cy="8" r="3"/><path d="M3 20v-2a7 7 0 0 1 14 0v2m-1-15a3 3 0 0 1 0 6m3 3c1 .8 2 2.5 2 5"/>', quality: '<path d="m3 12 4 0 3-7 4 14 3-7h4"/>', general: '<path d="M3 5h18l-7 8v5l-4 2v-7z"/>', effect: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><path d="m12 12 8-8"/>' };
 const ic = (name) => `<svg class="icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${icons[name] ?? ""}</svg>`;
@@ -80,12 +80,10 @@ function replyRows(deal, cutoff = 60) {
   const waiting = waits.map((from) => `<div class="dlgrow highlight"><span>Серия без ответа с ${esc(stamp(from))}</span><strong>ещё нет</strong></div>`).join("");
   return `<h3 class="sectiontitle">Время ответа</h3>${rows}${waiting}`;
 }
-function openReplyList(title, audit, explain, onlySlow = false) {
+function openReplyList(title, audit, onlySlow = false) {
   const records = onlySlow ? audit.slow : audit.all;
   const byId = new Map(audit.rows.map((row) => [row.deal.id, row]));
-  const cutLabel = fmt(Math.ceil(audit.cutoff));
-  const note = explain + (onlySlow ? ` Порог проверки: от ${cutLabel} рабочих минут или серия без ответа.` : ` Сделки идут от большего времени ответа к меньшему. Для проверки откройте «Долгие ответы»: от ${cutLabel} рабочих минут или серия без ответа.`);
-  list(title, records, note, (deal) => replyListMeta(byId.get(deal.id), audit.cutoff));
+  list(title, records, "", (deal) => replyListMeta(byId.get(deal.id), audit.cutoff));
 }
 function list(title, records, explain, timeOf) {
   const openList = (limit = 40, scroll = 0) => {
@@ -96,7 +94,7 @@ function list(title, records, explain, timeOf) {
       const timed = Boolean(time);
       const slow = timed && time.slow;
       const timeHtml = timed ? `<b class="replytime${slow ? " slow" : ""}">${time.html}</b>` : "";
-      return `<button class="item${timed ? " timed" : ""}${slow ? " slowreply" : ""}" ${reg(() => detail(deal, back), true)}><span><strong>${deal.id}</strong> · ${esc(deal.stage || deal.result || "Без этапа")}<small>${esc(dateFmt(deal.created) + " · " + (CHANNEL[deal.lane] ?? "") + " · " + deal.source)}</small></span>${timeHtml}${ic("right")}</button>`;
+      return `<button class="item${timed ? " timed" : ""}${slow ? " slowreply" : ""}" ${reg(() => detail(deal, back), true)}><span><strong>${deal.id}</strong> · ${esc(deal.stage || deal.result || "Без этапа")}<small>${esc(dateFmt(deal.created) + " · " + (CHANNEL[deal.lane] ?? "") + " · " + deal.source)}</small></span>${timeHtml}</button>`;
     }).join("");
     show(title, `${fmt(records.length)} записей`, (explain ? `<p class="note">${esc(explain)}</p>` : "") + (items ? `<div class="stack">${items}</div>` : empty("По выбранным условиям ничего не найдено.")) + (limit < records.length ? `<p class="actions"><button class="pill" ${reg(() => openList(limit + 60, 0), true)}>Показать ещё</button></p>` : ""), scroll);
   };
@@ -112,17 +110,15 @@ function detail(deal, back) {
   if (deal.result === "Провал") props.push(["Причина провала", deal.reason]);
   if (deal.kassaNumber) props.push(["Заявка кассы", String(deal.kassaNumber)]);
   const history = (deal.history ?? []).map((event) => `<li>${esc(event.stage)}<small>${stamp(event.at)}</small></li>`).join("");
-  const tasks = (deal.tasks ?? []).map((task) => `<div class="dlgrow"><span class="taskname">${esc(task.name)}</span><strong>Срок ${stamp(task.due)}<br><small class="tiny">${task.done ? "Обновлена " + stamp(task.done) + ". Отдельного времени выполнения amo не отдаёт." : "Ещё открыта"}</small></strong></div>`).join("");
+  const tasks = (deal.tasks ?? []).map((task) => `<div class="dlgrow"><span class="taskname">${esc(task.name)}</span><strong>Срок ${stamp(task.due)}<br><small class="tiny">${task.done ? "Обновлена " + stamp(task.done) : "Ещё открыта"}</small></strong></div>`).join("");
   const audit = replyAudit([deal], tz);
-  const backButton = typeof back === "function" ? `<p class="actions"><button class="back" ${reg(() => back(), true)}>${ic("left")} К списку</button></p>` : "";
-  show("Заявка " + deal.id, deal.result ?? "В работе", backButton + `<p><a class="link" href="https://mansband.amocrm.ru/leads/detail/${deal.id}" target="_blank" rel="noreferrer">Открыть в amoCRM</a>${deal.kassaNumber ? ` · <a class="link" href="https://mansband-kassa.ru/#board/all/all/${deal.kassaNumber}" target="_blank" rel="noreferrer">Заявка кассы ${deal.kassaNumber}</a>` : ""}</p>` + props.map(([key, value]) => `<div class="dlgrow"><span>${esc(key)}</span><strong>${esc(value)}</strong></div>`).join("") + replyRows(deal, audit.cutoff) + `<h3 class="sectiontitle">История этапов</h3>${history ? `<ol class="timeline">${history}</ol>` : empty(deal.historyComplete ? "Смен этапа нет." : "История этапа неполная, исход по ней не достраивается.")}` + (tasks ? `<h3>Задачи</h3>${tasks}` : ""));
+  const backButton = typeof back === "function" ? `<p class="actions"><button class="back" ${reg(() => back(), true)}>К списку</button></p>` : "";
+  show("Заявка " + deal.id, deal.result ?? "В работе", backButton + `<p><a class="link" href="https://mansband.amocrm.ru/leads/detail/${deal.id}" target="_blank" rel="noreferrer">Открыть в amoCRM</a>${deal.kassaNumber ? ` · <a class="link" href="https://mansband-kassa.ru/#board/all/all/${deal.kassaNumber}" target="_blank" rel="noreferrer">Заявка кассы ${deal.kassaNumber}</a>` : ""}</p>` + props.map(([key, value]) => `<div class="dlgrow"><span>${esc(key)}</span><strong>${esc(value)}</strong></div>`).join("") + replyRows(deal, audit.cutoff) + `<h3 class="sectiontitle">История этапов</h3>${history ? `<ol class="timeline">${history}</ol>` : empty(deal.historyComplete ? "Смен этапа нет." : "История этапа неполная.")}` + (tasks ? `<h3>Задачи</h3>${tasks}` : ""));
 }
 function methodology() {
-  show("Как читать статистику", "Правила расчёта", `<div class="stack"><section><h3>Результаты</h3><p class="note">Качество, общая статистика, эффективность и логистика берут сделки, закрытые в выбранный период. Успех и провал в сумме дают все закрытые. Возврат и обмен уже закрытый успех не уменьшают.</p></section><section><h3>Источники</h3><p class="note">Сделки группируются по дате создания. Успех и провал берутся из событий этапа на конец периода. Если история обрывается, заявка остаётся в общем числе и не попадает ни в успех, ни в провал.</p></section><section><h3>Целевые и квалы</h3><p class="note">Целевая: дата взятия в работу не позже границы или успех уже наступил. Квал: дата квалификации или успех. Провал «Спам» квалом не считается. Чекбокс «Целевой» число не меняет. Квал без даты взятия в работу в целевые не дописывается.</p></section><section><h3>Сроки</h3><p class="note">Просрочка закрытого периода считается только там, где срок сохранился на карточке или в задаче. «Сейчас просрочено» считается отдельно, по правилам ежедневной сводки, и с закрытым периодом не складывается.</p></section></div>`);
+  show("Как читать статистику", "Правила расчёта", `<div class="stack"><section><h3>Результаты</h3><p class="note">Качество, общая статистика, эффективность и логистика берут сделки, закрытые в выбранный период. Успех и провал в сумме дают все закрытые. Возврат и обмен уже закрытый успех не уменьшают.</p></section><section><h3>Источники</h3><p class="note">Сделки группируются по дате создания. Успех и провал берутся из событий этапа на конец периода. Если история обрывается, заявка остаётся в общем числе и не попадает ни в успех, ни в провал.</p></section><section><h3>Целевые и квалы</h3><p class="note">Целевая: дата взятия в работу не позже границы или успех уже наступил. Квал: дата квалификации или успех. Провал «Спам» квалом не считается. Чекбокс «Целевой» число не меняет. Квал без даты взятия в работу в целевые не дописывается.</p></section><section><h3>Сроки</h3><p class="note">В просрочку периода входят только сроки, которые сохранились на карточке или в задаче. Срок задачи раньше 10:00 считается с 10:00. Срок с 23:00 считается со следующих 10:00. «Сейчас просрочено» считается отдельно и с закрытым периодом не складывается. Ответ Wazzup идёт с 10:00 до 23:00.</p></section></div>`);
 }
 const openButton = (target, cls, body) => `<button class="${cls}" data-page="${target}">${body}</button>`;
-const badgeIcon = (name) => `<span class="badgeicon">${ic(name)}</span>`;
-const chev = `<span class="round">${ic("right")}</span>`;
 function spark(values) {
   if (!values.length) return "";
   const max = Math.max(1, ...values);
@@ -142,17 +138,17 @@ function home() {
   const delivered = closed.filter((deal) => deal.lane === state.lane && deal.historyComplete && deal.history.some((event) => event.stage === goal));
   const queue = meta.queueComplete ? queueAt(deals, builtAt) : [];
   const trail = archivedQueue();
-  return `<p class="main-period">Срез ${stamp(builtAt)} · ${meta.week.label}</p><div class="cards">${openButton("crm", "entry hero", `<span class="rowhead">${badgeIcon("crm")}${chev}</span><h2>Статистика CRM</h2><p class="aside">Обращения, качество работы и путь до цели.</p><div class="cardfoot"><div><div class="big">${closed.length ? fmt(closed.length) : "—"}</div><div class="caption">${closed.length ? "завершённых заявок в покрытом периоде" : "период вне среза"}</div></div></div>`)}${openButton("log", "entry log", `<span class="rowhead">${badgeIcon("log")}${chev}</span><h2>Логистика</h2><p class="aside">Путь товара до магазина и до клиента.</p><div class="cardfoot"><div><div class="big">${closed.length ? fmt(delivered.length) : "—"}</div><div class="caption">${esc(CHANNEL[state.lane] + " · " + (goal || "цель не найдена в живой воронке"))}</div></div></div>`)}</div>` +
-    openButton("queue", "entry wide", `<div class="cardtitle">${badgeIcon("queue")}<div><h2>Сейчас в работе</h2><p class="aside">Открытые заявки, включая неразобранное.</p></div></div><div class="flex">${spark(trail.map((point) => point.ids.length))}<strong class="big">${meta.queueComplete ? fmt(queue.length) : "—"}</strong>${chev}</div>`) +
-    `<h2 class="sectiontitle">Следующие разделы</h2><div class="futuregrid">${[["goods", "Товары"], ["users", "Консультанты"]].map(([name, label]) => `<div class="future">${ic(name)}<h3>${label}</h3><span class="chip">В планах</span></div>`).join("")}</div>`;
+  return `<p class="main-period">Срез ${stamp(builtAt)} · ${meta.week.label}</p><div class="cards">${openButton("crm", "entry hero", `<h2>Статистика CRM</h2><div class="cardfoot"><div><div class="big">${closed.length ? fmt(closed.length) : "—"}</div><div class="caption">${closed.length ? "завершено за период" : "период вне среза"}</div></div></div>`)}${openButton("log", "entry log", `<h2>Логистика</h2><div class="cardfoot"><div><div class="big">${closed.length ? fmt(delivered.length) : "—"}</div><div class="caption">${esc(CHANNEL[state.lane] + " · " + (goal || "цель не найдена в живой воронке"))}</div></div></div>`)}</div>` +
+    openButton("queue", "entry wide", `<div class="cardtitle"><div><h2>Сейчас в работе</h2></div></div><div class="flex">${spark(trail.map((point) => point.ids.length))}<strong class="big">${meta.queueComplete ? fmt(queue.length) : "—"}</strong></div>`) +
+    `<h2 class="sectiontitle">Следующие разделы</h2><div class="futuregrid">${["Товары", "Консультанты"].map((label) => `<div class="future"><h3>${label}</h3><span class="chip">В планах</span></div>`).join("")}</div>`;
 }
-function crm() { return `<div class="three">${[["quality", "Качество работы", "Сроки задач, этапов и ответ в Wazzup."], ["general", "Общая статистика", "Целевые заявки, покупки и источники."], ["effect", "Эффективность", "На каких этапах заявки не доходят до цели."]].map(([target, title, text]) => openButton(target, "entry", `<span class="rowhead">${badgeIcon(target)}${chev}</span><h2>${title}</h2><p class="aside">${text}</p>`)).join("")}</div>`; }
+function crm() { return `<div class="three">${[["quality", "Качество работы"], ["general", "Общая статистика"], ["effect", "Эффективность"]].map(([target, title]) => openButton(target, "entry", `<h2>${title}</h2>`)).join("")}</div>`; }
 function segment(key, options) { return `<div class="seg">${options.map(([value, label]) => `<button aria-pressed="${state[key] === value}" ${reg(() => { state[key] = value; render(); })}>${label}</button>`).join("")}</div>`; }
 function shift(dir) { const period = bounds(); state.date = dir < 0 ? period.from - 3600000 : period.to + 3600000; render(); }
 function toolbar() {
   const period = bounds();
   const cut = period.cut < period.to;
-  return `<div class="toolbar">${segment("kind", [["day", "День"], ["week", "Неделя"], ["month", "Месяц"], ["year", "Год"]])}<div class="cal"><button class="step" aria-label="Предыдущий период" ${reg(() => shift(-1))}>${ic("left")}</button><input class="date" type="date" id="anchor" aria-label="Дата внутри периода" value="${dayKey(state.date)}"><button class="step" aria-label="Следующий период" ${reg(() => shift(1))}>${ic("right")}</button></div><span class="periodlabel">${dateFmt(period.from)} — ${dateFmt(period.cut - 1)}${cut ? " · период обрезан временем среза" : ""}${state.kind === "week" && !meta.weekStartConfirmed ? " · неделя с понедельника, день недели amo не прочитан" : ""}</span></div>`;
+  return `<div class="toolbar">${segment("kind", [["day", "День"], ["week", "Неделя"], ["month", "Месяц"], ["year", "Год"]])}<div class="cal"><button class="step" aria-label="Предыдущий период" ${reg(() => shift(-1))}>${ic("left")}</button><input class="date" type="date" id="anchor" aria-label="Дата внутри периода" value="${dayKey(state.date)}"><button class="step" aria-label="Следующий период" ${reg(() => shift(1))}>${ic("right")}</button></div><span class="periodlabel">${dateFmt(period.from)} – ${dateFmt(period.cut - 1)}${cut ? " · период обрезан временем среза" : ""}${state.kind === "week" && !meta.weekStartConfirmed ? " · неделя с понедельника, день недели amo не прочитан" : ""}</span></div>`;
 }
 function select(key, label, options) { return `<label class="filter">${label}<select data-select="${key}">${options.map(([value, name]) => `<option value="${esc(value)}" ${state[key] === value ? "selected" : ""}>${esc(name)}</option>`).join("")}</select></label>`; }
 document.addEventListener("toggle", (event) => { if (event.target.classList?.contains("reasonbox")) state.reasonMenu = event.target.open; }, true);
@@ -185,20 +181,6 @@ function outcomeBar(rows, mode, period) {
   const menu = names.length ? names.map(([name, count]) => `<label><input type="checkbox" data-reason="${esc(name)}" ${state.reasons.has(name) ? "checked" : ""}>${esc(name)} · ${fmt(count)}</label>`).join("") + failNote + (state.reasons.size ? `<button type="button" class="link" ${reg(() => { state.reasons.clear(); state.reasonMenu = true; render(); })}>Сбросить</button>` : "") : `<p class="note">Провалов в этом периоде нет.</p>`;
   return `<div class="filterbar"><fieldset class="checks"><legend>Исход</legend>${checks}</fieldset><details class="reasonbox" ${state.reasonMenu ? "open" : ""}><summary>Причина провала · ${esc(summary)}</summary><div class="menu">${menu}</div></details></div>`;
 }
-function selectionNote(rows, mode, period) {
-  const counts = { success: 0, fail: 0, open: 0, unknown: 0 };
-  for (const deal of rows) {
-    const outcome = dealOutcome(deal, mode, period);
-    if (counts[outcome] != null) counts[outcome] += 1;
-  }
-  const parts = [];
-  if (state.outcomes.has("success")) parts.push(`успех ${fmt(counts.success)}`);
-  if (state.outcomes.has("fail")) parts.push(`провал ${fmt(counts.fail)}`);
-  if (state.outcomes.has("open")) parts.push(`в работе ${fmt(counts.open)}`);
-  const reasonText = state.reasons.size ? ` Причина провала оставляет ${fmt(counts.fail)} ${plural(counts.fail, "провал", "провала", "провалов")} и не трогает остальные исходы.` : "";
-  const unknownText = counts.unknown ? ` Исход не определён: ${fmt(counts.unknown)}.` : "";
-  return `<p class="note">В выборке ${fmt(rows.length)} ${plural(rows.length, "заявка", "заявки", "заявок")}: ${parts.join(", ")}.${unknownText}${reasonText}</p>`;
-}
 function pickedDeals(rows, mode, period) {
   const openRows = mode === "results" ? queueAt(deals, Math.max(period.from, period.cut - 1)) : [];
   const picked = restrictDeals(rows, openRows, mode, period, { outcomes: state.outcomes, reasons: state.reasons });
@@ -223,22 +205,23 @@ function generalReport() {
   const order = [["all", "Все заявки"], ["target", "Целевые"], ["qual", "Квалы"], ["success", "Успех"], ["fail", "Провал"]];
   const den = { target: groups.all.length, qual: groups.target.length, success: groups.all.length, fail: groups.all.length };
   const suffix = { target: "от всех", qual: "от целевых", success: "от всех", fail: "от всех" };
-  let html = `<div class="filterbar">${segment("mode", [["results", "Результаты"], ["created", "Источники"]])}${select("touch", "Касание", [["*", "Все заявки"], ["yes", "С касанием"], ["no", "Без касания"]])}${state.mode === "created" ? select("source", "Источник", [["*", "Все источники"], ...sources.map((source) => [source, source])]) : ""}</div>${outcomeBar(narrowed, mode, period)}${selectionNote(picked, mode, period)}`;
-  if (addedOpen) html += `<p class="note">В работе здесь — заявки, которые на конец периода ещё не закрыты. Снимите галочку, чтобы оставить только закрытые.</p>`;
-  html += `<p class="hintline aside">${state.mode === "created" ? "По дате создания. Исход на конец периода берётся из событий этапа." : "По дате завершения. Успех и провал в сумме равны закрытым сделкам."}</p>`;
-  const allCaption = addedOpen ? "в выборке, с открытыми на конец периода" : (state.mode === "created" ? "создано за период" : "завершено за период");
-  html += `<div class="metrics">${order.map(([key, label], index) => metric(label, fmt(groups[key].length), key === "all" ? allCaption : percent(groups[key].length, den[key]) + " " + suffix[key], () => list(label, groups[key], "Состав показателя."), index === 3 ? "accent" : index === 4 ? "bad" : "")).join("")}</div>`;
+  let html = `<div class="filterbar">${segment("mode", [["results", "Результаты"], ["created", "Источники"]])}${select("touch", "Касание", [["*", "Все заявки"], ["yes", "С касанием"], ["no", "Без касания"]])}${state.mode === "created" ? select("source", "Источник", [["*", "Все источники"], ...sources.map((source) => [source, source])]) : ""}</div>${outcomeBar(narrowed, mode, period)}`;
+  const allCaption = state.mode === "created" ? "создано за период" : (addedOpen ? "на конец периода" : "завершено за период");
+  html += `<div class="metrics">${order.map(([key, label], index) => metric(label, fmt(groups[key].length), key === "all" ? allCaption : percent(groups[key].length, den[key]) + " " + suffix[key], () => list(label, groups[key], ""), index === 3 ? "accent" : index === 4 ? "bad" : "")).join("")}</div>`;
   if (state.mode === "created") {
     const outside = qualOutsideTarget(groups, "sources", period);
     const ranked = (state.source === "*" ? sources : [state.source]).map((source) => [source, general(groups.all, "sources", period, { source })]).sort((a, b) => b[1].all.length - a[1].all.length);
-    html += panel("Что дал каждый источник?", "Текущее значение поля «Источник». Технический источник число не меняет.", `<div class="tablewrap source-table"><table><thead><tr><th>Источник</th>${order.map(([, label]) => `<th>${label}</th>`).join("")}</tr></thead><tbody>${ranked.map(([source, group]) => `<tr><td><button class="sourcename" ${reg(() => list(source, group.all, "Все заявки этого источника."))}>${esc(source)}</button></td>${order.map(([key, label]) => `<td><button ${reg(() => list(source + " · " + label, group[key], "Заявки этого источника."))}><span class="source-label">${label}</span>${group[key].length}</button></td>`).join("")}</tr>`).join("")}</tbody></table></div>`);
-    html += `<p class="note">На конец периода в работе: ${fmt(groups.all.length - groups.success.length - groups.fail.length - groups.unknown.length)}. Исход неизвестен: ${fmt(groups.unknown.length)}. Квалы без даты взятия в работу: ${fmt(outside.length)}.</p>`;
+    html += panel("Что дал каждый источник?", "", `<div class="tablewrap source-table"><table><thead><tr><th>Источник</th>${order.map(([, label]) => `<th>${label}</th>`).join("")}</tr></thead><tbody>${ranked.map(([source, group]) => `<tr><td><button class="sourcename" ${reg(() => list(source, group.all, ""))}>${esc(source)}</button></td>${order.map(([key, label]) => `<td><button ${reg(() => list(source + " · " + label, group[key], ""))}><span class="source-label">${label}</span>${group[key].length}</button></td>`).join("")}</tr>`).join("")}</tbody></table></div>`);
+    const tails = [];
+    if (groups.unknown.length) tails.push(`исход неизвестен ${fmt(groups.unknown.length)}`);
+    if (outside.length) tails.push(`квалы без даты ${fmt(outside.length)}`);
+    if (tails.length) html += `<p class="note">${tails.join(", ")}</p>`;
   } else {
     const reasons = [...new Set(groups.fail.map((deal) => deal.reason))].map((reason) => [reason, groups.fail.filter((deal) => deal.reason === reason)]).sort((a, b) => b[1].length - a[1].length);
-    html += panel("Почему сделки закрыли в провал?", "Доля от всех провалов. Сдвоенные карточки не склеиваются.", reasons.length ? `<div class="stack">${reasons.map(([reason, group]) => barRow(reason, group.length, groups.fail.length, () => list(reason, group, "Причина закрытия."))).join("")}</div>` : empty("Провалов за период нет."));
+    html += panel("Почему сделки закрыли в провал?", "", reasons.length ? `<div class="stack">${reasons.map(([reason, group]) => barRow(reason, group.length, groups.fail.length, () => list(reason, group, ""))).join("")}</div>` : empty("Провалов за период нет."));
     if (!addedOpen && state.outcomes.size === 3 && state.reasons.size === 0 && groups.success.length + groups.fail.length !== groups.all.length) html += `<p class="hintline">Ошибка расчёта: успех и провал не дают сумму закрытых сделок.</p>`;
   }
-  return html + qualityLine(groups.all) + `<details class="aside"><summary>Как определяются целевые, квалы и касание?</summary><p>Успех автоматически считается и целевым, и квалом. Провал сам по себе целевым не становится. Без касания: заявки раньше не было, и консультант создал её сразу в успехе или провале. Если следа недостаточно, касание не определено и в оба фильтра не входит.</p></details>`;
+  return html + qualityLine(groups.all);
 }
 function qualityLine(group) {
   const items = [
@@ -251,15 +234,15 @@ function qualityLine(group) {
     ["Касание не определено", group.filter((deal) => deal.touch === "unknown")],
     ["Конфликт воронки и типа клиента", group.filter((deal) => deal.laneConflict)],
   ].filter(([, rows]) => rows.length);
-  if (!items.length) return panel("Качество данных", "В этой выборке пустые и конфликтные поля не найдены.", "");
-  return panel("Качество данных", "Эти строки видны отдельно и не меняют основные числа.", `<div class="stack">${items.map(([label, rows]) => barRow(label, rows.length, group.length, () => list(label, rows, "Заявки, которые не удалось классифицировать однозначно."))).join("")}</div>`);
+  if (!items.length) return panel("Качество данных", "Пустых и конфликтных полей нет.", "");
+  return panel("Качество данных", "", `<div class="stack">${items.map(([label, rows]) => barRow(label, rows.length, group.length, () => list(label, rows, ""))).join("")}</div>`);
 }
 function qualityReport() {
   if (!periodCovered("results", bounds(), meta.coverage)) return uncovered();
   const period = bounds();
   const closed = cohort(deals, "results", period, {});
   if (state.outcomes.size === 0) return outcomeBar(closed, "results", period) + empty("Отметьте хотя бы один исход: успех, провал или в работе.");
-  const { picked, addedOpen } = pickedDeals(closed, "results", period);
+  const { picked } = pickedDeals(closed, "results", period);
   const group = picked;
   const tasks = overdueTasks(group, tz);
   const stages = overdueStages(group, builtAt);
@@ -267,45 +250,48 @@ function qualityReport() {
   const audit = replyAudit(group, tz);
   const chatReady = meta.chat === "wazzup";
   const cards = [
-    metric("Среднее время ответа", chatReady ? (replies.mean == null ? "—" : fmt(replies.mean) + " мин") : "нет источника", chatReady ? (replies.count ? fmt(replies.count) + " " + plural(replies.count, "ответ", "ответа", "ответов") + " · 10–23" : "нет ответов") : "Wazzup не прочитан", () => chatReady ? openReplyList("Ответы Wazzup", audit, "Серии Wazzup. Время идёт до ответа, отметки «не требует ответа» или закрытия беседы. С 23:00 до 10:00 МСК минуты не идут.") : missingSource("Среднее время ответа", QUALITY_SOURCES.response.reason)),
-    metric("Долгие ответы", chatReady ? fmt(audit.slow.length) : "—", chatReady ? (audit.slow.length ? `от ${fmt(Math.ceil(audit.cutoff))} мин или без ответа` : "все ответы короче порога") : "Wazzup не прочитан", () => chatReady ? openReplyList("Долгие ответы", audit, "Сделки, где хотя бы один ответ длиннее порога или осталась серия без ответа.", true) : missingSource("Долгие ответы", QUALITY_SOURCES.response.reason), audit.slow.length ? "bad" : ""),
-    metric("Просроченные задачи", fmt(tasks.length), "задач", () => list("Просроченные задачи", tasks.map((row) => row.deal), "Время выполнения взято из updated_at: отдельного поля amo не отдаёт. Срок до 10:00 считается с 10:00, срок с 23:00 со следующих 10:00.")),
-    metric("Просроченные этапы", fmt(stages.overdue.length), "этапов", () => list("Просроченные этапы", stages.overdue.map((row) => row.deal), "Сегодняшний календарный день ещё не просрочка. Срок без сохранившейся даты сюда не входит.")),
+    metric("Среднее время ответа", chatReady ? (replies.mean == null ? "—" : fmt(replies.mean) + " мин") : "нет источника", chatReady ? (replies.count ? fmt(replies.count) + " " + plural(replies.count, "ответ", "ответа", "ответов") + " · 10–23" : "нет ответов") : "Wazzup не прочитан", () => chatReady ? openReplyList("Ответы Wazzup", audit) : missingSource("Среднее время ответа", QUALITY_SOURCES.response.reason)),
+    metric("Долгие ответы", chatReady ? fmt(audit.slow.length) : "—", chatReady ? (audit.slow.length ? `от ${fmt(Math.ceil(audit.cutoff))} мин или без ответа` : "все ответы короче порога") : "Wazzup не прочитан", () => chatReady ? openReplyList("Долгие ответы", audit, true) : missingSource("Долгие ответы", QUALITY_SOURCES.response.reason), audit.slow.length ? "bad" : ""),
+    metric("Просроченные задачи", fmt(tasks.length), "задач", () => list("Просроченные задачи", tasks.map((row) => row.deal), "")),
+    metric("Просроченные этапы", fmt(stages.overdue.length), "этапов", () => list("Просроченные этапы", stages.overdue.map((row) => row.deal), "")),
   ];
   const byName = new Map();
   for (const row of tasks) { const list = byName.get(row.task.name) ?? []; list.push(row.deal); byName.set(row.task.name, list); }
   const byStage = new Map();
   for (const row of stages.overdue) { const list = byStage.get(row.stage) ?? []; list.push(row.deal); byStage.set(row.stage, list); }
+  const quiet = [];
+  if (stages.missing.length) quiet.push(`без сохранённого срока ${fmt(stages.missing.length)}`);
+  if (meta.digest?.complete && meta.digest.missing) quiet.push(`без даты ${fmt(meta.digest.missing)}`);
+  if (meta.digest?.complete && meta.digest.unavailable) quiet.push(`карточка недоступна ${fmt(meta.digest.unavailable)}`);
+  if (chatReady && replies.pending) quiet.push(`серий без ответа ${fmt(replies.pending)}`);
   const digest = meta.digest?.complete
-    ? `<p class="note">Сейчас просрочено: задачи ${fmt(meta.digest.tasks)}, этапы ${fmt(meta.digest.stages)}.</p><p class="note aside">Это другое число и с периодом не складывается. Без обязательной даты: ${fmt(meta.digest.missing)}. Задач с недоступной карточкой: ${fmt(meta.digest.unavailable)}.${chatReady ? ` Неотвеченных серий Wazzup: ${fmt(replies.pending)}.` : ""}</p>`
-    : `<p class="note">Сейчас просрочено в этот срез не вошло.</p><p class="note aside">Список открытых задач собран не полностью.</p>`;
-  return `${outcomeBar(closed, "results", period)}${selectionNote(group, "results", period)}${addedOpen ? `<p class="note">В работе здесь — заявки, которые на конец периода ещё не закрыты. Снимите галочку, чтобы оставить только закрытые.</p>` : ""}<p class="hintline aside">По дате завершения. Просрочка периода включает уже выполненные задачи. Срок задачи до 10:00 МСК считается с 10:00, срок с 23:00 со следующих 10:00. Срок, который не сохранился, в просрочку не ставится: таких пребываний ${fmt(stages.missing.length)}. Ответ считается от первого входящего Wazzup в серии до исходящего, отметки «не требует ответа» или закрытия беседы. Сообщения за 90 дней до начала недели. С 23:00 до 10:00 МСК счёт стоит и продолжается в 10:00. Звонки не входят.</p><div class="metrics">${cards.join("")}</div><div class="double">${groupPanel("Какие задачи просрочили?", byName, tasks.length, "taskname")}${groupPanel("На каких этапах задержались?", byStage, stages.overdue.length)}</div>${digest}`;
+    ? `<p class="note">Сейчас просрочено: задачи ${fmt(meta.digest.tasks)}, этапы ${fmt(meta.digest.stages)}.</p>`
+    : `<p class="note">Сейчас просрочено в этот срез не вошло. Список открытых задач собран не полностью.</p>`;
+  return `${outcomeBar(closed, "results", period)}<div class="metrics">${cards.join("")}</div><div class="double">${groupPanel("Какие задачи просрочили?", byName, tasks.length, "taskname")}${groupPanel("На каких этапах задержались?", byStage, stages.overdue.length)}</div>${quiet.length ? `<p class="note aside">${quiet.join(", ")}</p>` : ""}${digest}`;
 }
 function groupPanel(title, map, total, rowClass = "") {
   const entries = [...map.entries()].sort((a, b) => b[1].length - a[1].length);
-  return panel(title, "Открой строку, чтобы увидеть заявки.", entries.length ? `<div class="stack">${entries.map(([label, group]) => barRow(label, group.length, total, () => list(label, group, "Заявки этой строки."), "", rowClass)).join("")}</div>` : empty("Таких записей нет."));
+  return panel(title, "", entries.length ? `<div class="stack">${entries.map(([label, group]) => barRow(label, group.length, total, () => list(label, group, ""), "", rowClass)).join("")}</div>` : empty("Таких записей нет."));
 }
 function funnelReport(logistics) {
   if (!periodCovered("results", bounds(), meta.coverage)) return uncovered();
   const period = bounds();
   const closed = cohort(deals, "results", period, {});
   const filtered = logistics ? closed : (state.outcomes.size === 0 ? [] : pickedDeals(closed, "results", period).picked);
-  const addedOpen = !logistics && filtered.some((deal) => !closed.includes(deal));
   if (!logistics && state.outcomes.size === 0) return outcomeBar(closed, "results", period) + empty("Отметьте хотя бы один исход: успех, провал или в работе.");
   const stages = chain(logistics ? "logistics" : "effect", state.lane, new Set(meta.liveStages));
   const group = filtered.filter((deal) => deal.lane === state.lane);
   const report = funnel(group, stages);
   const aside = filtered.filter((deal) => deal.lane !== state.lane);
   const rowsHtml = report.analysis.map((item) => `<button class="stage" ${reg(() => stageDetail(item, report.goal))}><span><strong>${esc(item.stage)}</strong><small>Побывали · ${item.visited.length}</small></span><span class="track"><i style="width:${item.visited.length ? 100 * item.hit.length / item.visited.length : 0}%"></i></span><span class="alignr"><b>${item.hit.length}</b> до цели<small>${percent(item.hit.length, item.visited.length)} от этапа</small></span></button>`).join("");
-  const rest = `<div class="stack">${barRow("Не были ни на одном этапе цепочки", report.remainder.length, group.length, () => list("Вне цепочки", report.remainder, "Закрытые сделки этого канала без этапов выбранной цепочки."))}${barRow("История этапа неполная", report.incomplete.length, group.length, () => list("История неполная", report.incomplete, "Эти заявки не входят в числитель и знаменатель этапов."))}</div>`;
+  const rest = `<div class="stack">${barRow("Не были ни на одном этапе цепочки", report.remainder.length, group.length, () => list("Вне цепочки", report.remainder, ""))}${barRow("История этапа неполная", report.incomplete.length, group.length, () => list("История неполная", report.incomplete, ""))}</div>`;
   const speed = logistics && stages.length ? medianHours(group, stages) : null;
-  const speedPanel = speed ? panel("Сколько времени занимает путь?", `От этапа «${stages[0]}» до «${stages.at(-1)}». В медиану входят только сделки, где оба события есть и идут в этом порядке.`, `<button class="item" ${reg(() => list("Полный путь", speed.ids.map((id) => byId.get(id)).filter(Boolean), "Заявки, по которым посчитана медиана."))}><span>Медианное время<small>${fmt(speed.ids.length)} заявок с полным путём</small></span><strong>${speed.hours == null ? "—" : fmt(speed.hours) + " ч"}</strong></button>`) : "";
-  return `${logistics ? "" : outcomeBar(closed, "results", period)}${logistics ? "" : selectionNote(filtered, "results", period)}${addedOpen ? `<p class="note">В работе здесь — заявки, которые на конец периода ещё не закрыты. Снимите галочку, чтобы оставить только закрытые.</p>` : ""}<div class="filterbar">${segment("lane", [["off", "Офлайн"], ["on", "Онлайн"]])}<span class="periodlabel">По дате завершения</span></div>` +
-    panel("Цель · " + (report.goal || "в живой воронке не найдена"), "Повторный вход заявку не удваивает. Цель считается, только если она наступила в этот заход или позже. Имя этапа берётся из amo.", stages.length ? `<div class="stack">${rowsHtml}</div>` : empty("В живой воронке нет этапов этой цепочки.")) +
+  const speedPanel = speed ? panel("Сколько времени занимает путь?", `От «${stages[0]}» до «${stages.at(-1)}».`, `<button class="item" ${reg(() => list("Полный путь", speed.ids.map((id) => byId.get(id)).filter(Boolean), ""))}><span>Медианное время<small>${fmt(speed.ids.length)} заявок с полным путём</small></span><strong>${speed.hours == null ? "—" : fmt(speed.hours) + " ч"}</strong></button>`) : "";
+  return `${logistics ? "" : outcomeBar(closed, "results", period)}<div class="filterbar">${segment("lane", [["off", "Офлайн"], ["on", "Онлайн"]])}<span class="periodlabel">По дате завершения</span></div>` +
+    panel("Цель · " + (report.goal || "в живой воронке не найдена"), "", stages.length ? `<div class="stack">${rowsHtml}</div>` : empty("В живой воронке нет этапов этой цепочки.")) +
     speedPanel +
-    panel("Чтобы сумма сходилась с закрытыми", "Сделки вне цепочки и сделки с неполной историей показаны отдельно.", rest) +
-    (aside.length ? `<p class="note">Другой канал: ${fmt(aside.length)}</p>` : "") +
-    `<details class="aside"><summary>Как считается достижение цели?</summary><p>Одна заявка на этап. Сертификат, аренда и «не готов» в эти цепочки не входят. Успех без посещения цели остаётся в «не дошли» как успех без этого этапа. Медиана логистики считается отдельно и не меняет число дошедших до цели. Строка «Другой канал» — это закрытые сделки, которые не попали в выбранный канал.</p></details>`;
+    panel("Вне расчёта", "", rest) +
+    (aside.length ? `<p class="note">Другой канал: ${fmt(aside.length)}</p>` : "");
 }
 function stageDetail(item, goal) {
   const missed = item.missed;
@@ -315,14 +301,14 @@ function stageDetail(item, goal) {
     byReason.set(reason, (byReason.get(reason) ?? 0) + 1);
   }
   const why = [...byReason.entries()].sort((a, b) => b[1] - a[1]).map(([name, count]) => `<li>${esc(name)} · ${count}</li>`).join("");
-  show(item.stage, "Цель · " + goal, `<p class="note">Из ${item.visited.length} заявок, которые побывали на этапе, до цели дошли ${item.hit.length} (${percent(item.hit.length, item.visited.length)}).</p><div class="stack">${[["Побывали на этапе", item.visited], ["Дошли до цели", item.hit], ["Не дошли до цели", missed]].map(([label, group]) => `<button class="item" ${reg(() => list(label, group, "Этап «" + item.stage + "»."), true)}><span>${label}</span><strong>${group.length}</strong></button>`).join("")}</div>${why ? `<h3 class="sectiontitle">Исходы заявок, не дошедших до цели</h3><ul class="reasonlist">${why}</ul>` : ""}`);
+  show(item.stage, "Цель · " + goal, `<div class="stack">${[["Побывали на этапе", item.visited], ["Дошли до цели", item.hit], ["Не дошли до цели", missed]].map(([label, group]) => `<button class="item" ${reg(() => list(label, group, ""), true)}><span>${label}</span><strong>${group.length}</strong></button>`).join("")}</div>${why ? `<h3 class="sectiontitle">Почему не дошли</h3><ul class="reasonlist">${why}</ul>` : ""}`);
 }
 function queuePoint(point, limit = 40) {
   const records = point.ids.map((id) => byId.get(id)).filter(Boolean).sort((a, b) => a.created - b.created);
   dialogActions.clear();
   const items = records.slice(0, limit).map((deal) => {
     const then = stageAt(deal, point.at);
-    return `<button class="item" ${reg(() => detail(deal), true)}><span><strong>${deal.id}</strong> · ${esc(then || "этап на эту дату не восстановлен")}<small>${esc(dateFmt(deal.created) + " · открыта на конец дня")}</small></span>${ic("right")}</button>`;
+    return `<button class="item" ${reg(() => detail(deal), true)}><span><strong>${deal.id}</strong> · ${esc(then || "этап на эту дату не восстановлен")}<small>${esc(dateFmt(deal.created) + " · открыта на конец дня")}</small></span></button>`;
   }).join("");
   show("В работе · " + dateFmt(point.at), `${fmt(records.length)} заявок`, (items || empty("На конец этого дня открытых заявок нет.")) + (limit < records.length ? `<p class="actions"><button class="pill" ${reg(() => queuePoint(point, limit + 60), true)}>Показать ещё</button></p>` : ""));
 }
@@ -334,9 +320,9 @@ function queueReport() {
   const entries = [...byStage.entries()].sort((a, b) => b[1].length - a[1].length);
   const trail = archivedQueue();
   const max = Math.max(...trail.map((point) => point.ids.length), 1);
-  const chart = trail.length ? panel("Очередь на конец дня", "Последние полные дни. Столбец открывает состав именно на тот вечер. Этап внутри берётся из истории, а не из сегодняшней карточки.", `<div class="chart">${trail.map((point) => `<button title="${dateFmt(point.at)} · ${point.ids.length}" aria-label="${dateFmt(point.at)}: ${point.ids.length} в работе" ${reg(() => queuePoint(point))}><i style="height:${Math.max(2, 100 * point.ids.length / max)}%"></i></button>`).join("")}</div><div class="axis"><span>${dateFmt(trail[0].at)} · ${fmt(trail[0].ids.length)}</span><span>${dateFmt(trail.at(-1).at)} · ${fmt(trail.at(-1).ids.length)}</span></div>`) : `<p class="note">История по дням в этот срез не вошла: список сделок, закрытых за эти дни, прочитан не полностью. Текущая очередь ниже от этого не собирается по частям.</p>`;
-  return `<p class="hintline">Срез на ${stamp(builtAt)}<span class="aside">. Период на эту очередь не влияет.</span></p><div class="metrics">${metric("Открытые заявки", fmt(open.length), "включая неразобранное", () => list("Все открытые заявки", open.slice().sort((a, b) => a.created - b.created), "Сначала самые ранние."))}</div>${chart}` +
-    panel("На каких этапах накопились заявки?", "Текущий этап взят с карточки amo.", `<div class="stack">${entries.map(([stage, group]) => barRow(stage, group.length, open.length, () => list(stage, group, "Открытые заявки на этом этапе."))).join("")}</div>`);
+  const chart = trail.length ? panel("Очередь на конец дня", "", `<div class="chart">${trail.map((point) => `<button title="${dateFmt(point.at)} · ${point.ids.length}" aria-label="${dateFmt(point.at)}: ${point.ids.length} в работе" ${reg(() => queuePoint(point))}><i style="height:${Math.max(2, 100 * point.ids.length / max)}%"></i></button>`).join("")}</div><div class="axis"><span>${dateFmt(trail[0].at)} · ${fmt(trail[0].ids.length)}</span><span>${dateFmt(trail.at(-1).at)} · ${fmt(trail.at(-1).ids.length)}</span></div>`) : `<p class="note">История по дням в этот срез не вошла. Список сделок, закрытых за эти дни, прочитан не полностью.</p>`;
+  return `<p class="note">Срез на ${stamp(builtAt)}</p><div class="metrics">${metric("Открытые заявки", fmt(open.length), "включая неразобранное", () => list("Все открытые заявки", open.slice().sort((a, b) => a.created - b.created), ""))}</div>${chart}` +
+    panel("На каких этапах накопились заявки?", "", `<div class="stack">${entries.map(([stage, group]) => barRow(stage, group.length, open.length, () => list(stage, group, ""))).join("")}</div>`);
 }
 function kassaLine() {
   const cases = meta.kassaCases ?? { onlyKassa: [], closedOpen: [], amoMissing: [] };
@@ -361,7 +347,8 @@ function render() {
   const report = inCrm || page === "log";
   const crumbs = `<nav class="crumbs" aria-label="Путь раздела"><span>Касса</span>${ic("right")}${page === "home" ? "<b>Статистика</b>" : `<button data-page="home">Статистика</button>${ic("right")}${inCrm ? `<button data-page="crm">CRM</button>${ic("right")}` : ""}<b>${titles[page]}</b>`}</nav>`;
   const content = { home, crm, quality: qualityReport, general: generalReport, effect: () => funnelReport(false), log: () => funnelReport(true), queue: queueReport, review }[page];
-  app.innerHTML = crumbs + `<header class="intro"><h1>${titles[page]}</h1><p class="aside">${intro[page]}</p></header>` +
+  const lead = intro[page] ? `<p class="aside">${intro[page]}</p>` : "";
+  app.innerHTML = crumbs + `<header class="intro"><h1>${titles[page]}</h1>${lead}</header>` +
     (inCrm ? `<nav class="subnav" aria-label="Отчёты CRM">${[["quality", "Качество"], ["general", "Общая статистика"], ["effect", "Эффективность"]].map(([key, label]) => `<button data-page="${key}" ${page === key ? 'aria-current="page"' : ""}>${label}</button>`).join("")}</nav>` : "") +
     (report ? toolbar() : "") + content() + `<footer class="footer"><span>${meta.accepted ? "Боевой срез" : "Сверка не закрыта"} · ${stamp(builtAt)}</span><div class="flex"><label class="switch"><input type="checkbox" id="explain" ${state.explain ? "checked" : ""}><span>Пояснения</span></label><button class="link" data-page="review">Границы среза</button><button class="link" ${reg(methodology)}>Как читать статистику</button></div></footer>`;
   document.title = titles[page] + " · MANSBAND";
