@@ -352,7 +352,7 @@ function CutEditor({ api, items, locations, users, existing, close, saved, onPul
       <div className="cut-chrome-actions"><button className="secondary" disabled={busy || !!pending || !selected.length} onClick={() => save(false)}>Черновик</button>{step < 3 ? <button disabled={busy || step === 0 && !selected.length || step === 1 && (!calc || !hasNeed) || step === 2 && !completeGroups} onClick={() => setStep(step + 1)}>Далее</button> : <button disabled={busy || !confirmed || !canIssue || !!pending} onClick={() => save(true)}>{busy ? 'Сохраняю…' : 'Выдать'}</button>}</div>
     </div>
     <div className="cut-chrome-nav">
-      <nav className="cut-steps" aria-label="Подготовка задания" ref={stepsRef}>{stepGuide.map((item, index) => <button className={step === index ? 'is-current' : ''} key={item.label} aria-current={step === index ? 'step' : undefined} disabled={index===1&&!selected.length || index>1&&!calc || busy} onClick={() => setStep(index)}>{item.label}</button>)}</nav>
+      <nav className="cut-steps" aria-label="Подготовка задания" ref={stepsRef}>{stepGuide.map((item, index) => <button className={step === index ? 'is-current' : ''} key={item.label} aria-current={step === index ? 'step' : undefined} disabled={index===1&&!selected.length || index>1&&!calc || busy} onClick={() => setStep(index)}><span>{item.label}</span></button>)}</nav>
       <HelpTip label={'Пояснение: ' + stepGuide[step].label}>{stepGuide[step].help}</HelpTip>
     </div>
     {blocked ? <p className="cut-hint cut-chrome-hint">{blocked}</p> : null}
