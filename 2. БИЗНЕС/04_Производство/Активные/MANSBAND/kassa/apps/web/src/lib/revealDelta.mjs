@@ -15,14 +15,17 @@
  *   companion?: { top: number, bottom: number } | null,
  *   minDelta?: number,
  *   showPeek?: number,
+ *   cushion?: number,
  * }} input
  * @returns {{ delta: number, companionKept: boolean }}
  */
 export function revealDelta(input) {
   const minDelta = input.minDelta ?? 12;
   const showPeek = input.showPeek ?? 96;
+  const cushion = Math.max(0, input.cushion ?? 0);
   const zone = input.zone;
   const zoneHeight = zone.bottom - zone.top;
+  const restBottom = zone.bottom - cushion;
   if (!(zoneHeight > 0) || !input.keep) return { delta: 0, companionKept: false };
 
   let anchor = { top: input.keep.top, bottom: input.keep.bottom };
@@ -47,7 +50,7 @@ export function revealDelta(input) {
   const deltaMax = anchor.top - zone.top;
 
   let desired = 0;
-  if (anchor.bottom > zone.bottom + 0.5) desired = anchor.bottom - zone.bottom;
+  if (anchor.bottom > restBottom + 0.5) desired = anchor.bottom - restBottom;
   else if (anchor.top < zone.top - 0.5) desired = anchor.top - zone.top;
 
   const show = input.show;
@@ -55,7 +58,7 @@ export function revealDelta(input) {
     const showBottom = Number.isFinite(show.bottom) ? show.bottom : show.top + showPeek;
     const peekBottom = Math.min(showBottom, show.top + showPeek);
     let showDesired = 0;
-    if (peekBottom > zone.bottom + 0.5) showDesired = peekBottom - zone.bottom;
+    if (peekBottom > restBottom + 0.5) showDesired = peekBottom - restBottom;
     else if (show.top < zone.top - 0.5) showDesired = show.top - zone.top;
     if (showDesired > desired) desired = showDesired;
   }

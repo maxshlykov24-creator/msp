@@ -118,7 +118,7 @@ export function ClientFields({
     const active = document.activeElement;
     if (card && active instanceof Node && !card.contains(active)) return;
     const show = keep.closest("[data-reveal-root]")?.querySelector<HTMLElement>('[data-reveal-companion="search"]');
-    api.reveal({ keep, show });
+    api.reveal({ keep, show, cushion: 168 });
   }
 
   useLayoutEffect(() => {

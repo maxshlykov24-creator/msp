@@ -10,10 +10,18 @@ export type RevealRequest = {
   companion?: HTMLElement | null;
   /** Поле поиска: снимаем фокус, только если оно не помещается со строкой. */
   companionInput?: HTMLElement | null;
-  /** Фокус не перебивает завершённое добавление строки в том же кадре. */
-  priority?: "focus" | "commit";
+  /** Фокус и открытый список не перебивают завершённое добавление строки. */
+  priority?: "focus" | "commit" | "list";
   /** Повтор замера, если список поверх формы закрывается в соседнем кадре. */
   waits?: number;
+  /** Сколько пикселей нового блока стараемся показать. */
+  showPeek?: number;
+  /** Пустое место под показанным, чтобы следующий ввод не лип к панели. */
+  cushion?: number;
+  /** Этот запрос сам прокручивает выпадающий список и не считает его помехой. */
+  ignorePopover?: boolean;
+  /** Список не должен уходить под панель: лишнее уходит во внутреннюю прокрутку. */
+  fitShow?: boolean;
 };
 
 type RevealApi = {
@@ -85,9 +93,12 @@ function visibleZone(root: HTMLElement): { top: number; bottom: number } {
   return { top: viewTop + 12, bottom: limit - 16 };
 }
 
-/** Список поверх страницы или чужое окно. Окно, в котором лежит сама форма, не мешает. */
-export function overlayBlocks(root: HTMLElement): boolean {
-  if (document.querySelector(".kassa-select-menu, .date-picker-panel, [data-reveal-popover]")) return true;
+/** Меню, календарь или чужое окно. Окно самой формы не мешает. Список товара глушит чужие запросы, но не свою подгонку. */
+export function overlayBlocks(root: HTMLElement, ignorePopover = false): boolean {
+  const selector = ignorePopover
+    ? ".kassa-select-menu, .date-picker-panel"
+    : ".kassa-select-menu, .date-picker-panel, [data-reveal-popover]";
+  if (document.querySelector(selector)) return true;
   const overlays = document.querySelectorAll(".kassa-ov.on");
   const own = root.closest(".kassa-ov.on");
   for (let i = 0; i < overlays.length; i++) {
@@ -139,19 +150,27 @@ function focusField(target: HTMLElement): HTMLElement | null {
   return el;
 }
 
-function animate(scroller: HTMLElement, delta: number, runtime: Runtime) {
+function animate(
+  scroller: HTMLElement,
+  delta: number,
+  runtime: Runtime,
+  onFrame?: (eased: number) => void,
+) {
   const gen = ++runtime.gen;
   const start = readTop(scroller);
+  const finish = (eased: number) => {
+    writeTop(scroller, start + delta * eased);
+    onFrame?.(eased);
+  };
   if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-    writeTop(scroller, start + delta);
+    finish(1);
     return;
   }
   const started = performance.now();
   const step = (now: number) => {
     if (runtime.gen !== gen) return;
     const progress = Math.min(1, (now - started) / 320);
-    const eased = 1 - (1 - progress) ** 3;
-    writeTop(scroller, start + delta * eased);
+    finish(1 - (1 - progress) ** 3);
     if (progress < 1) requestAnimationFrame(step);
   };
   requestAnimationFrame(step);
@@ -175,29 +194,70 @@ function enqueue(runtime: Runtime, request: RevealRequest, getRoot: () => HTMLEl
 
 function run(root: HTMLElement, request: RevealRequest, runtime: Runtime, getRoot: () => HTMLElement | null) {
   if (!request.keep.isConnected) return;
-  if (overlayBlocks(root)) {
+  if (overlayBlocks(root, request.ignorePopover === true)) {
     const waits = (request.waits ?? 0) + 1;
     if (waits > 8) return;
     enqueue(runtime, { ...request, waits }, getRoot);
     return;
   }
+  const pop = request.fitShow && request.show instanceof HTMLElement ? request.show : null;
+  if (pop) pop.style.maxHeight = "";
   const keep = boxOf(request.keep);
   if (!keep) return;
   const show = boxOf(request.show);
   const companion = boxOf(request.companion);
+  const zone = visibleZone(root);
   const { delta } = revealDelta({
-    zone: visibleZone(root),
+    zone,
     keep,
     show,
     companion,
+    showPeek: request.showPeek,
+    cushion: request.cushion,
   });
+  const fit = fitPopover(pop, show, zone.bottom, delta);
   runtime.last = request;
   runtime.lastAt = Date.now();
   const input = request.companionInput;
-  if (delta !== 0 && input?.isConnected && document.activeElement === input) input.blur();
-  if (delta === 0) return;
+  if (
+    delta !== 0 &&
+    (request.priority ?? "commit") === "commit" &&
+    input?.isConnected &&
+    document.activeElement === input
+  ) {
+    input.blur();
+  }
+  if (delta === 0) {
+    if (fit) pop!.style.maxHeight = `${Math.floor(fit.end)}px`;
+    return;
+  }
   if ((request.priority ?? "commit") === "commit") runtime.lastCommitAt = Date.now();
-  animate(scrollTarget(root), delta, runtime);
+  animate(scrollTarget(root), delta, runtime, fit
+    ? (eased) => {
+        pop!.style.maxHeight = `${Math.floor(fit.start + (fit.end - fit.start) * eased)}px`;
+      }
+    : undefined);
+}
+
+/** Высота списка: сейчас не заезжает под панель, после сдвига вырастает в освободившееся место. */
+function fitPopover(
+  pop: HTMLElement | null,
+  show: { top: number; bottom: number } | null,
+  zoneBottom: number,
+  delta: number,
+): { start: number; end: number } | null {
+  if (!pop || !show) return null;
+  const natural = show.bottom - show.top;
+  const startRoom = zoneBottom - show.top - 8;
+  const endRoom = startRoom + Math.max(0, delta);
+  const start = Math.min(natural, Math.max(0, startRoom));
+  const end = Math.min(natural, Math.max(start, endRoom));
+  if (end >= natural - 1 && start >= natural - 1) {
+    pop.style.maxHeight = "";
+    return null;
+  }
+  pop.style.maxHeight = `${Math.floor(start)}px`;
+  return { start, end };
 }
 
 export function RevealScope({

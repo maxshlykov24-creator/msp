@@ -216,6 +216,16 @@ main{padding:36px 40px;max-width:1540px;width:100%;margin:0 auto;align-self:star
 @media(max-width:600px){.sidebar,.rail-compact .sidebar{height:auto;min-height:74px}.sidebar nav button,.rail-compact .sidebar nav button{height:auto;width:auto;min-width:0;padding:6px 2px;flex-direction:column}.sidebar nav button span{display:block}}
 label.check{flex-direction:row;align-items:center;gap:8px;margin:0 0 16px}
 .tech-details{margin-top:18px}.tech-details summary{cursor:pointer;font-weight:600}
+.sidebar nav button{position:relative}.nav-badge{margin-left:auto;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--error);color:#fff;font-size:11px;font-style:normal;font-weight:650;display:inline-flex;align-items:center;justify-content:center;line-height:1}
+.rail-compact .nav-badge{position:absolute;top:4px;right:6px;margin:0}
+@media(max-width:900px){.nav-badge{position:absolute;top:1px;right:1px;margin:0;min-width:16px;height:16px;font-size:10px}}
+.pulse-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;margin-bottom:8px}.pulse-head p{margin:0 0 6px}
+.pulse-sources{display:grid;gap:8px;margin:16px 0}.pulse-source{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;padding:12px 14px;border:1px solid var(--border);border-radius:12px;background:var(--surface)}
+.pulse-source p{margin:4px 0 0;color:var(--muted);font-size:13px;line-height:1.45}.pulse-source small{color:var(--muted)}
+.pulse-tone{font-size:12px;white-space:nowrap}.tone-ok{color:var(--accent)}.tone-waiting,.tone-review{color:var(--warn)}.tone-failure{color:var(--error)}
+.pulse-topic{margin-bottom:10px}.pulse-topic summary{display:flex;justify-content:space-between;gap:12px;align-items:center;cursor:pointer}
+.pulse-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-top:1px solid var(--border);font-size:13px}.pulse-row small{display:block;color:var(--muted)}
+.pulse-limits p,.pulse-quiet p{line-height:1.5}.pulse-quiet{margin-top:18px}
 
 .photo-zoom{position:fixed;inset:0;z-index:240;display:flex;align-items:center;justify-content:center;padding:28px;background:color-mix(in srgb,#101218 46%,transparent);cursor:zoom-out}.photo-zoom img{width:min(420px,88vw);height:min(560px,84vh);object-fit:contain;border-radius:20px;background:var(--surface);box-shadow:0 22px 48px -18px #0008}.is-zoomable{cursor:zoom-in}.is-zoomable img{cursor:zoom-in}
 

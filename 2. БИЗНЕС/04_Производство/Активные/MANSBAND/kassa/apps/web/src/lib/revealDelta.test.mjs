@@ -66,6 +66,24 @@ test("блок выше зоны прижимается верхом", () => {
   assert.equal(companionKept, false);
 });
 
+test("после номера поиск остаётся над панелью с запасом, телефон не уезжает", () => {
+  const roomy = revealDelta({
+    zone,
+    keep: { top: 420, bottom: 490 },
+    show: { top: 640, bottom: 690 },
+    cushion: 168,
+  });
+  assert.equal(roomy.delta, 258);
+
+  const tight = revealDelta({
+    zone,
+    keep: { top: 30, bottom: 100 },
+    show: { top: 640, bottom: 690 },
+    cushion: 168,
+  });
+  assert.equal(tight.delta, 18);
+});
+
 test("уже видимое поле и верх высокого блока ниже панели не едут к низу блока", () => {
   const still = revealDelta({
     zone,

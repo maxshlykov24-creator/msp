@@ -389,6 +389,7 @@ export function ProductPicker({
   const revealApi = useReveal();
   const rootRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
   const watchRef = useRef<{ productId: string; at: number; seenGroup?: string; needs: boolean } | null>(null);
   const suitGroupMeta = useSuitGrouping(items, onChange);
   const [expandedSuits, setExpandedSuits] = useState<Record<string, boolean>>({});
@@ -799,6 +800,21 @@ export function ProductPicker({
     watch.seenGroup = group;
   }, [items, open, scannerOpen, moveOpen, stockModal, revealApi, readOnly, suitGroupMeta]);
 
+  useLayoutEffect(() => {
+    if (!open || readOnly || !revealApi || scannerOpen || moveOpen || stockModal) return;
+    const pop = popoverRef.current;
+    const input = searchInputRef.current;
+    if (!pop || !input) return;
+    revealApi.reveal({
+      keep: input,
+      show: pop,
+      showPeek: 288,
+      ignorePopover: true,
+      fitShow: true,
+      priority: "list",
+    });
+  }, [open, q, found.length, loading, loadingMore, revealApi, readOnly, scannerOpen, moveOpen, stockModal]);
+
   return (
     <div ref={rootRef} data-reveal-block className="space-y-3">
       {scannerOpen && (
@@ -839,7 +855,7 @@ export function ProductPicker({
           </button>
         </div>
         {open && (allowedMap || q) && (
-          <div className="absolute z-20 mt-1 w-full card p-1 max-h-64 overflow-y-auto" data-reveal-popover>
+          <div ref={popoverRef} className="absolute z-20 mt-1 w-full card p-1 max-h-64 overflow-y-auto" data-reveal-popover>
             <div className="flex justify-end px-2 pt-1">
               <button onClick={() => setOpen(false)} className="text-mute hover:text-white">
                 <X size={14} />
