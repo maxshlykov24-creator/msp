@@ -14,7 +14,7 @@ import {Orders} from './Orders';
 import {ProductPicker} from './ProductPicker';
 import {DatePicker} from './DatePicker';
 type Row={id:string;version:number;[k:string]:any};
-type Field={suggestions?:{value:string;label:string}[];optional?:boolean;key:string;label:string;type?:string;picker?:'products';value?:string|number;options?:{value:string;label:string}[]};
+type Field={suggestions?:{value:string;label:string}[];optional?:boolean;locked?:boolean;key:string;label:string;type?:string;picker?:'products';value?:string|number;options?:{value:string;label:string}[]};
 type Dialog={correctable?:boolean;readOnly?:boolean;title:string;fields:Field[];catalog?:Row[];warning?:string;submit:(v:Record<string,string>,op:string)=>Promise<void>};
 const labels:Record<string,string>={catalog:'Товары',tasks:'Крой',freeze:'Заморозка',count:'Пересчёт',orders:'Заказы',planning:'Планирование',finance:'Цех',journal:'История движений',attention:'Нужно внимание',staff:'Сотрудники',mappings:'Связь с площадками'};
 const states:Record<string,string>={settled:'Расхождения разобраны',draft:'Черновик',approved:'Утверждено',partial:'Частично',complete:'Завершено',cancelled:'Отменено',reserved:'В резерве',shortage:'Дефицит',shipped:'Отправлено',return_pending:'Ожидается возврат',transit:'В пути',accepted:'Принято',posted:'Проведено',returned:'Возвращено',returned_partial:'Возврат частично'};
@@ -43,17 +43,36 @@ async function productDialog(existing?:Row,platform?:string){
   const catalogs=await api('catalog/cards');
   if(currentPage.current!==origin)return;
   const platforms=platform?[platform]:['wb','ozon'];
-  const fields:Field[]=platform?[]:[{key:'model',label:'Модель'},{key:'color',label:'Цвет'},{key:'size',label:'Размер'},{key:'category',label:'Категория',optional:true},{key:'barcode',label:'Штрихкод',optional:true}];
+  const text=(value:unknown,empty:string)=>String(value??'').trim()||empty;
+  const fields:Field[]=existing?[
+   {key:'model',label:'Модель',value:text(existing.model,'не указана'),locked:true,optional:true},
+   {key:'color',label:'Цвет',value:text(existing.color,'не указан'),locked:true,optional:true},
+   {key:'size',label:'Размер',value:text(existing.size,'не указан'),locked:true,optional:true},
+   {key:'barcode',label:'Штрихкод',value:(existing.barcodes||[]).map((code:string)=>String(code).trim()).filter(Boolean).join(', ')||'не указан',locked:true,optional:true},
+  ]:[
+   {key:'model',label:'Модель'},{key:'color',label:'Цвет'},{key:'size',label:'Размер'},{key:'category',label:'Категория',optional:true},{key:'barcode',label:'Штрихкод',optional:true},
+  ];
   for(const p of platforms){
    const label=p==='wb'?'Wildberries · ID размера или штрихкод':'Ozon · SKU, артикул или штрихкод';
    const snapshot=catalogs[p];
    const observed=snapshot?.at?new Date(snapshot.at).toLocaleDateString('ru-RU'):null;
-   fields.push({key:p,label:label+(observed?' · '+observed:' · каталог ожидается'),optional:!existing,suggestions:(snapshot?.variants||[]).map((v:any)=>({
+   fields.push({key:p,label:label+(observed?' · '+observed:' · каталог ожидается'),optional:!existing||platforms.length>1,suggestions:(snapshot?.variants||[]).map((v:any)=>({
     value:p==='wb'?v.variant_id:v.product_id,label:[v.title,v.size,v.offer_id,...(v.market_barcodes||v.barcodes||[])].filter(Boolean).join(' · ')
    }))})
   }
   setDialog({title:existing?'Сопоставить товар':'Добавить товар',fields,correctable:true,warning:existing?existing.name:'Выбери карточку конкретного цвета и размера или добавь связь позже в разделе «Связь с площадками».',submit:async(v,op)=>{
-   if(existing){await cmd('catalog.link',{item_id:existing.id,platform,identifier:v[platform!].trim()},op,'Сопоставление карточки');return}
+   if(existing){
+    const chosen=platforms.filter(p=>(v[p]||'').trim());
+    if(!chosen.length)throw Error('Укажи идентификатор площадки');
+    const saved:string[]=[];
+    for(const [index,p] of chosen.entries()){
+     const title=p==='wb'?'Wildberries':'Ozon';
+     try{await cmd('catalog.link',{item_id:existing.id,platform:p,identifier:v[p].trim()},index?crypto.randomUUID():op,'Сопоставление карточки');saved.push(title)}
+     catch(e){throw Error((e instanceof Error?e.message:String(e))+(saved.length?' Связь '+saved.join(' и ')+' уже записана.':''))}
+    }
+    setSuccess('Связь записана: '+saved.join(' и ')+'.');
+    return
+   }
    const model=v.model.trim(),color=v.color.trim(),size=v.size.trim(),code=v.barcode.trim();
    if(!model||!color||!size)throw Error('Укажи модель, цвет и размер');
    const cards=Object.fromEntries(platforms.filter(p=>v[p].trim()).map(p=>[p,v[p].trim()]));
@@ -123,5 +142,5 @@ function Mappings({items,rows,canMap,onMap}:{items:Row[];rows:Row[];canMap:boole
 function Modal({dialog,close}:{dialog:Dialog;close:()=>void}){const[op]=useState(()=>crypto.randomUUID()),[values,setValues]=useState<Record<string,string>>(()=>Object.fromEntries(dialog.fields.map(f=>[f.key,String(f.value??f.options?.[0]?.value??'')]))),[busy,setBusy]=useState(false),[error,setError]=useState('');async function submit(e:React.FormEvent){e.preventDefault();if(dialog.readOnly)return;setBusy(true);try{await dialog.submit(values,op);close()}catch(e){setError(String(e))}finally{setBusy(false)}}return <DialogFrame title={dialog.title} busy={busy} close={close}>{dialog.warning&&<p className="notice">{dialog.warning}</p>}<form onSubmit={submit}>{dialog.fields.map(f=><label key={f.key}>{f.label}{f.picker==='products'?<ProductPicker items={dialog.catalog||[]} label={f.label} value={values[f.key]||''} disabled={dialog.readOnly||busy||!!error} onChange={v=>setValues({...values,[f.key]:v})}/>:f.options?<Choice label={f.label} required disabled={dialog.readOnly||busy||!!error} value={values[f.key]} onChange={e=>setValues({...values,[f.key]:e.target.value})}>{f.options.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</Choice>
  :f.type==='datetime-local'?<DatePicker type="datetime-local" label={f.label} required={!f.optional&&!dialog.readOnly}
   disabled={dialog.readOnly||busy||!!error} value={values[f.key]} onChange={value=>setValues({...values,[f.key]:value})}/>
- :<><input list={f.suggestions?'choices-'+f.key:undefined} autoFocus={f===dialog.fields[0]} required={!f.optional&&!dialog.readOnly} readOnly={dialog.readOnly} disabled={busy||(!!error&&!dialog.correctable)} type={f.type||'text'} step={f.type==='number'?'0.001':undefined} value={values[f.key]} onChange={e=>{if(dialog.correctable)setError('');setValues({...values,[f.key]:e.target.value})}}/>{f.suggestions&&<datalist id={'choices-'+f.key}>{f.suggestions.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</datalist>}</>}</label>)}{error&&<div className="error">{error}{!dialog.correctable&&<p>Повтор отправит ту же операцию без дубля. Для исправления полей закрой окно и обнови данные.</p>}</div>}<div className="actions">{!dialog.readOnly&&<button disabled={busy}>{busy?'Сохраняю…':error?'Повторить запрос':'Подтвердить'}</button>}<button type="button" disabled={busy} className="secondary" onClick={close}>{dialog.readOnly?'Закрыть':'Отмена'}</button></div></form></DialogFrame>}
+ :<><input className={f.locked?'is-known':undefined} list={f.suggestions?'choices-'+f.key:undefined} autoFocus={f===dialog.fields.find(field=>!field.locked)} required={!f.optional&&!dialog.readOnly&&!f.locked} readOnly={dialog.readOnly||f.locked} disabled={busy||(!!error&&!dialog.correctable)} type={f.type||'text'} step={f.type==='number'?'0.001':undefined} value={values[f.key]} onChange={e=>{if(dialog.correctable)setError('');setValues({...values,[f.key]:e.target.value})}}/>{f.suggestions&&<datalist id={'choices-'+f.key}>{f.suggestions.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</datalist>}</>}</label>)}{error&&<div className="error">{error}{!dialog.correctable&&<p>Повтор отправит ту же операцию без дубля. Для исправления полей закрой окно и обнови данные.</p>}</div>}<div className="actions">{!dialog.readOnly&&<button disabled={busy}>{busy?'Сохраняю…':error?'Повторить запрос':'Подтвердить'}</button>}<button type="button" disabled={busy} className="secondary" onClick={close}>{dialog.readOnly?'Закрыть':'Отмена'}</button></div></form></DialogFrame>}
 createRoot(document.getElementById('root')!).render(<><App/><ConfirmationHost/></>);

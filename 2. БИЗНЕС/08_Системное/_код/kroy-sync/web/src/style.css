@@ -282,3 +282,4 @@ button.help-trigger:hover,button.help-trigger:focus-visible,button.help-trigger[
 .mapping-meta{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:28px;color:var(--muted);font-size:12px}
 .mapping-meta .text-button{background:transparent;color:var(--accent);min-height:32px;padding:4px 0}
 @media(max-width:700px){.mapping-board .search-field{flex-basis:100%}.mapping-filter{width:auto;flex:1 1 150px;min-width:0}}
+form label input.is-known{background:var(--surface-2);color:var(--text);cursor:default}
