@@ -780,9 +780,15 @@ export function ProductPicker({
       if (group) watch.seenGroup = group;
       return;
     }
-    const row = [...root.querySelectorAll<HTMLElement>("[data-reveal-product]")].find((el) =>
-      (el.getAttribute("data-reveal-product") ?? "").split(" ").includes(watch.productId),
-    );
+    const rows = root.querySelectorAll<HTMLElement>("[data-reveal-product]");
+    let row: HTMLElement | null = null;
+    for (let i = 0; i < rows.length; i++) {
+      const el = rows[i];
+      if (el && (el.getAttribute("data-reveal-product") ?? "").split(" ").includes(watch.productId)) {
+        row = el;
+        break;
+      }
+    }
     if (!row) return;
     revealApi.reveal({
       keep: row,

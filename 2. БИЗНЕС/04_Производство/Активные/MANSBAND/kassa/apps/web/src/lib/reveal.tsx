@@ -10,6 +10,8 @@ export type RevealRequest = {
   companion?: HTMLElement | null;
   /** Поле поиска: снимаем фокус, только если оно не помещается со строкой. */
   companionInput?: HTMLElement | null;
+  /** Фокус не перебивает завершённое добавление строки в том же кадре. */
+  priority?: "focus" | "commit";
 };
 
 type RevealApi = {
@@ -31,6 +33,7 @@ type Runtime = {
   last: RevealRequest | null;
   lastAt: number;
   measuring: boolean;
+  retried: boolean;
 };
 
 function boxOf(el: HTMLElement | null | undefined): { top: number; bottom: number } | null {
@@ -72,8 +75,10 @@ function visibleZone(root: HTMLElement): { top: number; bottom: number } {
 /** Список поверх страницы или чужое окно. Окно, в котором лежит сама форма, не мешает. */
 export function overlayBlocks(root: HTMLElement): boolean {
   if (document.querySelector(".kassa-select-menu, .date-picker-panel, [data-reveal-popover]")) return true;
-  for (const ov of document.querySelectorAll(".kassa-ov.on")) {
-    if (!ov.contains(root)) return true;
+  const overlays = document.querySelectorAll(".kassa-ov.on");
+  for (let i = 0; i < overlays.length; i++) {
+    const ov = overlays[i];
+    if (ov && !ov.contains(root)) return true;
   }
   return false;
 }
@@ -98,8 +103,10 @@ function isInnerScroll(target: EventTarget | null, scroller: HTMLElement): boole
 
 function nextBlock(from: HTMLElement, root: HTMLElement): HTMLElement | null {
   const edge = from.getBoundingClientRect().bottom;
-  for (const block of root.querySelectorAll<HTMLElement>("[data-reveal-block]")) {
-    if (block.contains(from)) continue;
+  const blocks = root.querySelectorAll<HTMLElement>("[data-reveal-block]");
+  for (let i = 0; i < blocks.length; i++) {
+    const block = blocks[i];
+    if (!block || block.contains(from)) continue;
     if (block.getBoundingClientRect().top >= edge - 8) return block;
   }
   return null;
@@ -168,12 +175,17 @@ export function RevealScope({
     last: null,
     lastAt: 0,
     measuring: false,
+    retried: false,
   });
   const scheduleRef = useRef<(request: RevealRequest) => void>(() => {});
 
   const schedule = (request: RevealRequest) => {
     const runtimeRef = runtime.current;
-    runtimeRef.pending = request;
+    const next = { priority: "commit" as const, ...request };
+    const prev = runtimeRef.pending;
+    if (next.priority !== "commit" && prev?.priority === "commit") return;
+    runtimeRef.retried = false;
+    runtimeRef.pending = next;
     if (runtimeRef.raf) return;
     runtimeRef.raf = requestAnimationFrame(() => {
       runtimeRef.raf = 0;
@@ -224,7 +236,7 @@ export function RevealScope({
       if (!(target instanceof HTMLElement) || !root.contains(target)) return;
       const field = focusField(target);
       if (!field) return;
-      scheduleRef.current({ keep: field });
+      scheduleRef.current({ keep: field, priority: "focus" });
     };
 
     const onKey = (event: KeyboardEvent) => {
@@ -263,7 +275,8 @@ export function RevealScope({
     const onViewport = () => {
       const last = runtimeRef.last;
       const current = rootRef.current;
-      if (!last || !current || runtimeRef.measuring || Date.now() - runtimeRef.lastAt > 400) return;
+      if (!last || !current || runtimeRef.measuring || runtimeRef.retried || Date.now() - runtimeRef.lastAt > 400) return;
+      runtimeRef.retried = true;
       runtimeRef.measuring = true;
       try {
         run(current, last, runtimeRef);

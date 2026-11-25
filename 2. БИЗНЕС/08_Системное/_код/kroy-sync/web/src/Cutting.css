@@ -175,7 +175,7 @@
 .cut-model-body{padding:0 8px 8px;min-width:0}
 .cut-matrix-scroll{overflow-x:auto;padding:6px;scroll-padding:8px}
 .cut-demand-matrix,.cut-release-matrix{width:max-content;min-width:100%;border-collapse:separate;border-spacing:0;font-size:12px}
-.cut-demand-matrix th,.cut-demand-matrix td,.cut-release-matrix th,.cut-release-matrix td{padding:6px;border-bottom:1px solid var(--border);vertical-align:top;text-align:left;background:var(--surface);font-weight:500}
+.cut-demand-matrix th,.cut-demand-matrix td,.cut-release-matrix th,.cut-release-matrix td{padding:6px;border-bottom:1px solid var(--border);vertical-align:top;text-align:left;background:var(--surface);font-weight:500;white-space:normal}
 .cut-demand-matrix thead th,.cut-release-matrix thead th{color:var(--muted);font-size:11px;background:var(--bg)}
 .cut-demand-matrix th:first-child,.cut-demand-matrix td:first-child,.cut-release-matrix th:first-child,.cut-release-matrix td:first-child{position:sticky;left:0;z-index:1;min-width:112px;background:var(--surface-2);box-shadow:1px 0 0 var(--border)}
 .cut-demand-matrix thead th:first-child,.cut-release-matrix thead th:first-child{z-index:2}
@@ -203,6 +203,6 @@
 .cut-comment>summary{cursor:pointer;font-size:12px;font-weight:600}
 .cut-comment[open] textarea{margin-top:8px}
 @media(min-width:701px){.cut-narrow-action{display:none}.cut-doc-menu:not(.has-actions){display:none}}
-@media(max-width:700px){.cut-demand-list-row{grid-template-columns:1fr}.cut-layout-summary>.text-button{margin-left:0}}
-@media(pointer:coarse){.cut-qty,.cut-release-matrix input,.cut-quantity-grid input{min-height:44px;font-size:16px}}
+@media(max-width:700px){.cut-chrome .cut-context{order:0;flex:0 1 auto;flex-basis:auto;font-size:12px}.cut-demand-list-row{grid-template-columns:1fr}.cut-layout-summary>.text-button{margin-left:0}}
+@media(pointer:coarse){.cutting input.cut-qty,.cutting .cut-release-matrix input,.cutting .cut-quantity-grid input{min-height:44px;font-size:16px}}
 @media print{.cut-chrome{display:none!important}}
