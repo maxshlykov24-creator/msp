@@ -160,7 +160,7 @@ def calculate(s, raw):
             if missing==len(rows): warnings.append('Остатки ФБО '+label+' не загружены. В расчёте 0.')
             else: warnings.append(label+': нет остатка ФБО у '+str(missing)+' из '+str(len(rows))+' позиций. В расчёте 0.')
     if any(row['kept_previous_sales'] for row in rows): warnings.append('Свежая пустая выгрузка не заменила предыдущие продажи.')
-    from .sales import wb_gap_text
+    from .sales import wb_gap_lines
     for data in used_windows.values():
         if data.get('platform')=='ozon':
             proof=data.get('catalog_proof') or {}
@@ -170,8 +170,7 @@ def calculate(s, raw):
             elif gap: warnings.append('Ozon: '+str(gap)+' карточек нет среди наших товаров.')
             elif units: warnings.append('Ozon: '+str(units)+' шт. без точного сопоставления не вошли в расчёт.')
         if data.get('platform')=='wb':
-            text=wb_gap_text(data,p['start'],p['end'])
-            if text: warnings.append(text)
+            warnings.extend(wb_gap_lines(data,p['start'],p['end']))
     if not p['include_fbo']:
         for row in fingerprint_body['rows']:
             row.pop('fbo', None); row.pop('fbo_total', None); row.pop('fbo_counted', None); row.pop('fbo_missing', None)

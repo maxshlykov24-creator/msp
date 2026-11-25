@@ -3,7 +3,7 @@ from datetime import datetime, time, timedelta, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from .db import Balance, Entity, Item
-from .sales import MSK, unmatched_between, wb_gap_text, window_refs
+from .sales import MSK, unmatched_between, wb_gap_rows, wb_gap_text, window_refs
 
 OZON_PHASES=('ozon-open','ozon-fbs','ozon-fbo','ozon-returns','ozon-history-fbs','ozon-history-fbo')
 WB_PHASES=('wb-catalog','wb-new','wb-fbs','wb-statistics','wb-sales')
@@ -149,16 +149,15 @@ def build_pulse(engine,moment=None):
             missing=[item for item in garments if item.id not in covered]
             if missing:
                 topics.append(dict(id='ozon-local',tone='review',title=str(len(missing))+' товаров без подтверждённой карточки Ozon',effect='Рекомендации нет. Ноль не подставлен.',count=len(missing),units=None,rows=[_row(item) for item in sorted(missing,key=lambda item:item.name)][:ROW_LIMIT],more=max(0,len(missing)-ROW_LIMIT),action='map'))
-    if wb and wb_tone=='ok':
-        text=wb_gap_text(wb,start,target)
+    if wb and (wb_tone=='ok' or wb.get('start')):
+        gap_start,gap_end=(start,target) if wb_tone=='ok' else (wb['start'],wb['end'])
+        text=wb_gap_text(wb,gap_start,gap_end)
         if text:
-            count=unmatched_between(wb,start,target)
+            rows=wb_gap_rows(wb,gap_start,gap_end) or []
+            count=unmatched_between(wb,gap_start,gap_end)
             if count is None:count=int(wb.get('unmatched') or 0)
-            topics.append(dict(id='wb-lines',tone='review',title=text,effect='Эти строки не входят в расчёт и не заменены нулём.',count=count,units=count,rows=[],more=0,action=None))
-    elif wb:
-        text=wb_gap_text(wb,wb['start'],wb['end'])
-        if text:
-            topics.append(dict(id='wb-lines',tone='review',title=text,effect='Эти строки не входят в расчёт и не заменены нулём.',count=int(wb.get('unmatched') or 0),units=int(wb.get('unmatched') or 0),rows=[],more=0,action=None))
+            effect='Штрихкод не указывает на одно изделие. Ниже артикул, продажи и возвраты. К другим товарам эти строки не прибавлены.' if rows else 'Эти строки не входят в расчёт и не заменены нулём.'
+            topics.append(dict(id='wb-lines',tone='review',title=text,effect=effect,count=count,units=count,rows=rows[:ROW_LIMIT],more=max(0,len(rows)-ROW_LIMIT),action=None))
     bare=[item for item in garments if not (item.barcodes or [])]
     if bare:
         topics.append(dict(id='wb-barcode',tone='review',title=str(len(bare))+' товаров без штрихкода',effect='Продажи Wildberries по ним не сверяются. Ноль не подставлен.',count=len(bare),units=None,rows=[_row(item) for item in sorted(bare,key=lambda item:item.name)][:ROW_LIMIT],more=max(0,len(bare)-ROW_LIMIT),action='map'))

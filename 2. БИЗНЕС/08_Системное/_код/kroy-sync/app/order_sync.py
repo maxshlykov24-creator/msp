@@ -398,19 +398,41 @@ def sync_wb_sales(engine,client,account,prior,at):
         return _sync_wb_sales(engine,client,account,prior,at)
 
 
+def _wb_offers(engine):
+    """Seller article by order number. Barcodes are used only to pick the line and are not returned."""
+    found={}
+    with transaction(engine) as s:
+        for e in s.scalars(select(Entity).where(Entity.kind=='market_order',Entity.data['platform'].as_string()=='wb')):
+            d=e.data or {}
+            ref=str(d.get('source_ref') or '')
+            if not ref or ref in found:continue
+            found[ref]=[(str(line.get('barcode') or ''),str(line.get('offer_id') or '')) for line in (d.get('lines') or [])]
+    return found
+
+
+def _remember_wb_window(engine,raw,history_from,end,at,proof):
+    from .sales import mappings,store_window,wb_events,wb_unmatched_rows
+    from .service import require
+    codes,_,covered=mappings(engine)
+    window_events,unmatched,unmatched_by_day=wb_events(raw,history_from,end,codes)
+    rows=wb_unmatched_rows(raw,history_from,end,codes,_wb_offers(engine))
+    require(sum(row['sales']+row['returns'] for row in rows)==unmatched,'Разбивка строк Wildberries не сходится со счётчиком',422)
+    # A barcode written on the garment is enough. The card link can arrive later.
+    item_ids=set(covered['wb'])|{event['item_id'] for event in window_events}
+    store_window(engine,dict(platform='wb',start=history_from,end=end,at=at,complete=True,verified=True,covered_items=list(item_ids),events=window_events,source='WB supplier/sales',unmatched=unmatched,unmatched_by_day=unmatched_by_day,unmatched_rows=rows,collection_proof=proof))
+
+
 def publish_saved_wb_sales(engine,account,at):
     """Rematch sales already stored locally. A later marketplace page must not hide them."""
-    from .sales import MSK,mappings,store_window,wb_events
+    from .sales import MSK
     history_from=max(str(at.astimezone(MSK).date().replace(month=1,day=1)),str(at.astimezone(MSK).date()-timedelta(days=89)))
     end=str(at.astimezone(MSK).date()-timedelta(days=1))
     with transaction(engine) as s:
         raw=[e.data['row'] for e in s.scalars(select(Entity).where(Entity.kind=='market_sale_raw',Entity.data['account'].as_string()==account))]
     if not raw:return False
-    codes,_,covered=mappings(engine)
-    window_events,unmatched,unmatched_by_day=wb_events(raw,history_from,end,codes)
     report=sync_state(engine).get('report:wb-sales:'+account,{})
     fresh=now().isoformat()
-    store_window(engine,dict(platform='wb',start=history_from,end=end,at=fresh,complete=True,verified=True,covered_items=list(covered['wb']),events=[e for e in window_events if e['item_id'] in set(covered['wb'])],source='WB supplier/sales',unmatched=unmatched,unmatched_by_day=unmatched_by_day,collection_proof=report.get('proof') or 'saved_rows'))
+    _remember_wb_window(engine,raw,history_from,end,fresh,report.get('proof') or 'saved_rows')
     set_sync(engine,'wb-sales',rebuild_required=False)
     update_wb_status(engine,state='ready_cached',at=fresh,reason='Оперативные продажи Wildberries; итоговый отчёт не сверён')
     return True
@@ -424,7 +446,7 @@ def _wb_windows_need_saved_sales(engine,at):
 
 
 def _sync_wb_sales(engine,client,account,prior,at):
-    from .sales import wb_events,store_window,mappings,MSK
+    from .sales import wb_events,mappings,MSK
     from .order_feed import timestamp
     from collections import defaultdict
     import hashlib
@@ -448,10 +470,9 @@ def _sync_wb_sales(engine,client,account,prior,at):
         wb_statistics(client,start,'/api/v1/supplier/sales','saleID',on_page=persist,checkpoint='report:wb-sales:'+account)
         fetched_at=sync_state(engine).get('report:wb-sales:'+account,{}).get('cutoff_at',fetched_at)
     with transaction(engine) as s:raw=[e.data['row'] for e in s.scalars(select(Entity).where(Entity.kind=='market_sale_raw',Entity.data['account'].as_string()==account))]
-    codes,_,covered=mappings(engine)
+    codes,_,_=mappings(engine)
     minimum=min((str(r['date'])[:10] for r in raw),default=history_from)
     events,_,_=wb_events(raw,minimum,str(at.astimezone(MSK).date()),codes)
-    window_events,unmatched,unmatched_by_day=wb_events(raw,history_from,end,codes)
     identities={str(r.get('saleID')):r for r in raw}
     normalized=[]
     for event in events:
@@ -470,6 +491,6 @@ def _sync_wb_sales(engine,client,account,prior,at):
             if d['status']==state:continue
             history=d.get('history',[])+[dict(at=now().isoformat(),status=state,raw_status=last['kind'],source='wb-sales')]
             e.data={**d,'status':state,'sale_status':state,'history':history[-100:]};e.version+=1
-    store_window(engine,dict(platform='wb',start=history_from,end=end,at=fetched_at,complete=True,verified=True,covered_items=list(covered['wb']),events=[e for e in window_events if e['item_id'] in covered['wb']],source='WB supplier/sales',unmatched=unmatched,unmatched_by_day=unmatched_by_day,collection_proof=sync_state(engine).get('report:wb-sales:'+account,{}).get('proof','empty_page')))
+    _remember_wb_window(engine,raw,history_from,end,fetched_at,sync_state(engine).get('report:wb-sales:'+account,{}).get('proof','empty_page'))
     set_sync(engine,'wb-sales',history_from=history_from,received=len(raw),history_to=end,raw_complete_from=history_from,raw_end=end,raw_at=fetched_at,rebuild_required=False,state='ready',success_at=now().isoformat(),error=None,retry_at=None)
     update_wb_status(engine,state='ready_cached' if cached_rebuild else 'ready',at=fetched_at,reason='Оперативные продажи Wildberries; итоговый отчёт не сверён',**({} if cached_rebuild else {'next_retry_at':None}))

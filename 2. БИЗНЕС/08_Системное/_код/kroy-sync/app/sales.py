@@ -82,13 +82,75 @@ def unmatched_between(data,start,end):
     return sum(int(count) for day,count in by_day.items() if start<=str(day)<=end)
 
 
+def _offer(offers,srid,barcode):
+    lines=offers.get(srid) or []
+    for code,offer in lines:
+        if code and code==barcode and offer:return offer
+    for _,offer in lines:
+        if offer:return offer
+    return ''
+
+
+def wb_unmatched_rows(raw,start,end,barcodes,offers):
+    """Unmatched sales grouped by day and seller article. The barcode stays out of the result."""
+    require(isinstance(raw,list),'Неполная выгрузка ВБ',422)
+    bucket=defaultdict(lambda:[0,0])
+    for row in raw:
+        raw_date=row.get('date');require(isinstance(raw_date,str),'Некорректная дата продажи ВБ',422)
+        dt=datetime.fromisoformat(raw_date.replace('Z','+00:00'));day=str(dt.astimezone(MSK).date() if dt.tzinfo else dt.date())
+        if not start<=day<=end:continue
+        code=str(row['saleID']);require(code.startswith(('S','R')),'Неизвестный тип события ВБ',422)
+        if len(barcodes.get(str(row['barcode']),[]))==1:continue
+        offer=_offer(offers,str(row.get('srid') or ''),str(row['barcode']))
+        bucket[(day,offer)][0 if code[0]=='S' else 1]+=1
+    return [dict(date=day,offer_id=offer,sales=sales,returns=returns) for (day,offer),(sales,returns) in sorted(bucket.items())]
+
+
+def _ru_noun(count,one,few,many):
+    count=abs(int(count))
+    if count%10==1 and count%100!=11:return one
+    if 2<=count%10<=4 and not 12<=count%100<=14:return few
+    return many
+
+
+def wb_movement(sales,returns):
+    parts=[]
+    if sales:parts.append(str(sales)+' '+_ru_noun(sales,'продажа','продажи','продаж'))
+    if returns:parts.append(str(returns)+' '+_ru_noun(returns,'возврат','возврата','возвратов'))
+    return ', '.join(parts)
+
+
+def wb_gap_rows(data,start,end):
+    """Article lines for one period. None means this window has no article split yet."""
+    source=data.get('unmatched_rows')
+    if not isinstance(source,list):return None
+    totals=defaultdict(lambda:[0,0])
+    for row in source:
+        day=str(row.get('date') or '')
+        if not start<=day<=end:continue
+        offer=str(row.get('offer_id') or '').strip() or 'Артикул в заказе не найден'
+        totals[offer][0]+=int(row.get('sales') or 0);totals[offer][1]+=int(row.get('returns') or 0)
+    rows=[dict(offer_id=offer,sales=sales,returns=returns,units=sales+returns,detail=wb_movement(sales,returns)) for offer,(sales,returns) in totals.items() if sales or returns]
+    rows.sort(key=lambda row:(-row['units'],row['offer_id']))
+    return rows
+
+
 def wb_gap_text(data,start,end):
     count=unmatched_between(data,start,end)
     if count is None:
         if not data.get('unmatched'):return None
         return 'Wildberries: '+str(data['unmatched'])+' строк выгрузки с '+str(data.get('start'))+' по '+str(data.get('end'))+' без однозначного штрихкода не вошли в расчёт.'
     if not count:return None
+    if wb_gap_rows(data,start,end) is not None:
+        return 'Wildberries: '+str(count)+' '+_ru_noun(count,'строка','строки','строк')+' с '+start+' по '+end+' не сопоставлены с товаром.'
     return 'Wildberries: '+str(count)+' строк с '+start+' по '+end+' без однозначного штрихкода не вошли в расчёт.'
+
+
+def wb_gap_lines(data,start,end):
+    text=wb_gap_text(data,start,end)
+    if not text:return []
+    rows=wb_gap_rows(data,start,end) or []
+    return [text]+[row['offer_id']+': '+row['detail'] for row in rows]
 
 
 def ozon_gap_cards(catalog,skus,normalized,limit=40):
