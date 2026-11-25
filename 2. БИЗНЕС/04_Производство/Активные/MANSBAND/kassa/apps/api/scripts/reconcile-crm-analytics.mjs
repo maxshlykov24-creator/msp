@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import {
   DIGEST_PIPELINES, REPORT_PIPELINES, WON, LOST, acceptance, canonicalStage, catalogProblems,
   chain, checkboxDisagreements, classifyTouch, digestOverdue, funnel, general, isKassaWeekSuccess,
-  isQual, isTarget, kassaCases, kassaComparableSale, kassaNumberFromLink, kassaStatus, liveStageNames, normalizeLead,
+  isQual, isTarget, kassaCases, kassaComparableSale, kassaNumberFromLink, kassaStatus, liveStageNames, normalizeLead, queueArchiveStart,
   overdueStages, overdueTasks, periodBounds, reopenGate,
 } from "../reports/crm-analytics-calc.mjs";
 
@@ -205,16 +205,35 @@ if (probeOnly && !process.argv.includes("--full")) {
   process.exit(0);
 }
 
-async function leadsFor(field) {
+async function leadsBetween(field, fromMs, toMs) {
   const rows = [];
   let complete = true;
   for (const pipeline of REPORT_PIPELINES) {
     const page = await pages("/leads", "leads", {
       "filter[pipeline_id]": pipeline,
-      [`filter[${field}][from]`]: Math.floor(week.from / 1000),
-      [`filter[${field}][to]`]: Math.floor((week.to - 1) / 1000),
+      [`filter[${field}][from]`]: Math.floor(fromMs / 1000),
+      [`filter[${field}][to]`]: Math.floor((toMs - 1) / 1000),
       with: "contacts",
     }, 80);
+    rows.push(...page.rows);
+    complete &&= page.complete;
+  }
+  return { rows, complete };
+}
+async function leadsFor(field) {
+  return leadsBetween(field, week.from, week.to);
+}
+async function openLeads() {
+  const rows = [];
+  let complete = true;
+  for (const pipeline of REPORT_PIPELINES) {
+    const statuses = (pipelines.find((item) => item.id === pipeline)?._embedded?.statuses ?? []).filter((status) => status.id !== WON && status.id !== LOST);
+    const query = { with: "contacts" };
+    statuses.forEach((status, index) => {
+      query[`filter[statuses][${index}][pipeline_id]`] = pipeline;
+      query[`filter[statuses][${index}][status_id]`] = status.id;
+    });
+    const page = await pages("/leads", "leads", query, 20);
     rows.push(...page.rows);
     complete &&= page.complete;
   }
@@ -263,39 +282,51 @@ async function entityPages(pathname, key, leadId, completed) {
   return { rows: result.rows.filter((row) => Number(row.entity_id) === Number(leadId)), complete: result.complete && foreign.length === 0, ignored: foreign.length > 0 };
 }
 
-const ids = [...byId.keys()];
-let done = 0;
-for (const id of ids) {
+async function storeCard(id, allowDisable) {
   const savedLead = checkpoint.leads[id];
   const needsEvents = eventsAvailable && !savedLead?.eventsComplete;
   const needsTasks = tasksAvailable && !savedLead?.tasksComplete;
-  if (!savedLead || needsEvents || needsTasks) {
-    const events = eventsAvailable ? await entityPages("/events", "events", id) : { rows: [], complete: false, ignored: false };
-    const openTasks = tasksAvailable ? await entityPages("/tasks", "tasks", id, 0) : { rows: [], complete: false, ignored: false };
-    const doneTasks = tasksAvailable ? await entityPages("/tasks", "tasks", id, 1) : { rows: [], complete: false, ignored: false };
-    if (events.ignored || openTasks.ignored || doneTasks.ignored) {
+  if (savedLead && !needsEvents && !needsTasks) return "ready";
+  const events = eventsAvailable ? await entityPages("/events", "events", id) : { rows: [], complete: false, ignored: false };
+  const openTasks = tasksAvailable ? await entityPages("/tasks", "tasks", id, 0) : { rows: [], complete: false, ignored: false };
+  const doneTasks = tasksAvailable ? await entityPages("/tasks", "tasks", id, 1) : { rows: [], complete: false, ignored: false };
+  if (events.ignored || openTasks.ignored || doneTasks.ignored) {
+    if (allowDisable) {
       eventsAvailable = events.ignored ? false : eventsAvailable;
       tasksAvailable = openTasks.ignored || doneTasks.ignored ? false : tasksAvailable;
-      console.log(JSON.stringify({ filterIgnored: true, events: events.ignored, tasks: openTasks.ignored || doneTasks.ignored }));
-      break;
-    } else {
-      checkpoint.leads[id] = {
-        events: events.rows.map((event) => ({ id: event.id, created_at: event.created_at, value_before: event.value_before, value_after: event.value_after })),
-        tasks: [...openTasks.rows, ...doneTasks.rows].map((task) => ({
-          id: task.id, text: String(task.text ?? "Задача").replace(/\d{5,}/g, "••••").slice(0, 80), complete_till: task.complete_till, is_completed: task.is_completed,
-          updated_at: task.updated_at, responsible_user_id: task.responsible_user_id, entity_id: task.entity_id,
-        })),
-        eventsComplete: events.complete,
-        tasksComplete: openTasks.complete && doneTasks.complete,
-      };
     }
-    if (done % 5 === 0) writePrivate(checkpointPath, checkpoint);
+    console.log(JSON.stringify({ filterIgnored: true, events: events.ignored, tasks: openTasks.ignored || doneTasks.ignored, allowDisable }));
+    return "ignored";
   }
-  done += 1;
-  if (done % 25 === 0) console.log(JSON.stringify({ progress: done, total: ids.length }));
+  checkpoint.leads[id] = {
+    events: events.rows.map((event) => ({ id: event.id, created_at: event.created_at, value_before: event.value_before, value_after: event.value_after })),
+    tasks: [...openTasks.rows, ...doneTasks.rows].map((task) => ({
+      id: task.id, text: String(task.text ?? "Задача").replace(/\d{5,}/g, "••••").slice(0, 80), complete_till: task.complete_till, is_completed: task.is_completed,
+      updated_at: task.updated_at, responsible_user_id: task.responsible_user_id, entity_id: task.entity_id,
+    })),
+    eventsComplete: events.complete,
+    tasksComplete: openTasks.complete && doneTasks.complete,
+  };
+  return "read";
 }
-writePrivate(checkpointPath, checkpoint);
-const unread = ids.filter((id) => {
+async function readCards(ids, allowDisable) {
+  let done = 0;
+  for (const id of ids) {
+    const status = await storeCard(id, allowDisable);
+    if (status === "ignored") {
+      writePrivate(checkpointPath, checkpoint);
+      return false;
+    }
+    done += 1;
+    if (done % 5 === 0) writePrivate(checkpointPath, checkpoint);
+    if (done % 25 === 0) console.log(JSON.stringify({ progress: done, total: ids.length, allowDisable }));
+  }
+  writePrivate(checkpointPath, checkpoint);
+  return true;
+}
+const weekIds = [...byId.keys()];
+await readCards(weekIds, true);
+const unread = weekIds.filter((id) => {
   const saved = checkpoint.leads[id];
   if (!saved) return eventsAvailable || tasksAvailable;
   return (eventsAvailable && !saved.eventsComplete) || (tasksAvailable && !saved.tasksComplete);
@@ -304,6 +335,34 @@ if (unread.length) {
   writePrivate(reviewPath, { partial: true, reason: "Карточки прочитаны не до конца, срез не опубликован", count: unread.length, at: new Date().toISOString() });
   throw new Error(`incomplete cards ${unread.length}`);
 }
+const archiveFrom = queueArchiveStart(now, timeZone);
+const archiveFetch = await leadsBetween("closed_at", archiveFrom, now + 1000);
+const openFetch = await openLeads();
+const extraIds = [];
+function takeLead(lead) {
+  if (!lead?.id || lead.is_deleted || byId.has(lead.id)) return;
+  byId.set(lead.id, lead);
+  extraIds.push(lead.id);
+}
+if (archiveFetch.complete) for (const lead of archiveFetch.rows) takeLead(lead);
+if (openFetch.complete) for (const lead of openFetch.rows) takeLead(lead);
+let extraCards = true;
+if (extraIds.length) {
+  try {
+    extraCards = await readCards(extraIds, false);
+  } catch (error) {
+    extraCards = false;
+    console.log(JSON.stringify({ extraCards: "stopped", message: error.message }));
+  }
+}
+console.log(JSON.stringify({
+  archiveFrom: new Date(archiveFrom).toISOString(),
+  archiveRows: archiveFetch.rows.length,
+  archiveComplete: archiveFetch.complete,
+  openRows: openFetch.rows.length,
+  openComplete: openFetch.complete,
+  extraCards,
+}));
 
 function build(lead) {
   const saved = checkpoint.leads[lead.id] ?? { events: [], tasks: [], eventsComplete: false, tasksComplete: false };
@@ -374,30 +433,6 @@ if (reopened && reopenScan.complete) {
 }
 const reopenVerified = reopen.verified;
 const reopenNote = reopen.note;
-
-const openFetch = await (async () => {
-  const rows = [];
-  let complete = true;
-  for (const pipeline of REPORT_PIPELINES) {
-    const statuses = (pipelines.find((item) => item.id === pipeline)?._embedded?.statuses ?? []).filter((status) => status.id !== WON && status.id !== LOST);
-    const query = { with: "contacts" };
-    statuses.forEach((status, index) => {
-      query[`filter[statuses][${index}][pipeline_id]`] = pipeline;
-      query[`filter[statuses][${index}][status_id]`] = status.id;
-    });
-    const page = await pages("/leads", "leads", query, 20);
-    rows.push(...page.rows);
-    complete &&= page.complete;
-  }
-  return { rows, complete };
-})();
-if (openFetch.complete) {
-  for (const lead of openFetch.rows) {
-    if (!lead?.id || lead.is_deleted || byId.has(lead.id)) continue;
-    byId.set(lead.id, lead);
-    deals.push(build(lead));
-  }
-}
 
 let digest = null;
 const digestTasks = await pages("/tasks", "tasks", { "filter[is_completed]": 0 }, 20);
@@ -484,7 +519,8 @@ const meta = {
   coverage: {
     complete: true, closedFrom: week.from, closedTo: week.to, createdFrom: week.from, createdTo: week.to,
   },
-  queueHistory: "not_archive",
+  queueHistory: archiveFetch.complete && openFetch.complete ? "closed_at" : "not_archive",
+  queueArchiveFrom: archiveFetch.complete && openFetch.complete ? archiveFrom : null,
   queueComplete: openFetch.complete,
   digest,
   liveStages: stages,

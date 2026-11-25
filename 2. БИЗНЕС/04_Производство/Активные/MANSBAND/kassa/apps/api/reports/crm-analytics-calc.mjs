@@ -505,6 +505,23 @@ export function queueAt(deals, at) {
   return deals.filter((deal) => !deal.test && REPORT_PIPELINES.includes(deal.pipelineId) && deal.created <= at && (deal.closed == null || deal.closed > at));
 }
 
+/** Этап на момент времени. Пустая строка, если история оборвана: текущий этап карточки сюда не подставляется. */
+export function stageAt(deal, at) {
+  if (!deal?.historyComplete || !deal.history?.length) return "";
+  let stage = "";
+  for (const event of deal.history) {
+    if (event.at <= at && event.stage) stage = event.stage;
+  }
+  return stage;
+}
+
+/** Начало суток, с которых хватает закрытых сделок для queueHistory. */
+export function queueArchiveStart(nowMs, timeZone, days = 14) {
+  const today = zonedParts(nowMs, timeZone);
+  const day = addDays(today.y, today.m, today.d, -days);
+  return zonedTimeToUtc(day.y, day.m, day.d, 0, 0, 0, timeZone);
+}
+
 export function queueHistory(deals, nowMs, timeZone, days = 14) {
   const today = zonedParts(nowMs, timeZone);
   const points = [];

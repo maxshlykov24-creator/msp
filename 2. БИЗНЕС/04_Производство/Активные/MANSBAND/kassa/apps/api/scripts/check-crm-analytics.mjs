@@ -3,7 +3,7 @@ import {
   DICTIONARY, QUALITY_SOURCES, SALES, OFFLINE, ONLINE, TEST_TAG, acceptance,
   catalogProblems, chain, classifyTouch, checkboxDisagreements, cohort, digestOverdue,
   funnel, general, isKassaWeekSuccess, kassaCases, kassaNumberFromLink, kassaStatus, liveStageNames, medianHours, normalizeLead, outcomeAt, overdueStages, reopenGate,
-  overdueTasks, periodBounds, periodCovered, qualOutsideTarget, queueAt, zonedParts, zonedTimeToUtc,
+  overdueTasks, periodBounds, periodCovered, qualOutsideTarget, queueArchiveStart, queueAt, queueHistory, stageAt, zonedParts, zonedTimeToUtc,
 } from "../reports/crm-analytics-calc.mjs";
 
 const TZ = "Europe/Moscow";
@@ -176,6 +176,24 @@ const stageRows = overdueStages([deal({ id: 24, status: 142, closed: monday + 2 
 })], now);
 assert.equal(stageRows.overdue.length, 1);
 assert.equal(medianHours([], ["Дано обещание", "Доставлен"]).hours, null);
+const paced = deal({ id: 25, status: 142, closed: monday + 5 * 3600000 }, {
+  historyComplete: true,
+  history: [{ stage: "Дано обещание", at: monday }, { stage: "Доставлен", at: monday + 5 * 3600000 }],
+});
+assert.equal(medianHours([paced], ["Дано обещание", "Доставлен"]).hours, 5);
+assert.equal(stageAt(paced, monday + 1000), "Дано обещание");
+assert.equal(stageAt(paced, monday + 5 * 3600000), "Доставлен");
+assert.equal(stageAt(deal({ id: 26 }, { historyComplete: false, history: [{ stage: "Ждет товар", at: monday }] }), monday + 1000), "");
+const noon = zonedTimeToUtc(2026, 11, 20, 12, 0, 0, TZ);
+const archive = queueArchiveStart(noon, TZ, 14);
+const points = queueHistory([
+  deal({ id: 40, created: archive - 86400_000 }, { historyComplete: true }),
+  deal({ id: 41, status: 142, created: archive - 86400_000, closed: archive + 3 * 86400_000 }, { historyComplete: true }),
+], noon, TZ, 14);
+assert.equal(points.length, 14);
+assert.equal(points[0].at >= archive, true);
+assert.equal(points[0].ids.includes(40) && points[0].ids.includes(41), true);
+assert.equal(points.filter((point) => point.at > archive + 3 * 86400_000).every((point) => point.ids.includes(40) && !point.ids.includes(41)), true);
 const gate = acceptance({ fieldProblems: [], eventsAvailable: true, tasksAvailable: true, timezoneConfirmed: true, weekStartConfirmed: false, reopenVerified: true, partial: false, discrepancies: 0, checkboxCount: 0, kassa: "checked" });
 assert.equal(gate.accepted, false);
 const clearWeek = { fieldProblems: [], eventsAvailable: true, tasksAvailable: true, timezoneConfirmed: true, weekStartConfirmed: true, reopenVerified: true, partial: false, discrepancies: 0, checkboxCount: 0, kassa: "checked" };

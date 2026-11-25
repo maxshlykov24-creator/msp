@@ -77,6 +77,17 @@ function methodology() {
 const openButton = (target, cls, body) => `<button class="${cls}" data-page="${target}">${body}</button>`;
 const badgeIcon = (name) => `<span class="badgeicon">${ic(name)}</span>`;
 const chev = `<span class="round">${ic("right")}</span>`;
+function spark(values) {
+  if (!values.length) return "";
+  const max = Math.max(1, ...values);
+  const width = 100 / values.length;
+  return `<svg aria-hidden="true" class="spark" viewBox="0 0 100 32" preserveAspectRatio="none">${values.map((value, index) => `<rect x="${index * width}" y="${32 - 30 * value / max}" width="${Math.max(0.8, width - 1.7)}" height="${Math.max(0, 30 * value / max)}" rx="1" opacity="${0.5 + 0.5 * (index + 1) / values.length}" fill="currentColor"/>`).join("")}</svg>`;
+}
+function archivedQueue() {
+  const from = Number(meta.queueArchiveFrom);
+  if (!meta.queueComplete || !Number.isFinite(from)) return [];
+  return queueHistory(deals, builtAt, tz).filter((point) => point.at >= from);
+}
 function home() {
   const period = bounds();
   const closed = periodCovered("results", period, meta.coverage) ? cohort(deals, "results", period, {}) : [];
@@ -84,8 +95,9 @@ function home() {
   const goal = logistics.at(-1) ?? "";
   const delivered = closed.filter((deal) => deal.lane === state.lane && deal.historyComplete && deal.history.some((event) => event.stage === goal));
   const queue = meta.queueComplete ? queueAt(deals, builtAt) : [];
+  const trail = archivedQueue();
   return `<p class="main-period">Срез ${stamp(builtAt)} · ${meta.week.label}</p><div class="cards">${openButton("crm", "entry hero", `<span class="rowhead">${badgeIcon("crm")}${chev}</span><h2>Статистика CRM</h2><p>Обращения, качество работы и путь до цели.</p><div class="cardfoot"><div><div class="big">${closed.length ? fmt(closed.length) : "—"}</div><div class="caption">${closed.length ? "завершённых заявок в покрытом периоде" : "период вне среза"}</div></div></div>`)}${openButton("log", "entry log", `<span class="rowhead">${badgeIcon("log")}${chev}</span><h2>Логистика</h2><p>Путь товара до магазина и до клиента.</p><div class="cardfoot"><div><div class="big">${closed.length ? fmt(delivered.length) : "—"}</div><div class="caption">${esc(CHANNEL[state.lane] + " · " + (goal || "цель не найдена в живой воронке"))}</div></div></div>`)}</div>` +
-    openButton("queue", "entry wide", `<div class="cardtitle">${badgeIcon("queue")}<div><h2>Сейчас в работе</h2><p>Открытые заявки, включая неразобранное.</p></div></div><div class="flex"><strong class="big">${meta.queueComplete ? fmt(queue.length) : "—"}</strong>${chev}</div>`) +
+    openButton("queue", "entry wide", `<div class="cardtitle">${badgeIcon("queue")}<div><h2>Сейчас в работе</h2><p>Открытые заявки, включая неразобранное.</p></div></div><div class="flex">${spark(trail.map((point) => point.ids.length))}<strong class="big">${meta.queueComplete ? fmt(queue.length) : "—"}</strong>${chev}</div>`) +
     `<h2 class="sectiontitle">Следующие разделы</h2><div class="futuregrid">${[["goods", "Товары"], ["users", "Консультанты"]].map(([name, label]) => `<div class="future">${ic(name)}<h3>${label}</h3><span class="chip">В планах</span></div>`).join("")}</div>`;
 }
 function crm() { return `<div class="three">${[["quality", "Качество работы", "Сроки задач и этапов. Ответ и звонки без журнала."], ["general", "Общая статистика", "Целевые заявки, покупки и источники."], ["effect", "Эффективность", "На каких этапах заявки не доходят до цели."]].map(([target, title, text]) => openButton(target, "entry", `<span class="rowhead">${badgeIcon(target)}${chev}</span><h2>${title}</h2><p>${text}</p>`)).join("")}</div>`; }
@@ -173,11 +185,14 @@ function funnelReport(logistics) {
   const aside = cohort(deals, "results", bounds(), {}).filter((deal) => deal.lane !== state.lane);
   const rowsHtml = report.analysis.map((item) => `<button class="stage" ${reg(() => stageDetail(item, report.goal))}><span><strong>${esc(item.stage)}</strong><small>Побывали · ${item.visited.length}</small></span><span class="track"><i style="width:${item.visited.length ? 100 * item.hit.length / item.visited.length : 0}%"></i></span><span class="alignr"><b>${item.hit.length}</b> до цели<small>${percent(item.hit.length, item.visited.length)} от этапа</small></span></button>`).join("");
   const rest = `<div class="stack">${barRow("Не были ни на одном этапе цепочки", report.remainder.length, group.length, () => list("Вне цепочки", report.remainder, "Закрытые сделки этого канала без этапов выбранной цепочки."))}${barRow("История этапа неполная", report.incomplete.length, group.length, () => list("История неполная", report.incomplete, "Эти заявки не входят в числитель и знаменатель этапов."))}</div>`;
+  const speed = logistics && stages.length ? medianHours(group, stages) : null;
+  const speedPanel = speed ? panel("Сколько времени занимает путь?", `От этапа «${stages[0]}» до «${stages.at(-1)}». В медиану входят только сделки, где оба события есть и идут в этом порядке.`, `<button class="item" ${reg(() => list("Полный путь", speed.ids.map((id) => byId.get(id)).filter(Boolean), "Заявки, по которым посчитана медиана."))}><span>Медианное время<small>${fmt(speed.ids.length)} заявок с полным путём</small></span><strong>${speed.hours == null ? "—" : fmt(speed.hours) + " ч"}</strong></button>`) : "";
   return `<div class="filterbar">${segment("lane", [["off", "Офлайн"], ["on", "Онлайн"]])}<span class="periodlabel">По дате завершения</span></div>` +
     panel("Цель · " + (report.goal || "в живой воронке не найдена"), "Повторный вход заявку не удваивает. Цель считается, только если она наступила в этот заход или позже. Имя этапа берётся из amo.", stages.length ? `<div class="stack">${rowsHtml}</div>` : empty("В живой воронке нет этапов этой цепочки.")) +
+    speedPanel +
     panel("Чтобы сумма сходилась с закрытыми", "Сделки вне цепочки и сделки с неполной историей показаны отдельно.", rest) +
     `<p class="note">В другой канал или в конфликт воронки и поля ушло ${fmt(aside.length)} закрытых сделок. Они в строки этого канала не раскидываются.</p>` +
-    `<details><summary>Как считается достижение цели?</summary><p>Одна заявка на этап. Сертификат, аренда и «не готов» в эти цепочки не входят. Успех без посещения цели остаётся в «не дошли» как успех без этого этапа. Медиана пути в первую приёмку не входит.</p></details>`;
+    `<details><summary>Как считается достижение цели?</summary><p>Одна заявка на этап. Сертификат, аренда и «не готов» в эти цепочки не входят. Успех без посещения цели остаётся в «не дошли» как успех без этого этапа. Медиана логистики считается отдельно и не меняет число дошедших до цели.</p></details>`;
 }
 function stageDetail(item, goal) {
   const missed = item.missed;
@@ -189,13 +204,25 @@ function stageDetail(item, goal) {
   const why = [...byReason.entries()].sort((a, b) => b[1] - a[1]).map(([name, count]) => `<li>${esc(name)} · ${count}</li>`).join("");
   show(item.stage, "Цель · " + goal, `<p class="note">Из ${item.visited.length} заявок, которые побывали на этапе, до цели дошли ${item.hit.length} (${percent(item.hit.length, item.visited.length)}).</p><div class="stack">${[["Побывали на этапе", item.visited], ["Дошли до цели", item.hit], ["Не дошли до цели", missed]].map(([label, group]) => `<button class="item" ${reg(() => list(label, group, "Этап «" + item.stage + "»."), true)}><span>${label}</span><strong>${group.length}</strong></button>`).join("")}</div>${why ? `<h3 class="sectiontitle">Исходы заявок, не дошедших до цели</h3><ul class="reasonlist">${why}</ul>` : ""}`);
 }
+function queuePoint(point, limit = 40) {
+  const records = point.ids.map((id) => byId.get(id)).filter(Boolean).sort((a, b) => a.created - b.created);
+  dialogActions.clear();
+  const items = records.slice(0, limit).map((deal) => {
+    const then = stageAt(deal, point.at);
+    return `<button class="item" ${reg(() => detail(deal), true)}><span><strong>${deal.id}</strong> · ${esc(then || "этап на эту дату не восстановлен")}<small>${esc(dateFmt(deal.created) + " · открыта на конец дня")}</small></span>${ic("right")}</button>`;
+  }).join("");
+  show("В работе · " + dateFmt(point.at), `${fmt(records.length)} заявок`, (items || empty("На конец этого дня открытых заявок нет.")) + (limit < records.length ? `<p class="actions"><button class="pill" ${reg(() => queuePoint(point, limit + 60), true)}>Показать ещё</button></p>` : ""));
+}
 function queueReport() {
   if (!meta.queueComplete) return `<div class="empty"><strong>Очередь не опубликована</strong>Список открытых сделок прочитан не полностью. Частичное число не показывается.</div>`;
   const open = queueAt(deals, builtAt);
   const byStage = new Map();
   for (const deal of open) { const stage = deal.stage || "Этап не прочитан"; const list = byStage.get(stage) ?? []; list.push(deal); byStage.set(stage, list); }
   const entries = [...byStage.entries()].sort((a, b) => b[1].length - a[1].length);
-  return `<p class="hintline">Срез на ${stamp(builtAt)}. Период на эту очередь не влияет. История конца дня до первого ежедневного снимка архивом не считается и здесь не достраивается.</p><div class="metrics">${metric("Открытые заявки", fmt(open.length), "включая неразобранное", () => list("Все открытые заявки", open.slice().sort((a, b) => a.created - b.created), "Сначала самые ранние."))}</div>` +
+  const trail = archivedQueue();
+  const max = Math.max(...trail.map((point) => point.ids.length), 1);
+  const chart = trail.length ? panel("Очередь на конец дня", "Последние полные дни. Столбец открывает состав именно на тот вечер. Этап внутри берётся из истории, а не из сегодняшней карточки.", `<div class="chart">${trail.map((point) => `<button title="${dateFmt(point.at)} · ${point.ids.length}" aria-label="${dateFmt(point.at)}: ${point.ids.length} в работе" ${reg(() => queuePoint(point))}><i style="height:${Math.max(2, 100 * point.ids.length / max)}%"></i></button>`).join("")}</div><div class="axis"><span>${dateFmt(trail[0].at)} · ${fmt(trail[0].ids.length)}</span><span>${dateFmt(trail.at(-1).at)} · ${fmt(trail.at(-1).ids.length)}</span></div>`) : `<p class="note">История по дням в этот срез не вошла: список сделок, закрытых за эти дни, прочитан не полностью. Текущая очередь ниже от этого не собирается по частям.</p>`;
+  return `<p class="hintline">Срез на ${stamp(builtAt)}. Период на эту очередь не влияет.</p><div class="metrics">${metric("Открытые заявки", fmt(open.length), "включая неразобранное", () => list("Все открытые заявки", open.slice().sort((a, b) => a.created - b.created), "Сначала самые ранние."))}</div>${chart}` +
     panel("На каких этапах накопились заявки?", "Текущий этап взят с карточки amo.", `<div class="stack">${entries.map(([stage, group]) => barRow(stage, group.length, open.length, () => list(stage, group, "Открытые заявки на этом этапе."))).join("")}</div>`);
 }
 function kassaLine() {
