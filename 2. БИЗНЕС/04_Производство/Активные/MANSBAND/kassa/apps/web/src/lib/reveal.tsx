@@ -170,9 +170,16 @@ function enqueue(runtime: Runtime, request: RevealRequest, getRoot: () => HTMLEl
 }
 
 function run(root: HTMLElement, request: RevealRequest, runtime: Runtime, getRoot: () => HTMLElement | null) {
-  if (!request.keep.isConnected) return;
+  if (!request.keep.isConnected) {
+    (window as unknown as { __delta?: unknown }).__delta = { dead: true };
+    return;
+  }
   if (overlayBlocks(root)) {
     const waits = (request.waits ?? 0) + 1;
+    const nodes: string[] = [];
+    const found = document.querySelectorAll(".kassa-select-menu, .date-picker-panel, [data-reveal-popover], .kassa-ov.on");
+    for (let i = 0; i < found.length && i < 4; i++) nodes.push(String((found[i] as HTMLElement).className));
+    (window as unknown as { __delta?: unknown }).__delta = { overlay: true, waits, nodes };
     if (waits > 8) return;
     enqueue(runtime, { ...request, waits }, getRoot);
     return;
@@ -187,6 +194,12 @@ function run(root: HTMLElement, request: RevealRequest, runtime: Runtime, getRoo
     show,
     companion,
   });
+  (window as unknown as { __delta?: unknown }).__delta = {
+    delta,
+    keep,
+    zone: visibleZone(root),
+    scroller: scrollTarget(root).className.slice(0, 40),
+  };
   runtime.last = request;
   runtime.lastAt = Date.now();
   const input = request.companionInput;
