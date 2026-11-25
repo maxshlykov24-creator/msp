@@ -3,7 +3,7 @@ from datetime import datetime, time, timedelta, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from .db import Balance, Entity, Item
-from .sales import MSK, wb_gap_text, window_refs
+from .sales import MSK, unmatched_between, wb_gap_text, window_refs
 
 OZON_PHASES=('ozon-open','ozon-fbs','ozon-fbo','ozon-returns','ozon-history-fbs','ozon-history-fbo')
 WB_PHASES=('wb-catalog','wb-new','wb-fbs','wb-statistics','wb-sales')
@@ -152,8 +152,8 @@ def build_pulse(engine,moment=None):
     if wb and wb_tone=='ok':
         text=wb_gap_text(wb,start,target)
         if text:
-            from .sales import unmatched_between
             count=unmatched_between(wb,start,target)
+            if count is None:count=int(wb.get('unmatched') or 0)
             topics.append(dict(id='wb-lines',tone='review',title=text,effect='Эти строки не входят в расчёт и не заменены нулём.',count=count,units=count,rows=[],more=0,action=None))
     elif wb:
         text=wb_gap_text(wb,wb['start'],wb['end'])

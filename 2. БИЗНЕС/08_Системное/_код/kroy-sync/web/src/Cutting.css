@@ -32,10 +32,12 @@
 .cut-chrome-nav{display:flex;align-items:center;gap:16px;min-width:0;margin-top:2px}
 .cutting .cut-chrome-nav button.help-trigger{width:32px;height:32px;min-height:32px}
 .cut-chrome-hint{margin:0;padding:8px 2px 12px}
-.cut-steps{display:flex;flex:0 1 auto;min-width:0;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:none;gap:8px;padding:0;margin:0}
-.cut-steps>button{flex:0 0 auto;background:transparent;border:0;border-bottom:2px solid transparent;border-radius:0;color:var(--muted);min-height:46px;padding:12px 18px 10px;font-size:14px;font-weight:550;white-space:nowrap}
-.cut-steps>button.is-current{color:var(--accent);border-bottom-color:var(--accent);background:transparent}
+.cut-steps{display:flex;flex:0 1 auto;min-width:0;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:none;gap:10px;padding:8px 0 12px;margin:0}
+.cut-steps>button{flex:0 0 auto;background:var(--surface);border:1px solid var(--border);border-radius:999px;color:var(--muted);min-height:40px;padding:8px 16px;font-size:14px;font-weight:550;white-space:nowrap}
+.cut-steps>button.is-current{color:var(--accent);background:var(--accent-soft);border-color:color-mix(in srgb,var(--accent) 35%,var(--border))}
 .cut-steps>button:hover:not(:disabled){color:var(--text);filter:none}
+.cut-steps>button:disabled{opacity:.72}
+.cutting .cut-panel>.cut-picker{margin-top:22px}
 .cut-editor>.cut-notice{margin-bottom:24px}
 .cut-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px}
 .cut-span{grid-column:1 / -1}

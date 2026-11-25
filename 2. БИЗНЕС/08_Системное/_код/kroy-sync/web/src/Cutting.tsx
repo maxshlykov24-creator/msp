@@ -180,13 +180,14 @@ function ReleaseMatrix({ products, values, onChange }: {
     const sizes = [...new Set(products.map(item => item.size || ''))].sort(compareSizes);
     return <div className="cut-matrix-scroll"><table className="cut-release-matrix"><thead><tr><th scope="col">Цвет</th>{sizes.map(size => <th scope="col" key={size || 'none'}>{size || 'Без размера'}</th>)}</tr></thead><tbody>{colors.map(color => <tr key={color || 'none'}><th scope="row">{color || 'Цвет не указан'}</th>{sizes.map(size => { const item = products.find(entry => (entry.color || '') === color && (entry.size || '') === size); return <td key={size || 'none'} className={item ? undefined : 'cut-matrix-empty'}>{item && <input aria-label={(item.color || 'Цвет не указан') + ' · ' + (item.size || 'Без размера')} type="number" min="0" step="1" value={values[item.id] || ''} onChange={e => onChange(item.id, e.target.value)}/>}</td>; })}</tr>)}</tbody></table></div>;
 }
-export function Cutting({ api, items, rows, locations, permissions, refresh }: {
+export function Cutting({ api, items, rows, locations, permissions, refresh, onPulse }: {
     api: Api;
     items: Row[];
     rows: Row[];
     locations: string[];
     permissions: string[];
     refresh: () => Promise<any>;
+    onPulse?: () => void;
 }) {
     const [users, setUsers] = useState<Row[]>([]), [opened, setOpened] = useState<Row | null>(null), [editing, setEditing] = useState(false), [query, setQuery] = useState(''), [status, setStatus] = useState('active'), [person, setPerson] = useState(''), [model, setModel] = useState(''), [from, setFrom] = useState(''), [to, setTo] = useState(''), [filtersOpen, setFiltersOpen] = useState(false);
     useEffect(() => { api('cutting/assignees').then(setUsers).catch(() => { }); }, []);
@@ -195,7 +196,7 @@ export function Cutting({ api, items, rows, locations, permissions, refresh }: {
     const get = (id: string) => items.find(i => i.id === id) || { name: 'Неизвестная позиция' };
     const filtered = rows.filter(r => (status === 'all' || status === 'awaiting_materials' && r.awaiting_materials && ['approved','partial'].includes(r.status) || status === 'active' && ['draft', 'approved', 'partial'].includes(r.status) || r.status === status) && (!person || r.assignee === person) && (!model || r.products.some((l: Row) => get(l.item_id).model === model)) && (!from || createdDay(r) >= from) && (!to || createdDay(r) <= to) && (!query || [r.title, r.number, r.legacy_number, r.id].join(' ').toLowerCase().includes(query.toLowerCase()))).sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
     if (editing)
-        return <CutEditor api={api} items={items} locations={locations} users={users} existing={opened} close={() => setEditing(false)} saved={async () => { await refresh(); setEditing(false); setOpened(null); }}/>;
+        return <CutEditor api={api} items={items} locations={locations} users={users} existing={opened} close={() => setEditing(false)} saved={async () => { await refresh(); setEditing(false); setOpened(null); }} onPulse={onPulse}/>;
     if (opened)
         return <CutDocument api={api} task={rows.find(r => r.id === opened.id) || opened} items={items} users={users} canPlan={plan} canCut={cut} canAdjust={adjust} refresh={refresh} close={() => setOpened(null)} edit={() => setEditing(true)}/>;
     const filterCount = Number(!!person) + Number(!!model) + Number(!!from || !!to);
@@ -217,7 +218,7 @@ export function Cutting({ api, items, rows, locations, permissions, refresh }: {
   <div className="cut-mobile-list">{filtered.map(r => { const { total, done } = progress(r); return <button className="cut-task-card" key={r.id} onClick={() => setOpened(r)}><span className="cut-card-top"><small>{r.number || r.id.slice(0, 8)}</small><span className={'badge cut-status status-' + r.status}>{states[r.status]}</span>{r.awaiting_materials&&['approved','partial'].includes(r.status)&&<small className="cut-warning">Ожидает ткань</small>}</span><strong>{r.title}</strong><span className="cut-card-meta"><span>Срок: {dateLabel(r.due_on)}</span>{overdue(r) && <span className="cut-warning">Просрочено</span>}</span><span className="cut-card-meta">{users.find(u => u.id === r.assignee)?.name || 'Исполнитель не назначен'}</span><span className="cut-card-bottom"><span>{n(done)} из {n(total)} выполнено</span><Icon name="chevron" size={16}/></span><progress aria-label="Выполнение задания" max={total || 1} value={done}/></button>; })}</div></> : <div className="cut-empty"><h3>{rows.length ? 'Задания не найдены' : 'Здесь будут задания на крой'}</h3><p>{rows.length ? 'Попробуй изменить условия или очистить поиск.' : 'Создай задание: выбери товары, проверь потребность и подготовь раскладки.'}</p>{rows.length ? <button className="secondary" onClick={reset}>Сбросить фильтры</button> : plan && <button className="secondary" onClick={() => { setOpened(null); setEditing(true); }}>Создать первое задание</button>}</div>}
  </div>;
 }
-function CutEditor({ api, items, locations, users, existing, close, saved }: {
+function CutEditor({ api, items, locations, users, existing, close, saved, onPulse }: {
     api: Api;
     items: Row[];
     locations: string[];
@@ -225,12 +226,13 @@ function CutEditor({ api, items, locations, users, existing, close, saved }: {
     existing: Row | null;
     close: () => void;
     saved: () => Promise<void>;
+    onPulse?: () => void;
 }) {
     const old = existing?.cutting || {};
     const [syncMessage, setSyncMessage] = useState('');
     const [draftId] = useState(() => crypto.randomUUID()), [salesStatus, setSalesStatus] = useState<Row>({});
     useEffect(() => { let active=true;const refresh=()=>api('cutting/sales-status').then(data=>{if(active)setSalesStatus(data)}).catch(()=>{});refresh();const timer=setInterval(refresh,60000);return()=>{active=false;clearInterval(timer)}; }, []);
-    const [step, setStep] = useState(0), [title, setTitle] = useState(existing?.title || ''), [location, setLocation] = useState(existing?.location || locations[0] || ''), [selected, setSelected] = useState<string[]>(old.selected || existing?.products.map((l: Row) => l.item_id) || items.filter(i=>i.kind==='garment').map(i=>i.id)), [qty, setQty] = useState<Record<string, string>>(old.quantities || Object.fromEntries((existing?.products || []).map((l: Row) => [l.item_id, String(l.quantity)]))), [params, setParams] = useState<Row>(old.parameters || defaults()), [calc, setCalc] = useState<Row | null>(old.calculation || null), [previous, setPrevious] = useState<Row | null>(null), [reason, setReason] = useState(old.manual_reason || ''), [due, setDue] = useState(old.due_on || existing?.due_on || ''), [available, setAvailable] = useState(old.available_on || existing?.available_on || ''), [assignee, setAssignee] = useState(old.assignee || existing?.assignee || ''), [groups, setGroups] = useState<Row[]>(old.groups || []), [confirmed, setConfirmed] = useState(false), [search, setSearch] = useState(''), [error, setError] = useState(''), [busy, setBusy] = useState(false), [norms, setNorms] = useState<Record<string, number>>({}), [pending, setPending] = useState<Row | null>(null), [dirty, setDirty] = useState(false);
+    const [step, setStep] = useState(0), [title, setTitle] = useState(existing?.title || ''), [location, setLocation] = useState(existing?.location || locations[0] || ''), [selected, setSelected] = useState<string[]>(old.selected || existing?.products.map((l: Row) => l.item_id) || []), [qty, setQty] = useState<Record<string, string>>(old.quantities || Object.fromEntries((existing?.products || []).map((l: Row) => [l.item_id, String(l.quantity)]))), [params, setParams] = useState<Row>(old.parameters || defaults()), [calc, setCalc] = useState<Row | null>(old.calculation || null), [previous, setPrevious] = useState<Row | null>(null), [reason, setReason] = useState(old.manual_reason || ''), [due, setDue] = useState(old.due_on || existing?.due_on || ''), [available, setAvailable] = useState(old.available_on || existing?.available_on || ''), [assignee, setAssignee] = useState(old.assignee || existing?.assignee || ''), [groups, setGroups] = useState<Row[]>(old.groups || []), [confirmed, setConfirmed] = useState(false), [search, setSearch] = useState(''), [error, setError] = useState(''), [busy, setBusy] = useState(false), [norms, setNorms] = useState<Record<string, number>>({}), [pending, setPending] = useState<Row | null>(null), [dirty, setDirty] = useState(false);
     const [calcStale, setCalcStale] = useState(false), [periodOpen, setPeriodOpen] = useState(!old.calculation), [commentOpen, setCommentOpen] = useState(Boolean((old.comment || existing?.comment || '').trim())), [layoutEdit, setLayoutEdit] = useState<string | null>(null);
     const chromeRef = useCutChrome(), stepsRef = useRef<HTMLElement>(null), calcSeen = useRef(calc);
     calcSeen.current = calc;
@@ -370,6 +372,7 @@ function CutEditor({ api, items, locations, users, existing, close, saved }: {
      <SourceNotice label="Ozon" data={salesStatus.platforms?.ozon} period={params}/>
      <SourceNotice label="Wildberries" data={salesStatus.platforms?.wb} period={params}/>
      {calc?.warnings?.map((text: string) => <CutNotice key={text}>{text}</CutNotice>)}
+     {calc && onPulse && <button type="button" className="text-button" onClick={onPulse}>{params.start === shift(-30) && params.end === shift(-1) ? 'Все пробелы' : 'Все пробелы за последние 30 дней. В этом задании другой период.'}</button>}
      {calc && calc.rows.some((r: Row) => r.stock_assumed_zero) && <CutNotice>Невнесённый остаток принят за 0 только для рекомендации. Складской учёт не меняется.</CutNotice>}
      {['ready','ready_cached'].includes(salesStatus.platforms?.wb?.state) && String(salesStatus.platforms?.wb?.reason || '').startsWith('Оперативные') && <p className="cut-hint">Wildberries: оперативные данные продаж. Итоговый финансовый отчёт ещё не сверён.</p>}
      {calc&&params.include_fbo===true&&calc.rows.some((r:Row)=>Object.values(r.fbo||{}).some((v:any)=>!v.known||v.stale))&&<CutNotice>Для части товаров нет полных актуальных данных ФБО. Их автоматическая рекомендация недоступна. Можно явно отключить учёт ФБО ниже и рассчитать потребность только по нашему складу и ожидаемому выпуску.</CutNotice>}
