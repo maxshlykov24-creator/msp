@@ -56,14 +56,14 @@ const ready = () => periodCovered(modeOf(), bounds(), meta.coverage);
 function rows() { return ready() ? cohort(deals, modeOf(), bounds(), { touch: state.touch, source: state.mode === "created" ? state.source : "*", lane: "*" }) : []; }
 function replyListMeta(row, cutoff) {
   if (!row) return null;
-  const { stat, max, pending } = row;
+  const { stat, max, mean, pending } = row;
   const long = max != null && max >= cutoff;
   const parts = [];
   if (pending) parts.push(`<span class="replytag warn">без ответа</span>`);
-  if (max != null) {
+  if (mean != null) {
     const count = stat.series.length;
-    const tail = count > 1 ? `<small class="replycount">${count} ${plural(count, "ответ", "ответа", "ответов")}</small>` : "";
-    parts.push(`<span class="replytag${long ? " warn" : ""}">${count > 1 ? "макс. " : ""}${esc(fmt(max))} мин</span>${tail}`);
+    parts.push(`<span class="replytag${mean >= cutoff ? " warn" : ""}">среднее ${esc(fmt(mean))} мин</span>`);
+    if (count > 1) parts.push(`<span class="replytag${long ? " warn" : ""}">макс. ${esc(fmt(max))} мин</span><small class="replycount">${count} ${plural(count, "ответ", "ответа", "ответов")}</small>`);
   }
   return { html: parts.join(""), slow: long };
 }

@@ -251,14 +251,21 @@ const audit = replyAudit([
   { id: 3, messages: [{ at: noonReply, dir: "in" }] },
 ], TZ);
 assert.equal(audit.cutoff, 69);
-assert.deepEqual(audit.slow.map((deal) => deal.id), [3, 2]);
-assert.equal(audit.all[0].id, 3);
-assert.equal(audit.all[1].id, 2);
+assert.equal(audit.rows[0].mean, 90);
+assert.deepEqual(audit.slow.map((deal) => deal.id), [2, 3]);
+assert.deepEqual(audit.all.map((deal) => deal.id), [2, 1, 3]);
 const mixed = replyAudit([
   { id: 11, messages: [{ at: noonReply, dir: "in" }, { at: noonReply + 2 * 60_000, dir: "out" }, { at: noonReply + 3 * 60_000, dir: "in" }] },
   { id: 12, messages: [{ at: noonReply, dir: "in" }, { at: noonReply + 90 * 60_000, dir: "out" }] },
 ], TZ);
 assert.deepEqual(mixed.all.map((deal) => deal.id), [12, 11]);
+const byMean = replyAudit([
+  { id: 21, messages: [{ at: noonReply, dir: "in" }, { at: noonReply + 10 * 60_000, dir: "out" }, { at: noonReply + 11 * 60_000, dir: "in" }, { at: noonReply + 211 * 60_000, dir: "out" }] },
+  { id: 22, messages: [{ at: noonReply, dir: "in" }, { at: noonReply + 180 * 60_000, dir: "out" }] },
+], TZ);
+assert.equal(byMean.rows[0].mean, 180);
+assert.equal(byMean.rows[1].mean, 105);
+assert.deepEqual(byMean.all.map((deal) => deal.id), [22, 21]);
 assert.equal(mixed.rows[1].max < mixed.cutoff, true);
 assert.equal(mixed.rows[1].pending, true);
 const stillOpen = deal({ id: 31, status: 100, created: monday - 86400_000 }, { history: [{ stage: "Новая заявка", at: monday - 86400_000 }], historyComplete: true });

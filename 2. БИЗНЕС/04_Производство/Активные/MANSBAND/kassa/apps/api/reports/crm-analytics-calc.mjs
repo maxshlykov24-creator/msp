@@ -704,20 +704,22 @@ export function slowReplyCutoff(dealMaxMinutes) {
   return Math.max(60, mean * 1.5);
 }
 
-/** Сделки с ответом Wazzup: от большего времени к меньшему, серии без ответа сверху. */
+/** Сделки с ответом Wazzup: по среднему времени серии, от большего к меньшему. */
 export function replyAudit(deals, timeZone = "Europe/Moscow") {
   const rows = [];
   for (const deal of deals) {
     if (!Array.isArray(deal.messages)) continue;
     const stat = wazzupReplies(deal.messages, timeZone);
     if (!stat.series.length && !stat.pending) continue;
-    const max = stat.series.length ? Math.max(...stat.series.map((item) => item.minutes)) : null;
+    const minutes = stat.series.map((item) => item.minutes);
+    const max = minutes.length ? Math.max(...minutes) : null;
+    const mean = minutes.length ? minutes.reduce((sum, value) => sum + value, 0) / minutes.length : null;
     const at = stat.series.reduce((latest, item) => (item.minutes === max && item.to > latest ? item.to : latest), 0);
-    rows.push({ deal, stat, max, at, pending: stat.pending > 0 });
+    rows.push({ deal, stat, max, mean, at, pending: stat.pending > 0 });
   }
   const cutoff = slowReplyCutoff(rows.map((row) => row.max).filter((value) => value != null));
-  const rank = (row) => (row.max == null && row.pending ? Number.POSITIVE_INFINITY : row.max ?? -1);
-  rows.sort((a, b) => rank(b) - rank(a) || (b.at ?? 0) - (a.at ?? 0) || a.deal.id - b.deal.id);
+  const rank = (row) => row.mean ?? Number.NEGATIVE_INFINITY;
+  rows.sort((a, b) => rank(b) - rank(a) || (b.max ?? -1) - (a.max ?? -1) || a.deal.id - b.deal.id);
   const slow = rows.filter((row) => row.pending || (row.max != null && row.max >= cutoff));
   return { cutoff, rows, slow: slow.map((row) => row.deal), all: rows.map((row) => row.deal) };
 }
