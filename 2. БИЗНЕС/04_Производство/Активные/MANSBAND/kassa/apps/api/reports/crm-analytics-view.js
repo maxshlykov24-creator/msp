@@ -246,7 +246,7 @@ function qualityReport() {
   if (state.outcomes.size === 0) return outcomeBar(closed, "results", period) + empty("Отметьте хотя бы один исход: успех, провал или в работе.");
   const { picked, addedOpen } = pickedDeals(closed, "results", period);
   const group = picked;
-  const tasks = overdueTasks(group);
+  const tasks = overdueTasks(group, tz);
   const stages = overdueStages(group, builtAt);
   const replies = responseSummary(group, tz);
   const audit = replyAudit(group, tz);
@@ -254,7 +254,7 @@ function qualityReport() {
   const cards = [
     metric("Среднее время ответа", chatReady ? (replies.mean == null ? "—" : fmt(replies.mean) + " мин") : "нет источника", chatReady ? (replies.count ? fmt(replies.count) + " " + plural(replies.count, "ответ", "ответа", "ответов") + " · 10–23" : "нет ответов") : "Wazzup не прочитан", () => chatReady ? openReplyList("Ответы Wazzup", audit, "Серии Wazzup. Время идёт до ответа, отметки «не требует ответа» или закрытия беседы. С 23:00 до 10:00 МСК минуты не идут.") : missingSource("Среднее время ответа", QUALITY_SOURCES.response.reason)),
     metric("Долгие ответы", chatReady ? fmt(audit.slow.length) : "—", chatReady ? (audit.slow.length ? `от ${fmt(Math.ceil(audit.cutoff))} мин или без ответа` : "все ответы короче порога") : "Wazzup не прочитан", () => chatReady ? openReplyList("Долгие ответы", audit, "Сделки, где хотя бы один ответ длиннее порога или осталась серия без ответа.", true) : missingSource("Долгие ответы", QUALITY_SOURCES.response.reason), audit.slow.length ? "bad" : ""),
-    metric("Просроченные задачи", fmt(tasks.length), "задач", () => list("Просроченные задачи", tasks.map((row) => row.deal), "Время выполнения взято из updated_at: отдельного поля amo не отдаёт.")),
+    metric("Просроченные задачи", fmt(tasks.length), "задач", () => list("Просроченные задачи", tasks.map((row) => row.deal), "Время выполнения взято из updated_at: отдельного поля amo не отдаёт. Срок до 10:00 считается с 10:00, срок с 23:00 со следующих 10:00.")),
     metric("Просроченные этапы", fmt(stages.overdue.length), "этапов", () => list("Просроченные этапы", stages.overdue.map((row) => row.deal), "Сегодняшний календарный день ещё не просрочка. Срок без сохранившейся даты сюда не входит.")),
   ];
   const byName = new Map();
@@ -264,7 +264,7 @@ function qualityReport() {
   const digest = meta.digest?.complete
     ? `<p class="note">Сейчас просрочено: задачи ${fmt(meta.digest.tasks)}, этапы ${fmt(meta.digest.stages)}.</p><p class="note aside">Это другое число и с периодом не складывается. Без обязательной даты: ${fmt(meta.digest.missing)}. Задач с недоступной карточкой: ${fmt(meta.digest.unavailable)}.${chatReady ? ` Неотвеченных серий Wazzup: ${fmt(replies.pending)}.` : ""}</p>`
     : `<p class="note">Сейчас просрочено в этот срез не вошло.</p><p class="note aside">Список открытых задач собран не полностью.</p>`;
-  return `${outcomeBar(closed, "results", period)}${addedOpen ? `<p class="note">В работе здесь — заявки, которые на конец периода ещё не закрыты.</p>` : ""}<p class="hintline aside">По дате завершения. Просрочка периода включает уже выполненные задачи. Срок, который не сохранился, в просрочку не ставится: таких пребываний ${fmt(stages.missing.length)}. Ответ считается от первого входящего Wazzup в серии до исходящего, отметки «не требует ответа» или закрытия беседы. Сообщения за 90 дней до начала недели. С 23:00 до 10:00 МСК счёт стоит и продолжается в 10:00. Звонки не входят.</p><div class="metrics">${cards.join("")}</div><div class="double">${groupPanel("Какие задачи просрочили?", byName, tasks.length, "taskname")}${groupPanel("На каких этапах задержались?", byStage, stages.overdue.length)}</div>${digest}`;
+  return `${outcomeBar(closed, "results", period)}${addedOpen ? `<p class="note">В работе здесь — заявки, которые на конец периода ещё не закрыты.</p>` : ""}<p class="hintline aside">По дате завершения. Просрочка периода включает уже выполненные задачи. Срок задачи до 10:00 МСК считается с 10:00, срок с 23:00 со следующих 10:00. Срок, который не сохранился, в просрочку не ставится: таких пребываний ${fmt(stages.missing.length)}. Ответ считается от первого входящего Wazzup в серии до исходящего, отметки «не требует ответа» или закрытия беседы. Сообщения за 90 дней до начала недели. С 23:00 до 10:00 МСК счёт стоит и продолжается в 10:00. Звонки не входят.</p><div class="metrics">${cards.join("")}</div><div class="double">${groupPanel("Какие задачи просрочили?", byName, tasks.length, "taskname")}${groupPanel("На каких этапах задержались?", byStage, stages.overdue.length)}</div>${digest}`;
 }
 function groupPanel(title, map, total, rowClass = "") {
   const entries = [...map.entries()].sort((a, b) => b[1].length - a[1].length);

@@ -139,6 +139,18 @@ const closed = deal({ id: 16, status: 142, closed: monday + 3 * 86400_000 }, {
   tasks: [{ id: 9, due: monday, done: monday + 4 * 86400_000, responsibleId: 2, name: "Связаться" }],
 });
 assert.equal(overdueTasks(cohort([closed], "results", bounds, {})).length, 1);
+const nightDone = zonedTimeToUtc(2026, 11, 16, 9, 30, 0, TZ);
+const afterOpen = zonedTimeToUtc(2026, 11, 16, 10, 20, 0, TZ);
+const nightDue = zonedTimeToUtc(2026, 11, 16, 4, 0, 0, TZ);
+const closedNight = deal({ id: 160, status: 142, closed: monday + 86400_000 }, { historyComplete: true, tasks: [{ id: 90, due: nightDue, done: nightDone, name: "Ночная" }] });
+const closedAfterOpen = deal({ id: 161, status: 142, closed: monday + 86400_000 }, { historyComplete: true, tasks: [{ id: 91, due: nightDue, done: afterOpen, name: "После открытия" }] });
+const afterCloseDue = zonedTimeToUtc(2026, 11, 16, 23, 30, 0, TZ);
+const beforeNextOpen = deal({ id: 162, status: 142, closed: monday + 2 * 86400_000 }, { historyComplete: true, tasks: [{ id: 92, due: afterCloseDue, done: zonedTimeToUtc(2026, 11, 17, 9, 0, 0, TZ), name: "До открытия" }] });
+const afterNextOpen = deal({ id: 163, status: 142, closed: monday + 2 * 86400_000 }, { historyComplete: true, tasks: [{ id: 93, due: afterCloseDue, done: zonedTimeToUtc(2026, 11, 17, 10, 15, 0, TZ), name: "После следующего открытия" }] });
+assert.equal(overdueTasks([closedNight]).length, 0);
+assert.equal(overdueTasks([closedAfterOpen]).length, 1);
+assert.equal(overdueTasks([beforeNextOpen]).length, 0);
+assert.equal(overdueTasks([afterNextOpen]).length, 1);
 
 const visited = deal({ id: 17, status: 142, closed: monday + 86400_000 }, {
   historyComplete: true, touch: "yes", lane: "off",

@@ -143,7 +143,7 @@ export const DICTIONARY = [
   { id: "qual", name: "Квалы", period: "Та же когорта.", source: "Дата Квалификация 3434465 либо успех. Провал «Спам» квалом не считается.", empty: "Пустая дата не дорисовывается из истории этапов." },
   { id: "success", name: "Успех", period: "Результаты: текущий успех и дата закрытия. Источники: успех на конец периода по событиям.", source: "Статус 142.", empty: "Неполная история в источниках даёт «исход неизвестен», не текущий успех." },
   { id: "fail", name: "Провал", period: "Как у успеха.", source: "Статус 143 и причина 3134051.", empty: "Пустая причина остаётся «причина не указана»." },
-  { id: "overdueTasks", name: "Просроченные задачи", period: "Задачи сделок, закрытых в периоде, включая уже выполненные.", source: "complete_till и updated_at выполненной задачи. Отдельного времени выполнения amo не отдаёт.", empty: "Нет задач — ноль. Не путать с открытыми задачами на сейчас." },
+  { id: "overdueTasks", name: "Просроченные задачи", period: "Задачи сделок, закрытых в периоде, включая уже выполненные.", source: "complete_till и updated_at выполненной задачи. Срок раньше 10:00 МСК считается с 10:00 этих суток, срок с 23:00 считается со следующих 10:00. Отдельного времени выполнения amo не отдаёт.", empty: "Нет задач — ноль. Не путать с открытыми задачами на сейчас." },
   { id: "overdueStages", name: "Просроченные этапы", period: "Закрытые в периоде, только сохранившийся срок.", source: "Поля STAGE_DATE_FIELDS и задачи. Поле 3279145 для прошлого этапа не используется.", empty: "Нет сохранённого срока — строка «срок не сохранился», не просрочка." },
   { id: "digest", name: "Сейчас просрочено", period: "Открытые сделки и задачи на момент среза.", source: "Те же правила, что ежедневная сводка моста, календарь Москвы.", empty: "Пропуски сводки показываются отдельно и не добиваются." },
   { id: "response", name: "Среднее время ответа", period: "Сделки, закрытые в выбранном периоде.", source: "Сообщения Wazzup за 90 дней до начала недели и до среза: от первого входящего в серии до следующего исходящего. В среднее входят минуты с 10:00 до 23:00 МСК, каждый день. С 23:00 до 10:00 счёт стоит. Звонки и прочие каналы не входят.", empty: "Нет пары входящее и ответ: прочерк, не ноль. Неотвеченная серия в среднее не входит." },
@@ -465,17 +465,27 @@ export function checkboxDisagreements(deals) {
   });
 }
 
-function taskOverdue(task, closed) {
-  const done = task.done;
-  const limit = done ?? closed;
-  if (limit == null) return false;
-  return task.due < limit;
+/** Срок вне 10:00–23:00 сдвигается к началу ближайшего рабочего окна. Ночные часы до открытия не делают задачу просроченной. */
+export function workingDue(ms, timeZone = "Europe/Moscow") {
+  if (!Number.isFinite(ms)) return ms;
+  const zone = zonedParts(ms, timeZone);
+  if (zone.hh >= 10 && zone.hh < 23) return ms;
+  if (zone.hh < 10) return zonedTimeToUtc(zone.y, zone.m, zone.d, 10, 0, 0, timeZone);
+  const next = addDays(zone.y, zone.m, zone.d, 1);
+  return zonedTimeToUtc(next.y, next.m, next.d, 10, 0, 0, timeZone);
 }
 
-export function overdueTasks(rows) {
+function taskOverdue(task, closed, timeZone = "Europe/Moscow") {
+  const done = task.done;
+  const limit = done ?? closed;
+  if (limit == null || !Number.isFinite(task.due)) return false;
+  return workingDue(task.due, timeZone) < limit;
+}
+
+export function overdueTasks(rows, timeZone = "Europe/Moscow") {
   const records = [];
   for (const deal of rows) {
-    for (const task of deal.tasks) records.push({ deal, task, overdue: taskOverdue(task, deal.closed) });
+    for (const task of deal.tasks) records.push({ deal, task, overdue: taskOverdue(task, deal.closed, timeZone) });
   }
   return records.filter((record) => record.overdue);
 }
