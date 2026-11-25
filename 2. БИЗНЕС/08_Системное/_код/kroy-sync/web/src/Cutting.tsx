@@ -239,7 +239,7 @@ function CutEditor({ api, items, locations, users, existing, close, saved }: {
         window.scrollTo({ top: 0, behavior: 'instant' });
         const nav = stepsRef.current;
         const current = nav?.querySelector<HTMLElement>('.is-current');
-        if (nav && current) nav.scrollTo({ left: Math.max(0, current.offsetLeft - 8), behavior: 'auto' });
+        if (nav && current) nav.scrollTo({ left: Math.max(0, current.offsetLeft - 16), behavior: 'auto' });
     }, [step]);
     const garments = items.filter(i => i.kind === 'garment').sort(compareVariants), materials = items.filter(i => i.kind === 'material');
     useEffect(() => { api('norms').then(r => setNorms(r.values)).catch(() => { }); }, []);
@@ -347,10 +347,13 @@ function CutEditor({ api, items, locations, users, existing, close, saved }: {
     <div className="cut-chrome-bar">
       <button className="secondary cut-back" disabled={busy} onClick={closeEditor}>К заданиям</button>
       <span className="cut-context">{existing?.number || 'Новое задание'}</span>
-      <nav className="cut-steps" aria-label="Подготовка задания" ref={stepsRef}>{stepGuide.map((item, index) => <button className={step === index ? 'is-current' : ''} key={item.label} aria-current={step === index ? 'step' : undefined} disabled={index===1&&!selected.length || index>1&&!calc || busy} onClick={() => setStep(index)}>{item.label}</button>)}</nav>
       <div className="cut-chrome-actions"><button className="secondary" disabled={busy || !!pending || !selected.length} onClick={() => save(false)}>Черновик</button>{step < 3 ? <button disabled={busy || step === 0 && !selected.length || step === 1 && (!calc || !hasNeed) || step === 2 && !completeGroups} onClick={() => setStep(step + 1)}>Далее</button> : <button disabled={busy || !confirmed || !canIssue || !!pending} onClick={() => save(true)}>{busy ? 'Сохраняю…' : 'Выдать'}</button>}</div>
     </div>
-    <div className="cut-chrome-sub"><span className="cut-hint">{blocked}</span><HelpTip label={'Пояснение: ' + stepGuide[step].label}>{stepGuide[step].help}</HelpTip></div>
+    <div className="cut-chrome-nav">
+      <nav className="cut-steps" aria-label="Подготовка задания" ref={stepsRef}>{stepGuide.map((item, index) => <button className={step === index ? 'is-current' : ''} key={item.label} aria-current={step === index ? 'step' : undefined} disabled={index===1&&!selected.length || index>1&&!calc || busy} onClick={() => setStep(index)}>{item.label}</button>)}</nav>
+      <HelpTip label={'Пояснение: ' + stepGuide[step].label}>{stepGuide[step].help}</HelpTip>
+    </div>
+    {blocked ? <p className="cut-hint cut-chrome-hint">{blocked}</p> : null}
   </div>
   {recovery&&<CutNotice>Есть незавершённое редактирование на этом устройстве.<div className="cut-button-row"><button onClick={restoreRecovery}>Восстановить</button><button className="secondary" onClick={clearRecovery}>Не восстанавливать</button></div></CutNotice>}
   {error && <CutNotice error>{error}{pending && <div className="cut-button-row"><button disabled={busy} onClick={() => save(pending.command === 'task.issue')}>Повторить запрос</button><button className="secondary" onClick={() => { setPending(null); setError(''); }}>Вернуться к редактированию</button></div>}</CutNotice>}
