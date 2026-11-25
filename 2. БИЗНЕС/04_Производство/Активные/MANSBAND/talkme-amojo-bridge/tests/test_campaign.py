@@ -67,6 +67,7 @@ def test_spam_not_fallback(db):
     c.wz.post=lambda *a,**kw:httpx.Response(400,json={'error':'MESSAGES_IS_SPAM'})
     assert m.send_part(db,j,c,0,'text','asset')=='halt'
     assert j.state=='attention'
+    assert m.account_halt(db).data['reason']=='MESSAGES_IS_SPAM'
 
 def test_only_absent_allows_fallback(db):
     j=job(db);c=Client((400,))
