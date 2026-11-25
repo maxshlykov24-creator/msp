@@ -1,4 +1,3 @@
-import {SalesFile} from './SalesFile';
 import { Choice, Select, Icon, HelpTip, ActionMenu, confirmAction, DialogFrame } from './UI';
 import { DatePicker } from './DatePicker';
 import React, { useEffect, useState, useRef } from 'react';
@@ -318,7 +317,6 @@ function CutEditor({ api, items, locations, users, existing, close, saved, onPul
     </section>
    </>}
    {step === 1 && <div className="cut-step">
-     <SalesFile key={params.start+'|'+params.end} api={api} params={params} apply={(platform,id)=>{const report_ids={...params.report_ids};if(id)report_ids[platform]=id;else delete report_ids[platform];setParams({...params,report_ids});clearCalc();setGroups([]);changed()}}/>
      <div className="cut-period">
       <div className="cut-period-line">
        <button type="button" className="cut-period-toggle" aria-expanded={periodOpen} onClick={() => setPeriodOpen(value => !value)}><span>Продажи {dateText(params.start)} — {dateText(params.end)} · запас {params.horizon} дн. · покрытие к {dateText(params.target_date)} · ФБО {params.include_fbo === true ? 'включено' : 'выключено'}</span>{calcStale && !calc && <span className="cut-period-stale">Расчёт сброшен. Нужен новый расчёт.</span>}</button>
