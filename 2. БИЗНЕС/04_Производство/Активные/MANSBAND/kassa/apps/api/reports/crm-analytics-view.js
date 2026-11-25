@@ -171,18 +171,33 @@ document.addEventListener("change", (event) => {
   } else if (event.target.dataset.select) { state[event.target.dataset.select] = event.target.value; render(); }
 });
 function failReasonNames(rows, mode, period) {
-  const names = new Set();
-  for (const deal of rows) if (dealOutcome(deal, mode, period) === "fail") names.add(deal.reason || "Причина не указана");
-  return [...names].sort((a, b) => a.localeCompare(b, "ru"));
+  const counts = new Map();
+  for (const deal of rows) if (dealOutcome(deal, mode, period) === "fail") counts.set(failReason(deal), (counts.get(failReason(deal)) ?? 0) + 1);
+  return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "ru"));
 }
 function outcomeBar(rows, mode, period) {
   const names = failReasonNames(rows, mode, period);
-  for (const name of [...state.reasons]) if (!names.includes(name)) state.reasons.delete(name);
-  const openTitle = mode === "results" ? ` title="Пока отмечены все исходы, на экране закрытые за период. Снимите успех или провал, чтобы увидеть заявки, открытые на конец периода."` : "";
-  const checks = [["success", "Успех"], ["fail", "Провал"], ["open", "В работе"]].map(([key, label]) => `<label${key === "open" ? openTitle : ""}><input type="checkbox" data-outcome="${key}" ${state.outcomes.has(key) ? "checked" : ""}>${label}</label>`).join("");
+  const known = new Set(names.map(([name]) => name));
+  for (const name of [...state.reasons]) if (!known.has(name)) state.reasons.delete(name);
+  const checks = [["success", "Успех"], ["fail", "Провал"], ["open", "В работе"]].map(([key, label]) => `<label><input type="checkbox" data-outcome="${key}" ${state.outcomes.has(key) ? "checked" : ""}>${label}</label>`).join("");
   const summary = state.reasons.size === 0 ? "все" : [...state.reasons].join(", ");
-  const menu = names.length ? names.map((name) => `<label><input type="checkbox" data-reason="${esc(name)}" ${state.reasons.has(name) ? "checked" : ""}>${esc(name)}</label>`).join("") + (state.reasons.size ? `<button type="button" class="link" ${reg(() => { state.reasons.clear(); state.reasonMenu = true; render(); })}>Сбросить</button>` : "") : `<p class="note">Провалов в этом периоде нет.</p>`;
+  const failNote = state.outcomes.has("fail") ? "" : `<p class="note">Причина применится, когда отмечен провал.</p>`;
+  const menu = names.length ? names.map(([name, count]) => `<label><input type="checkbox" data-reason="${esc(name)}" ${state.reasons.has(name) ? "checked" : ""}>${esc(name)} · ${fmt(count)}</label>`).join("") + failNote + (state.reasons.size ? `<button type="button" class="link" ${reg(() => { state.reasons.clear(); state.reasonMenu = true; render(); })}>Сбросить</button>` : "") : `<p class="note">Провалов в этом периоде нет.</p>`;
   return `<div class="filterbar"><fieldset class="checks"><legend>Исход</legend>${checks}</fieldset><details class="reasonbox" ${state.reasonMenu ? "open" : ""}><summary>Причина провала · ${esc(summary)}</summary><div class="menu">${menu}</div></details></div>`;
+}
+function selectionNote(rows, mode, period) {
+  const counts = { success: 0, fail: 0, open: 0, unknown: 0 };
+  for (const deal of rows) {
+    const outcome = dealOutcome(deal, mode, period);
+    if (counts[outcome] != null) counts[outcome] += 1;
+  }
+  const parts = [];
+  if (state.outcomes.has("success")) parts.push(`успех ${fmt(counts.success)}`);
+  if (state.outcomes.has("fail")) parts.push(`провал ${fmt(counts.fail)}`);
+  if (state.outcomes.has("open")) parts.push(`в работе ${fmt(counts.open)}`);
+  const reasonText = state.reasons.size ? ` Причина провала оставляет ${fmt(counts.fail)} ${plural(counts.fail, "провал", "провала", "провалов")} и не трогает остальные исходы.` : "";
+  const unknownText = counts.unknown ? ` Исход не определён: ${fmt(counts.unknown)}.` : "";
+  return `<p class="note">В выборке ${fmt(rows.length)} ${plural(rows.length, "заявка", "заявки", "заявок")}: ${parts.join(", ")}.${unknownText}${reasonText}</p>`;
 }
 function pickedDeals(rows, mode, period) {
   const openRows = mode === "results" ? queueAt(deals, Math.max(period.from, period.cut - 1)) : [];
@@ -208,9 +223,9 @@ function generalReport() {
   const order = [["all", "Все заявки"], ["target", "Целевые"], ["qual", "Квалы"], ["success", "Успех"], ["fail", "Провал"]];
   const den = { target: groups.all.length, qual: groups.target.length, success: groups.all.length, fail: groups.all.length };
   const suffix = { target: "от всех", qual: "от целевых", success: "от всех", fail: "от всех" };
-  let html = `<div class="filterbar">${segment("mode", [["results", "Результаты"], ["created", "Источники"]])}${select("touch", "Касание", [["*", "Все заявки"], ["yes", "С касанием"], ["no", "Без касания"]])}${state.mode === "created" ? select("source", "Источник", [["*", "Все источники"], ...sources.map((source) => [source, source])]) : ""}</div>${outcomeBar(narrowed, mode, period)}`;
-  if (addedOpen) html += `<p class="note">В работе здесь — заявки, которые на конец периода ещё не закрыты.</p>`;
-  html += `<p class="hintline aside">${state.mode === "created" ? "По дате создания. Исход на конец периода берётся из событий этапа." : "По дате завершения. Успех и провал в сумме равны всем закрытым сделкам."}</p>`;
+  let html = `<div class="filterbar">${segment("mode", [["results", "Результаты"], ["created", "Источники"]])}${select("touch", "Касание", [["*", "Все заявки"], ["yes", "С касанием"], ["no", "Без касания"]])}${state.mode === "created" ? select("source", "Источник", [["*", "Все источники"], ...sources.map((source) => [source, source])]) : ""}</div>${outcomeBar(narrowed, mode, period)}${selectionNote(picked, mode, period)}`;
+  if (addedOpen) html += `<p class="note">В работе здесь — заявки, которые на конец периода ещё не закрыты. Снимите галочку, чтобы оставить только закрытые.</p>`;
+  html += `<p class="hintline aside">${state.mode === "created" ? "По дате создания. Исход на конец периода берётся из событий этапа." : "По дате завершения. Успех и провал в сумме равны закрытым сделкам."}</p>`;
   const allCaption = addedOpen ? "в выборке, с открытыми на конец периода" : (state.mode === "created" ? "создано за период" : "завершено за период");
   html += `<div class="metrics">${order.map(([key, label], index) => metric(label, fmt(groups[key].length), key === "all" ? allCaption : percent(groups[key].length, den[key]) + " " + suffix[key], () => list(label, groups[key], "Состав показателя."), index === 3 ? "accent" : index === 4 ? "bad" : "")).join("")}</div>`;
   if (state.mode === "created") {
@@ -264,7 +279,7 @@ function qualityReport() {
   const digest = meta.digest?.complete
     ? `<p class="note">Сейчас просрочено: задачи ${fmt(meta.digest.tasks)}, этапы ${fmt(meta.digest.stages)}.</p><p class="note aside">Это другое число и с периодом не складывается. Без обязательной даты: ${fmt(meta.digest.missing)}. Задач с недоступной карточкой: ${fmt(meta.digest.unavailable)}.${chatReady ? ` Неотвеченных серий Wazzup: ${fmt(replies.pending)}.` : ""}</p>`
     : `<p class="note">Сейчас просрочено в этот срез не вошло.</p><p class="note aside">Список открытых задач собран не полностью.</p>`;
-  return `${outcomeBar(closed, "results", period)}${addedOpen ? `<p class="note">В работе здесь — заявки, которые на конец периода ещё не закрыты.</p>` : ""}<p class="hintline aside">По дате завершения. Просрочка периода включает уже выполненные задачи. Срок задачи до 10:00 МСК считается с 10:00, срок с 23:00 со следующих 10:00. Срок, который не сохранился, в просрочку не ставится: таких пребываний ${fmt(stages.missing.length)}. Ответ считается от первого входящего Wazzup в серии до исходящего, отметки «не требует ответа» или закрытия беседы. Сообщения за 90 дней до начала недели. С 23:00 до 10:00 МСК счёт стоит и продолжается в 10:00. Звонки не входят.</p><div class="metrics">${cards.join("")}</div><div class="double">${groupPanel("Какие задачи просрочили?", byName, tasks.length, "taskname")}${groupPanel("На каких этапах задержались?", byStage, stages.overdue.length)}</div>${digest}`;
+  return `${outcomeBar(closed, "results", period)}${selectionNote(group, "results", period)}${addedOpen ? `<p class="note">В работе здесь — заявки, которые на конец периода ещё не закрыты. Снимите галочку, чтобы оставить только закрытые.</p>` : ""}<p class="hintline aside">По дате завершения. Просрочка периода включает уже выполненные задачи. Срок задачи до 10:00 МСК считается с 10:00, срок с 23:00 со следующих 10:00. Срок, который не сохранился, в просрочку не ставится: таких пребываний ${fmt(stages.missing.length)}. Ответ считается от первого входящего Wazzup в серии до исходящего, отметки «не требует ответа» или закрытия беседы. Сообщения за 90 дней до начала недели. С 23:00 до 10:00 МСК счёт стоит и продолжается в 10:00. Звонки не входят.</p><div class="metrics">${cards.join("")}</div><div class="double">${groupPanel("Какие задачи просрочили?", byName, tasks.length, "taskname")}${groupPanel("На каких этапах задержались?", byStage, stages.overdue.length)}</div>${digest}`;
 }
 function groupPanel(title, map, total, rowClass = "") {
   const entries = [...map.entries()].sort((a, b) => b[1].length - a[1].length);
@@ -285,7 +300,7 @@ function funnelReport(logistics) {
   const rest = `<div class="stack">${barRow("Не были ни на одном этапе цепочки", report.remainder.length, group.length, () => list("Вне цепочки", report.remainder, "Закрытые сделки этого канала без этапов выбранной цепочки."))}${barRow("История этапа неполная", report.incomplete.length, group.length, () => list("История неполная", report.incomplete, "Эти заявки не входят в числитель и знаменатель этапов."))}</div>`;
   const speed = logistics && stages.length ? medianHours(group, stages) : null;
   const speedPanel = speed ? panel("Сколько времени занимает путь?", `От этапа «${stages[0]}» до «${stages.at(-1)}». В медиану входят только сделки, где оба события есть и идут в этом порядке.`, `<button class="item" ${reg(() => list("Полный путь", speed.ids.map((id) => byId.get(id)).filter(Boolean), "Заявки, по которым посчитана медиана."))}><span>Медианное время<small>${fmt(speed.ids.length)} заявок с полным путём</small></span><strong>${speed.hours == null ? "—" : fmt(speed.hours) + " ч"}</strong></button>`) : "";
-  return `${logistics ? "" : outcomeBar(closed, "results", period)}${addedOpen ? `<p class="note">В работе здесь — заявки, которые на конец периода ещё не закрыты.</p>` : ""}<div class="filterbar">${segment("lane", [["off", "Офлайн"], ["on", "Онлайн"]])}<span class="periodlabel">По дате завершения</span></div>` +
+  return `${logistics ? "" : outcomeBar(closed, "results", period)}${logistics ? "" : selectionNote(filtered, "results", period)}${addedOpen ? `<p class="note">В работе здесь — заявки, которые на конец периода ещё не закрыты. Снимите галочку, чтобы оставить только закрытые.</p>` : ""}<div class="filterbar">${segment("lane", [["off", "Офлайн"], ["on", "Онлайн"]])}<span class="periodlabel">По дате завершения</span></div>` +
     panel("Цель · " + (report.goal || "в живой воронке не найдена"), "Повторный вход заявку не удваивает. Цель считается, только если она наступила в этот заход или позже. Имя этапа берётся из amo.", stages.length ? `<div class="stack">${rowsHtml}</div>` : empty("В живой воронке нет этапов этой цепочки.")) +
     speedPanel +
     panel("Чтобы сумма сходилась с закрытыми", "Сделки вне цепочки и сделки с неполной историей показаны отдельно.", rest) +

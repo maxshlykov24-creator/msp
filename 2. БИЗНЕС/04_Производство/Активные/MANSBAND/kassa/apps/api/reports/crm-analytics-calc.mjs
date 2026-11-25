@@ -391,23 +391,27 @@ export function dealOutcome(deal, mode, bounds) {
   return "unknown";
 }
 
-/** Пустой набор причин значит «все». Все три исхода и пустые причины возвращают исходные строки без добавления открытых. */
+export function failReason(deal) {
+  const name = String(deal.reason ?? "").replace(/\s+/g, " ").trim();
+  return name || "Причина не указана";
+}
+
+/** Пустой набор причин значит «все». «В работе» добавляет сделки, открытые на конец периода, и снимается вместе с галочкой. */
 export function restrictDeals(rows, openRows, mode, bounds, filters = {}) {
   const selected = filters.outcomes instanceof Set ? filters.outcomes : new Set(filters.outcomes ?? ["success", "fail", "open"]);
-  const reasonSet = filters.reasons instanceof Set ? filters.reasons : new Set(filters.reasons ?? []);
+  const reasonSet = filters.reasons instanceof Set ? filters.reasons : new Set([...(filters.reasons ?? [])].map((name) => String(name).replace(/\s+/g, " ").trim()));
   if (selected.size === 0) return [];
   const allOn = selected.has("success") && selected.has("fail") && selected.has("open");
-  if (allOn && reasonSet.size === 0) return rows;
   const pool = rows.slice();
-  if (!allOn && selected.has("open")) {
+  if (selected.has("open")) {
     const ids = new Set(pool.map((deal) => deal.id));
     for (const deal of openRows ?? []) if (!ids.has(deal.id)) pool.push(deal);
   }
   return pool.filter((deal) => {
     const outcome = dealOutcome(deal, mode, bounds);
-    if (outcome === "unknown") return allOn;
+    if (outcome === "unknown") return allOn && reasonSet.size === 0;
     if (!selected.has(outcome)) return false;
-    if (outcome === "fail" && reasonSet.size > 0 && !reasonSet.has(deal.reason || "Причина не указана")) return false;
+    if (outcome === "fail" && reasonSet.size > 0 && !reasonSet.has(failReason(deal))) return false;
     return true;
   });
 }
