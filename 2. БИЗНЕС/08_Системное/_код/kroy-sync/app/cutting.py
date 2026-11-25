@@ -154,6 +154,7 @@ def calculate(s, raw):
             if missing==len(rows): warnings.append('Нет актуальных остатков ФБО '+label+'. Они не вычитаются из рекомендации и не заменяются нулём. Перед выдачей укажи основание.')
             else: warnings.append(label+': нет актуального остатка ФБО у '+str(missing)+' из '+str(len(rows))+' позиций. Для них этот остаток не вычитается и не заменён нулём.')
     if any(row['kept_previous_sales'] for row in rows): warnings.append('Свежая пустая выгрузка не заменила предыдущие продажи.')
+    from .sales import wb_gap_text
     for data in used_windows.values():
         if data.get('platform')=='ozon':
             proof=data.get('catalog_proof') or {}
@@ -161,8 +162,9 @@ def calculate(s, raw):
                 gap=int(proof.get('catalog_products') or 0)-int(proof.get('matched_products') or 0)
                 if gap: warnings.append('Ozon: '+str(gap)+' карточек нет среди наших товаров. Их продажи не входят в расчёт и не заменены нулём. Пока каталог сопоставлен не полностью, отсутствие карточки не считается нулём.')
             if data.get('unmatched'): warnings.append('Ozon: '+str(data['unmatched'])+' шт. без точного сопоставления не вошли в расчёт.')
-        if data.get('platform')=='wb' and data.get('unmatched'):
-            warnings.append('Wildberries: '+str(data['unmatched'])+' строк выгрузки с '+str(data.get('start'))+' по '+str(data.get('end'))+' без однозначного штрихкода не вошли в расчёт и не заменены нулём.')
+        if data.get('platform')=='wb':
+            text=wb_gap_text(data,p['start'],p['end'])
+            if text: warnings.append(text)
     if not p['include_fbo']:
         for row in fingerprint_body['rows']:
             row.pop('fbo', None); row.pop('fbo_total', None); row.pop('fbo_counted', None); row.pop('fbo_missing', None)

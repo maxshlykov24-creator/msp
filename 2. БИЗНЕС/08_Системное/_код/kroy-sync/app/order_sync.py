@@ -407,10 +407,10 @@ def publish_saved_wb_sales(engine,account,at):
         raw=[e.data['row'] for e in s.scalars(select(Entity).where(Entity.kind=='market_sale_raw',Entity.data['account'].as_string()==account))]
     if not raw:return False
     codes,_,covered=mappings(engine)
-    window_events,unmatched=wb_events(raw,history_from,end,codes)
+    window_events,unmatched,unmatched_by_day=wb_events(raw,history_from,end,codes)
     report=sync_state(engine).get('report:wb-sales:'+account,{})
     fresh=now().isoformat()
-    store_window(engine,dict(platform='wb',start=history_from,end=end,at=fresh,complete=True,verified=True,covered_items=list(covered['wb']),events=[e for e in window_events if e['item_id'] in set(covered['wb'])],source='WB supplier/sales',unmatched=unmatched,collection_proof=report.get('proof') or 'saved_rows'))
+    store_window(engine,dict(platform='wb',start=history_from,end=end,at=fresh,complete=True,verified=True,covered_items=list(covered['wb']),events=[e for e in window_events if e['item_id'] in set(covered['wb'])],source='WB supplier/sales',unmatched=unmatched,unmatched_by_day=unmatched_by_day,collection_proof=report.get('proof') or 'saved_rows'))
     set_sync(engine,'wb-sales',rebuild_required=False)
     update_wb_status(engine,state='ready_cached',at=fresh,reason='Оперативные продажи Wildberries; итоговый отчёт не сверён')
     return True
@@ -450,8 +450,8 @@ def _sync_wb_sales(engine,client,account,prior,at):
     with transaction(engine) as s:raw=[e.data['row'] for e in s.scalars(select(Entity).where(Entity.kind=='market_sale_raw',Entity.data['account'].as_string()==account))]
     codes,_,covered=mappings(engine)
     minimum=min((str(r['date'])[:10] for r in raw),default=history_from)
-    events,_=wb_events(raw,minimum,str(at.astimezone(MSK).date()),codes)
-    window_events,unmatched=wb_events(raw,history_from,end,codes)
+    events,_,_=wb_events(raw,minimum,str(at.astimezone(MSK).date()),codes)
+    window_events,unmatched,unmatched_by_day=wb_events(raw,history_from,end,codes)
     identities={str(r.get('saleID')):r for r in raw}
     normalized=[]
     for event in events:
@@ -470,6 +470,6 @@ def _sync_wb_sales(engine,client,account,prior,at):
             if d['status']==state:continue
             history=d.get('history',[])+[dict(at=now().isoformat(),status=state,raw_status=last['kind'],source='wb-sales')]
             e.data={**d,'status':state,'sale_status':state,'history':history[-100:]};e.version+=1
-    store_window(engine,dict(platform='wb',start=history_from,end=end,at=fetched_at,complete=True,verified=True,covered_items=list(covered['wb']),events=[e for e in window_events if e['item_id'] in covered['wb']],source='WB supplier/sales',unmatched=unmatched,collection_proof=sync_state(engine).get('report:wb-sales:'+account,{}).get('proof','empty_page')))
+    store_window(engine,dict(platform='wb',start=history_from,end=end,at=fetched_at,complete=True,verified=True,covered_items=list(covered['wb']),events=[e for e in window_events if e['item_id'] in covered['wb']],source='WB supplier/sales',unmatched=unmatched,unmatched_by_day=unmatched_by_day,collection_proof=sync_state(engine).get('report:wb-sales:'+account,{}).get('proof','empty_page')))
     set_sync(engine,'wb-sales',history_from=history_from,received=len(raw),history_to=end,raw_complete_from=history_from,raw_end=end,raw_at=fetched_at,rebuild_required=False,state='ready',success_at=now().isoformat(),error=None,retry_at=None)
     update_wb_status(engine,state='ready_cached' if cached_rebuild else 'ready',at=fetched_at,reason='Оперативные продажи Wildberries; итоговый отчёт не сверён',**({} if cached_rebuild else {'next_retry_at':None}))

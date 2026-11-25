@@ -82,7 +82,7 @@ def test_sales_import_deduplicates_and_preserves_returns_date(setup):
     from app.sales import store_window, wb_events
     engine,u,cmd=setup
     p=payload(engine);dates=p['cutting']['calculation']['parameters']
-    events,missing=wb_events([dict(date=dates['end']+'T23:30:00',saleID='R1',barcode='001'),dict(date=dates['end']+'T23:30:00',saleID='R1',barcode='001')],dates['start'],dates['end'],{'001':['s']})
+    events,missing,_=wb_events([dict(date=dates['end']+'T23:30:00',saleID='R1',barcode='001'),dict(date=dates['end']+'T23:30:00',saleID='R1',barcode='001')],dates['start'],dates['end'],{'001':['s']})
     assert missing==0 and events[0]['kind']=='return'
     data=dict(platform='wb',start=dates['start'],end=dates['end'],at='2026-10-29T00:00:00Z',complete=True,verified=True,covered_items=['s'],events=events)
     store_window(engine,data);store_window(engine,data)
@@ -341,7 +341,7 @@ def test_empty_refresh_keeps_previous_sales_and_explains_the_gap(setup):
     from app.sales import store_window, wb_events
     engine,_,_=setup
     with Session(engine) as s:params=calculate(s,dict(location='own',item_ids=['s']))['parameters']
-    events,_=wb_events([dict(date=params['end']+'T12:00:00Z',saleID='S-live',barcode='001')],params['start'],params['end'],{'001':['s']})
+    events,_,_=wb_events([dict(date=params['end']+'T12:00:00Z',saleID='S-live',barcode='001')],params['start'],params['end'],{'001':['s']})
     assert events[0]['date']==params['end'] and events[0]['kind']=='sale'
     store_window(engine,dict(platform='wb',start=params['start'],end=params['end'],at='2026-11-01T00:00:00+00:00',complete=True,verified=True,covered_items=['s'],events=events))
     with pytest.raises(DomainError,match='пустая'):

@@ -63,16 +63,52 @@ def store_window(engine, data):
 
 def wb_events(raw,start,end,barcodes):
     require(isinstance(raw,list),'Неполная выгрузка ВБ',422)
-    events=[];unmatched=0
+    events=[];unmatched=0;by_day=defaultdict(int)
     for row in raw:
         raw_date=row.get('date');require(isinstance(raw_date,str),'Некорректная дата продажи ВБ',422)
         dt=datetime.fromisoformat(raw_date.replace('Z','+00:00'));day=str(dt.astimezone(MSK).date() if dt.tzinfo else dt.date())
         if not start<=day<=end:continue
         code=str(row['saleID']);require(code.startswith(('S','R')),'Неизвестный тип события ВБ',422)
         ids=barcodes.get(str(row['barcode']),[])
-        if len(ids)!=1:unmatched+=1;continue
+        if len(ids)!=1:unmatched+=1;by_day[day]+=1;continue
         events.append(dict(id=code,item_id=ids[0],date=day,kind='sale' if code[0]=='S' else 'return',quantity=1))
-    return events,unmatched
+    return events,unmatched,dict(by_day)
+
+
+def unmatched_between(data,start,end):
+    """Rows without one barcode, sliced by day. None means the window has no day split yet."""
+    by_day=data.get('unmatched_by_day')
+    if not isinstance(by_day,dict):return None
+    return sum(int(count) for day,count in by_day.items() if start<=str(day)<=end)
+
+
+def wb_gap_text(data,start,end):
+    count=unmatched_between(data,start,end)
+    if count is None:
+        if not data.get('unmatched'):return None
+        return 'Wildberries: '+str(data['unmatched'])+' строк выгрузки с '+str(data.get('start'))+' по '+str(data.get('end'))+' без однозначного штрихкода не вошли в расчёт и не заменены нулём.'
+    if not count:return None
+    return 'Wildberries: '+str(count)+' строк с '+start+' по '+end+' без однозначного штрихкода не вошли в расчёт и не заменены нулём.'
+
+
+def ozon_gap_cards(catalog,skus,normalized,limit=40):
+    """Cards that are not one local product. Names stay outside the sales digest."""
+    units=defaultdict(int)
+    for event in normalized:
+        if len(skus.get(event['sku'],[]))!=1:units[event['sku']]+=int(event['quantity'])
+    seen=set();rows=[]
+    for product in catalog.get('items') or []:
+        product_skus=[str(v.get('sku')) for v in product.get('sources') or [] if v.get('sku')]
+        matches=set()
+        for sku in product_skus:matches.update(skus.get(sku,[]))
+        if product_skus and len(matches)==1:
+            seen.update(product_skus);continue
+        sold=sum(units.get(sku,0) for sku in product_skus);seen.update(product_skus)
+        rows.append(dict(offer_id=str(product.get('offer_id') or '')[:80],name=str(product.get('name') or '')[:180],units=int(sold)))
+    for sku,sold in units.items():
+        if sku not in seen and sold:rows.append(dict(offer_id=str(sku)[:80],name='',units=int(sold)))
+    rows.sort(key=lambda r:(-r['units'],r['offer_id'],r['name']))
+    return rows[:limit]
 
 
 def ozon_entries(raw):
@@ -258,7 +294,8 @@ def sync(engine, env, start=None, end=None):
                     matches=skus.get(event['sku'],[])
                     if len(matches)!=1 or matches[0] not in allowed:unmatched+=event['quantity'];continue
                     events.append({k:v for k,v in event.items() if k!='sku'}|{'item_id':matches[0]})
-                data=dict(platform='ozon',start=start,end=end,at=now().isoformat(),complete=True,verified=True,covered_items=list(allowed),blocked_items=blocked_items,not_listed_items=sorted(proven_not_listed),catalog_matches=dict(catalog_matches),catalog_proof={**catalog_proof,'unmatched_financial_skus':len(unknown_skus)},events=events,source=OZON_SOURCE,unmatched=unmatched,reconciliation=certificate,reversed_deliveries=reversed_units,source_hashes=hashes)
+                gaps=ozon_gap_cards(catalog,skus,normalized)
+                data=dict(platform='ozon',start=start,end=end,at=now().isoformat(),complete=True,verified=True,covered_items=list(allowed),blocked_items=blocked_items,not_listed_items=sorted(proven_not_listed),catalog_matches=dict(catalog_matches),catalog_proof={**catalog_proof,'unmatched_financial_skus':len(unknown_skus)},events=events,source=OZON_SOURCE,unmatched=unmatched,gaps=gaps,reconciliation=certificate,reversed_deliveries=reversed_units,source_hashes=hashes)
             store_window(engine,data)
             results[platform]=dict(state='ready',at=data['at'],start=start,end=end,events=len(data['events']),covered=len(data['covered_items']),unmatched=data['unmatched'])
         except RateLimited as e:
@@ -347,4 +384,122 @@ def invalidate_unverified_wb_windows(engine):
             blocked=dict(d.get('blocked_items',{}));blocked.update({iid:'Проверяем полноту выгрузки Wildberries' for iid in affected})
             d.update(covered_items=[],blocked_items=blocked,identity_pending=sorted(set(d.get('identity_pending',[]))|affected),digest='incomplete:'+str(d.get('digest','')))
             e.data=d;e.version+=1;changed+=1
+    return changed
+
+
+def window_refs(engine):
+    """Headers only. Event bodies stay in the database."""
+    from sqlalchemy import text
+    if engine.dialect.name=='postgresql':
+        query=text("SELECT id, (data::jsonb - 'events' - 'catalog_matches' - 'source_hashes' - 'reconciliation')::text FROM entities WHERE kind='sales_window'")
+    else:
+        query=text("SELECT id, json_remove(data, '$.events', '$.catalog_matches', '$.source_hashes', '$.reconciliation') FROM entities WHERE kind='sales_window'")
+    refs=[]
+    with engine.connect() as connection:
+        for row_id,raw in connection.execute(query):
+            if not raw:continue
+            meta=json.loads(raw) if isinstance(raw,str) else raw
+            if isinstance(meta,str):meta=json.loads(meta)
+            if isinstance(meta,dict):
+                meta=dict(meta);meta['_id']=row_id;refs.append(meta)
+    return refs
+
+
+def attach_window_fields(engine,row_id,extra):
+    """Add a note to a saved window without changing its sales digest or version."""
+    with transaction(engine) as s:
+        e=s.get(Entity,row_id)
+        if e is None:return False
+        if all(e.data.get(key)==value for key,value in extra.items()):return False
+        e.data={**e.data,**extra}
+        return True
+
+
+def begin_sales_run(engine,source):
+    require(source in ('timer','manual'),'Неизвестный запуск сверки',422)
+    with transaction(engine) as s:
+        data=dict(state='running',source=source,started_at=now().isoformat(),finished_at=None,error=None)
+        e=s.get(Entity,'sales-run')
+        if e:e.data=data;e.version+=1
+        else:s.add(Entity(id='sales-run',kind='sales_run',version=1,data=data))
+
+
+def finish_sales_run(engine,error=None):
+    with transaction(engine) as s:
+        e=s.get(Entity,'sales-run')
+        if e is None:return
+        message=(error or '')[:300] or None
+        e.data={**e.data,'state':'error' if message else 'done','finished_at':now().isoformat(),'error':message}
+        e.version+=1
+
+
+def _days(start,end):
+    cursor,last=date.fromisoformat(start),date.fromisoformat(end)
+    while cursor<=last:
+        yield str(cursor);cursor+=timedelta(days=1)
+
+
+def _raw_sale_keys(engine):
+    from sqlalchemy import text
+    if engine.dialect.name=='postgresql':
+        query=text("SELECT (data::jsonb)#>>'{row,date}', (data::jsonb)#>>'{row,barcode}', (data::jsonb)#>>'{row,saleID}' FROM entities WHERE kind='market_sale_raw'")
+    else:
+        query=text("SELECT json_extract(data, '$.row.date'), json_extract(data, '$.row.barcode'), json_extract(data, '$.row.saleID') FROM entities WHERE kind='market_sale_raw'")
+    with engine.connect() as connection:
+        return connection.execute(query).all()
+
+
+def annotate_saved_gaps(engine,cache_dir):
+    """Fill names and day counts already on disk. Does not call a marketplace."""
+    return dict(ozon=_annotate_ozon_gaps(engine,Path(cache_dir)),wb=_annotate_wb_days(engine))
+
+
+def _annotate_ozon_gaps(engine,cache):
+    catalog_path=cache/'ozon-catalog.json'
+    if not catalog_path.exists():return 0
+    try:catalog=json.loads(catalog_path.read_text())
+    except (OSError,json.JSONDecodeError):return 0
+    if not catalog.get('complete') or not catalog.get('items'):return 0
+    try:skus,_,_,_=catalog_links(engine,catalog)
+    except Exception:return 0
+    changed=0
+    for meta in window_refs(engine):
+        if meta.get('platform')!='ozon' or not meta.get('complete') or not meta.get('verified') or 'gaps' in meta:continue
+        start,end=meta.get('start'),meta.get('end')
+        if not start or not end:continue
+        try:
+            if (date.fromisoformat(end)-date.fromisoformat(start)).days>=90:continue
+        except ValueError:continue
+        paths=[cache/('ozon-'+day+'.json') for day in _days(start,end)]
+        if not all(path.exists() for path in paths):continue
+        try:
+            raw=[]
+            for path in paths:raw.extend(json.loads(path.read_text()).get('accruals') or [])
+            normalized,_,_=ozon_entries(raw)
+        except Exception:continue
+        if attach_window_fields(engine,meta['_id'],dict(gaps=ozon_gap_cards(catalog,skus,normalized))):changed+=1
+    return changed
+
+
+def _annotate_wb_days(engine):
+    refs=[meta for meta in window_refs(engine) if meta.get('platform')=='wb' and meta.get('complete') and meta.get('verified') and 'unmatched_by_day' not in meta]
+    if not refs:return 0
+    codes,_,_=mappings(engine)
+    counts=defaultdict(int);saw=False
+    for raw_date,barcode,sale_id in _raw_sale_keys(engine):
+        if not isinstance(raw_date,str) or not isinstance(sale_id,str) or not sale_id.startswith(('S','R')):continue
+        saw=True
+        try:dt=datetime.fromisoformat(raw_date.replace('Z','+00:00'))
+        except ValueError:continue
+        day=str(dt.astimezone(MSK).date() if dt.tzinfo else dt.date())
+        if len(codes.get(str(barcode or ''),[]))!=1:counts[day]+=1
+    if not saw:return 0
+    changed=0
+    for meta in refs:
+        start,end=meta.get('start'),meta.get('end')
+        if not start or not end:continue
+        by_day={day:count for day,count in counts.items() if start<=day<=end}
+        total=sum(by_day.values())
+        if meta.get('unmatched') is not None and total!=int(meta['unmatched']):continue
+        if attach_window_fields(engine,meta['_id'],dict(unmatched_by_day=by_day)):changed+=1
     return changed
