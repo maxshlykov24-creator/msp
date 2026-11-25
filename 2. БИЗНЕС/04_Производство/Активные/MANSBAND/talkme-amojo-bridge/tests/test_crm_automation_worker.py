@@ -676,7 +676,8 @@ def typed_lead(**extra):
 
 
 def type_event(at=1050, key="type-1"):
-    return {"id": key, "entity_id": 55, "entity_type": "lead", "type": "custom_field_value_changed",
+    return {"id": key, "entity_id": 55, "entity_type": "lead",
+            "type": f"custom_field_{a.TYPE_FIELD}_value_changed",
             "created_at": at, "value_before": [],
             "value_after": [{"custom_field_value": {"field_id": a.TYPE_FIELD, "text": "Продажа офлайн"}}]}
 

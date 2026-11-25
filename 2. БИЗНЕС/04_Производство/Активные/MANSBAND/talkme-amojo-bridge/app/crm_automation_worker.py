@@ -1079,19 +1079,21 @@ def apply_type_event(db, c, catalog, event) -> str:
 
 
 def fetch_type_events(c, start: int, until: int) -> list:
+    expected = f"custom_field_{a.TYPE_FIELD}_value_changed"
     rows = []
     for page in range(1, 101):
         data = c.get("/api/v4/events", page=page, limit=100, **{
-            "filter[entity]": "lead", "filter[type]": "custom_field_value_changed",
+            "filter[entity]": "lead", "filter[type]": expected,
             "filter[created_at][from]": start, "filter[created_at][to]": until})
         batch = data.get("_embedded", {}).get("events", [])
         for item in batch:
-            if item.get("entity_type") != "lead" or item.get("type") != "custom_field_value_changed":
+            kind = item.get("type")
+            if item.get("entity_type") != "lead" or kind not in (expected, "custom_field_value_changed"):
                 raise ValueError("unexpected_type_event")
             at = int(item["created_at"])
             if not start <= at <= until:
                 raise ValueError("type_event_outside_interval")
-            if type_event_touches(item):
+            if kind == expected or type_event_touches(item):
                 rows.append(item)
         if not data.get("_links", {}).get("next") and len(batch) < 100:
             return rows
