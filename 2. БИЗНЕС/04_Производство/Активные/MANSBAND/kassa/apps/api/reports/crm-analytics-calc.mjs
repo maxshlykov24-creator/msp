@@ -622,6 +622,31 @@ export function responseSummary(deals, timeZone = "Europe/Moscow") {
   };
 }
 
+/** Порог для проверки: не ниже часа в рабочее время и выше типичного максимума по сделкам периода. */
+export function slowReplyCutoff(dealMaxMinutes) {
+  const values = dealMaxMinutes.filter((value) => Number.isFinite(value));
+  if (!values.length) return 60;
+  const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
+  return Math.max(60, mean * 1.5);
+}
+
+/** Сделки с ответом Wazzup: сортировка по самому долгому ответу, отдельно список на проверку. */
+export function replyAudit(deals, timeZone = "Europe/Moscow") {
+  const rows = [];
+  for (const deal of deals) {
+    if (!Array.isArray(deal.messages)) continue;
+    const stat = wazzupReplies(deal.messages, timeZone);
+    if (!stat.series.length && !stat.pending) continue;
+    const max = stat.series.length ? Math.max(...stat.series.map((item) => item.minutes)) : null;
+    rows.push({ deal, stat, max, pending: stat.pending > 0 });
+  }
+  const cutoff = slowReplyCutoff(rows.map((row) => row.max).filter((value) => value != null));
+  const rank = (row) => (row.pending ? Number.POSITIVE_INFINITY : row.max ?? -1);
+  rows.sort((a, b) => rank(b) - rank(a));
+  const slow = rows.filter((row) => row.pending || (row.max != null && row.max >= cutoff));
+  return { cutoff, rows, slow: slow.map((row) => row.deal), all: rows.map((row) => row.deal) };
+}
+
 export function medianHours(rows, stages) {
   const start = stages[0];
   const goal = stages.at(-1);

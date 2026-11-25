@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import {
   DICTIONARY, QUALITY_SOURCES, SALES, OFFLINE, ONLINE, TEST_TAG, acceptance,
   catalogProblems, chain, classifyTouch, checkboxDisagreements, cohort, digestOverdue,
-  funnel, general, isKassaWeekSuccess, kassaCases, kassaNumberFromLink, kassaStatus, liveStageNames, medianHours, normalizeLead, outcomeAt, overdueStages, reopenGate, responseSummary, wazzupReplies,
+  funnel, general, isKassaWeekSuccess, kassaCases, kassaNumberFromLink, kassaStatus, liveStageNames, medianHours, normalizeLead, outcomeAt, overdueStages, reopenGate, replyAudit, responseSummary, slowReplyCutoff, wazzupReplies,
   overdueTasks, periodBounds, periodCovered, qualOutsideTarget, queueArchiveStart, queueAt, queueHistory, stageAt, zonedParts, zonedTimeToUtc,
 } from "../reports/crm-analytics-calc.mjs";
 
@@ -190,6 +190,17 @@ assert.equal(wazzupReplies([{ at: zonedTimeToUtc(2026, 11, 16, 9, 0, 0, TZ), dir
 assert.equal(wazzupReplies([{ at: zonedTimeToUtc(2026, 11, 20, 22, 50, 0, TZ), dir: "in" }, { at: zonedTimeToUtc(2026, 11, 21, 10, 10, 0, TZ), dir: "out" }]).minutes[0], 20);
 assert.equal(responseSummary([{ messages: [{ at: noonReply, dir: "in" }, { at: noonReply + 2 * 60_000, dir: "out" }] }, { messages: null }, { messages: [] }]).mean, 2);
 assert.equal(responseSummary([{ messages: [{ at: noonReply, dir: "out" }] }]).mean, null);
+assert.equal(slowReplyCutoff([5, 8, 12, 200]), 84.375);
+assert.equal(slowReplyCutoff([90, 100, 110]), 150);
+const audit = replyAudit([
+  { id: 1, messages: [{ at: noonReply, dir: "in" }, { at: noonReply + 2 * 60_000, dir: "out" }] },
+  { id: 2, messages: [{ at: noonReply, dir: "in" }, { at: noonReply + 90 * 60_000, dir: "out" }] },
+  { id: 3, messages: [{ at: noonReply, dir: "in" }] },
+], TZ);
+assert.equal(audit.cutoff, 69);
+assert.deepEqual(audit.slow.map((deal) => deal.id), [3, 2]);
+assert.equal(audit.all[0].id, 3);
+assert.equal(audit.all[1].id, 2);
 const paced = deal({ id: 25, status: 142, closed: monday + 5 * 3600000 }, {
   historyComplete: true,
   history: [{ stage: "Дано обещание", at: monday }, { stage: "Доставлен", at: monday + 5 * 3600000 }],
