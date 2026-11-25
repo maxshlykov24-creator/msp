@@ -51,8 +51,7 @@ const LOGISTICS = {
 };
 
 export const QUALITY_SOURCES = {
-  response: { available: false, reason: "Журнал первого ответа не найден: чаты лежат в Wazzup, в кассе его нет." },
-  calls: { available: false, reason: "Полного журнала звонков нет. Коллтрекинг знаменателем быть не может." },
+  response: { available: false, reason: "Журнал сообщений Wazzup в этот срез не вошёл." },
 };
 
 export function classifyTouch({ historyComplete, history, createdInTerminal, kassaCreated, priorOpenLead, priorLeadKnown }) {
@@ -147,8 +146,7 @@ export const DICTIONARY = [
   { id: "overdueTasks", name: "Просроченные задачи", period: "Задачи сделок, закрытых в периоде, включая уже выполненные.", source: "complete_till и updated_at выполненной задачи. Отдельного времени выполнения amo не отдаёт.", empty: "Нет задач — ноль. Не путать с открытыми задачами на сейчас." },
   { id: "overdueStages", name: "Просроченные этапы", period: "Закрытые в периоде, только сохранившийся срок.", source: "Поля STAGE_DATE_FIELDS и задачи. Поле 3279145 для прошлого этапа не используется.", empty: "Нет сохранённого срока — строка «срок не сохранился», не просрочка." },
   { id: "digest", name: "Сейчас просрочено", period: "Открытые сделки и задачи на момент среза.", source: "Те же правила, что ежедневная сводка моста, календарь Москвы.", empty: "Пропуски сводки показываются отдельно и не добиваются." },
-  { id: "response", name: "Среднее время ответа", period: "Не считается.", source: "Журнал первого ответа не найден.", empty: "На экране «нет источника», не ноль." },
-  { id: "calls", name: "Пропущенные звонки и перезвоны", period: "Не считается.", source: "Коллтрекинг не является полным журналом Телфина.", empty: "На экране «нет источника», не ноль." },
+  { id: "response", name: "Среднее время ответа", period: "Сделки, закрытые в выбранном периоде.", source: "Сообщения Wazzup: от первого входящего в серии до следующего исходящего. Звонки и прочие каналы не входят.", empty: "Нет пары входящее и ответ: прочерк, не ноль. Неотвеченная серия в среднее не входит." },
 ];
 
 export function canonicalStage(name) {
@@ -305,6 +303,9 @@ export function normalizeLead(lead, users, extras = {}) {
     unsorted: extras.unsorted === true,
     duplicate: reason === DUPLICATE_REASON,
     owner: users.get(ownerId) ?? (ownerId ? `Сотрудник ${ownerId}` : "Не указан"),
+    messages: Array.isArray(extras.messages)
+      ? extras.messages.filter((item) => item && (item.dir === "in" || item.dir === "out") && Number.isFinite(Number(item.at))).map((item) => ({ at: Number(item.at), dir: item.dir }))
+      : null,
   };
 }
 
@@ -560,6 +561,42 @@ export function kassaCases(crmDeals, sales, from, to) {
     else if (deal.result == null) closedOpen.push({ number: sale.number, leadId: sale.amoLeadId });
   }
   return { onlyKassa, closedOpen, amoMissing };
+}
+
+/** Минуты до ответа Wazzup. Повторные входящие в той же серии таймер не сбрасывают. Исходящее без вопроса не считается. */
+export function wazzupReplies(messages) {
+  const sorted = [...(messages ?? [])].filter((item) => item && (item.dir === "in" || item.dir === "out") && Number.isFinite(item.at)).sort((a, b) => a.at - b.at);
+  const minutes = [];
+  let waiting = null;
+  for (const message of sorted) {
+    if (message.dir === "in") {
+      if (waiting == null) waiting = message.at;
+    } else if (waiting != null) {
+      minutes.push((message.at - waiting) / 60000);
+      waiting = null;
+    }
+  }
+  return { minutes, pending: waiting == null ? 0 : 1 };
+}
+
+export function responseSummary(deals) {
+  const minutes = [];
+  const answered = [];
+  let pending = 0;
+  for (const deal of deals) {
+    if (!Array.isArray(deal.messages)) continue;
+    const stat = wazzupReplies(deal.messages);
+    pending += stat.pending;
+    if (!stat.minutes.length) continue;
+    minutes.push(...stat.minutes);
+    answered.push(deal);
+  }
+  return {
+    mean: minutes.length ? minutes.reduce((sum, value) => sum + value, 0) / minutes.length : null,
+    count: minutes.length,
+    pending,
+    deals: answered,
+  };
 }
 
 export function medianHours(rows, stages) {

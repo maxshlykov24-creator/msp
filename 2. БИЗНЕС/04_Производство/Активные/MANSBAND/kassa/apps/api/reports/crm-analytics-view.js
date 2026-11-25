@@ -8,6 +8,7 @@ const badge = document.querySelector(".demo");
 if (badge && meta.accepted) badge.remove();
 else if (badge) badge.textContent = "Сверка не закрыта";
 const fmt = (value) => new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 1 }).format(value);
+const plural = (count, one, few, many) => { const n = Math.abs(count) % 100; const n1 = n % 10; if (n > 10 && n < 20) return many; if (n1 === 1) return one; if (n1 > 1 && n1 < 5) return few; return many; };
 const percent = (part, whole) => whole ? fmt(100 * part / whole) + "%" : "—";
 const pad = (value) => String(value).padStart(2, "0");
 const dayKey = (ms) => { const zone = zonedParts(ms, tz); return `${zone.y}-${pad(zone.m)}-${pad(zone.d)}`; };
@@ -19,7 +20,7 @@ const titles = { home: "Статистика", crm: "Статистика CRM", 
 const intro = {
   home: "Цифры этого среза посчитаны из amoCRM. Где источника нет, на экране так и написано.",
   crm: "Выбери вопрос, на который нужен ответ.",
-  quality: "Сроки задач и этапов по закрытым сделкам. Время ответа и звонки без журнала не считаются.",
+  quality: "Сроки задач и этапов по закрытым сделкам. Время ответа считается по сообщениям Wazzup.",
   general: "Сколько обращений становятся покупками и из каких источников они приходят.",
   effect: "С каких этапов заявки доходят до встречи или передачи на сборку.",
   log: "Как товар доходит до магазина и до клиента по этапам CRM.",
@@ -37,7 +38,7 @@ let page = Object.hasOwn(titles, location.hash.slice(1)) ? location.hash.slice(1
 let actions = new Map();
 let dialogActions = new Map();
 let serial = 0;
-const state = { kind: "week", date: meta.week.from + 3600000, mode: "results", source: "*", touch: "*", lane: "off" };
+const state = { kind: "week", date: meta.week.from + 3600000, mode: "results", source: "*", touch: "*", lane: "off", explain: false };
 function reg(fn, dialog = false) { const key = String(++serial); (dialog ? dialogActions : actions).set(key, fn); return `data-act="${key}"`; }
 function nav(next) { if (!Object.hasOwn(titles, next)) return; if (drawer.open) drawer.close(); if (!embedded && location.hash !== "#" + next) { location.hash = next; return; } page = next; render(); window.scrollTo(0, 0); }
 addEventListener("hashchange", () => { page = Object.hasOwn(titles, location.hash.slice(1)) ? location.hash.slice(1) : "home"; if (drawer.open) drawer.close(); render(); window.scrollTo(0, 0); });
@@ -96,11 +97,11 @@ function home() {
   const delivered = closed.filter((deal) => deal.lane === state.lane && deal.historyComplete && deal.history.some((event) => event.stage === goal));
   const queue = meta.queueComplete ? queueAt(deals, builtAt) : [];
   const trail = archivedQueue();
-  return `<p class="main-period">Срез ${stamp(builtAt)} · ${meta.week.label}</p><div class="cards">${openButton("crm", "entry hero", `<span class="rowhead">${badgeIcon("crm")}${chev}</span><h2>Статистика CRM</h2><p>Обращения, качество работы и путь до цели.</p><div class="cardfoot"><div><div class="big">${closed.length ? fmt(closed.length) : "—"}</div><div class="caption">${closed.length ? "завершённых заявок в покрытом периоде" : "период вне среза"}</div></div></div>`)}${openButton("log", "entry log", `<span class="rowhead">${badgeIcon("log")}${chev}</span><h2>Логистика</h2><p>Путь товара до магазина и до клиента.</p><div class="cardfoot"><div><div class="big">${closed.length ? fmt(delivered.length) : "—"}</div><div class="caption">${esc(CHANNEL[state.lane] + " · " + (goal || "цель не найдена в живой воронке"))}</div></div></div>`)}</div>` +
-    openButton("queue", "entry wide", `<div class="cardtitle">${badgeIcon("queue")}<div><h2>Сейчас в работе</h2><p>Открытые заявки, включая неразобранное.</p></div></div><div class="flex">${spark(trail.map((point) => point.ids.length))}<strong class="big">${meta.queueComplete ? fmt(queue.length) : "—"}</strong>${chev}</div>`) +
+  return `<p class="main-period">Срез ${stamp(builtAt)} · ${meta.week.label}</p><div class="cards">${openButton("crm", "entry hero", `<span class="rowhead">${badgeIcon("crm")}${chev}</span><h2>Статистика CRM</h2><p class="aside">Обращения, качество работы и путь до цели.</p><div class="cardfoot"><div><div class="big">${closed.length ? fmt(closed.length) : "—"}</div><div class="caption">${closed.length ? "завершённых заявок в покрытом периоде" : "период вне среза"}</div></div></div>`)}${openButton("log", "entry log", `<span class="rowhead">${badgeIcon("log")}${chev}</span><h2>Логистика</h2><p class="aside">Путь товара до магазина и до клиента.</p><div class="cardfoot"><div><div class="big">${closed.length ? fmt(delivered.length) : "—"}</div><div class="caption">${esc(CHANNEL[state.lane] + " · " + (goal || "цель не найдена в живой воронке"))}</div></div></div>`)}</div>` +
+    openButton("queue", "entry wide", `<div class="cardtitle">${badgeIcon("queue")}<div><h2>Сейчас в работе</h2><p class="aside">Открытые заявки, включая неразобранное.</p></div></div><div class="flex">${spark(trail.map((point) => point.ids.length))}<strong class="big">${meta.queueComplete ? fmt(queue.length) : "—"}</strong>${chev}</div>`) +
     `<h2 class="sectiontitle">Следующие разделы</h2><div class="futuregrid">${[["goods", "Товары"], ["users", "Консультанты"]].map(([name, label]) => `<div class="future">${ic(name)}<h3>${label}</h3><span class="chip">В планах</span></div>`).join("")}</div>`;
 }
-function crm() { return `<div class="three">${[["quality", "Качество работы", "Сроки задач и этапов. Ответ и звонки без журнала."], ["general", "Общая статистика", "Целевые заявки, покупки и источники."], ["effect", "Эффективность", "На каких этапах заявки не доходят до цели."]].map(([target, title, text]) => openButton(target, "entry", `<span class="rowhead">${badgeIcon(target)}${chev}</span><h2>${title}</h2><p>${text}</p>`)).join("")}</div>`; }
+function crm() { return `<div class="three">${[["quality", "Качество работы", "Сроки задач, этапов и ответ в Wazzup."], ["general", "Общая статистика", "Целевые заявки, покупки и источники."], ["effect", "Эффективность", "На каких этапах заявки не доходят до цели."]].map(([target, title, text]) => openButton(target, "entry", `<span class="rowhead">${badgeIcon(target)}${chev}</span><h2>${title}</h2><p class="aside">${text}</p>`)).join("")}</div>`; }
 function segment(key, options) { return `<div class="seg">${options.map(([value, label]) => `<button aria-pressed="${state[key] === value}" ${reg(() => { state[key] = value; render(); })}>${label}</button>`).join("")}</div>`; }
 function shift(dir) { const period = bounds(); state.date = dir < 0 ? period.from - 3600000 : period.to + 3600000; render(); }
 function toolbar() {
@@ -110,11 +111,12 @@ function toolbar() {
 }
 function select(key, label, options) { return `<label class="filter">${label}<select data-select="${key}">${options.map(([value, name]) => `<option value="${esc(value)}" ${state[key] === value ? "selected" : ""}>${esc(name)}</option>`).join("")}</select></label>`; }
 document.addEventListener("change", (event) => {
-  if (event.target.id === "anchor") { const [y, m, d] = event.target.value.split("-").map(Number); if (y) state.date = zonedTimeToUtc(y, m, d, 12, 0, 0, tz); render(); }
+  if (event.target.id === "explain") { state.explain = event.target.checked; render(); }
+  else if (event.target.id === "anchor") { const [y, m, d] = event.target.value.split("-").map(Number); if (y) state.date = zonedTimeToUtc(y, m, d, 12, 0, 0, tz); render(); }
   else if (event.target.dataset.select) { state[event.target.dataset.select] = event.target.value; render(); }
 });
 function metric(name, value, sub, fn, tone = "") { return `<button class="metric" ${reg(fn)}><span>${name}</span><strong class="${tone}">${value}</strong><small>${sub}</small></button>`; }
-const panel = (title, text, body) => `<section class="panel"><h2>${title}</h2>${text ? `<p class="note">${text}</p>` : ""}${body}</section>`;
+const panel = (title, text, body) => `<section class="panel"><h2>${title}</h2>${text ? `<p class="note aside">${text}</p>` : ""}${body}</section>`;
 function barRow(label, count, total, fn, sub = "") { return `<button class="stage" ${reg(fn)}><span>${esc(label)}${sub ? `<small>${esc(sub)}</small>` : ""}</span><span class="track"><i style="width:${total ? 100 * count / total : 0}%"></i></span><span class="alignr"><b>${count}</b><small>${percent(count, total)}</small></span></button>`; }
 function missingSource(title, reason) { show(title, "Нет источника", `<p class="note">${esc(reason)}</p>`); }
 function generalReport() {
@@ -126,7 +128,7 @@ function generalReport() {
   const suffix = { target: "от всех", qual: "от целевых", success: "от всех", fail: "от всех" };
   const sources = [...new Set(groups.all.map((deal) => deal.source))].sort((a, b) => a.localeCompare(b, "ru"));
   let html = `<div class="filterbar">${segment("mode", [["results", "Результаты"], ["created", "Источники"]])}${select("touch", "Касание", [["*", "Все заявки"], ["yes", "С касанием"], ["no", "Без касания"]])}${state.mode === "created" ? select("source", "Источник", [["*", "Все источники"], ...sources.map((source) => [source, source])]) : ""}</div>`;
-  html += `<p class="hintline">${state.mode === "created" ? "По дате создания. Исход на конец периода берётся из событий этапа." : "По дате завершения. Успех и провал в сумме равны всем закрытым сделкам."}</p>`;
+  html += `<p class="hintline aside">${state.mode === "created" ? "По дате создания. Исход на конец периода берётся из событий этапа." : "По дате завершения. Успех и провал в сумме равны всем закрытым сделкам."}</p>`;
   html += `<div class="metrics">${order.map(([key, label], index) => metric(label, fmt(groups[key].length), key === "all" ? (state.mode === "created" ? "создано за период" : "завершено за период") : percent(groups[key].length, den[key]) + " " + suffix[key], () => list(label, groups[key], "Состав показателя."), index === 3 ? "accent" : index === 4 ? "bad" : "")).join("")}</div>`;
   if (state.mode === "created") {
     const outside = qualOutsideTarget(groups, "sources", period);
@@ -138,7 +140,7 @@ function generalReport() {
     html += panel("Почему сделки закрыли в провал?", "Доля от всех провалов. Сдвоенные карточки не склеиваются.", reasons.length ? `<div class="stack">${reasons.map(([reason, group]) => barRow(reason, group.length, groups.fail.length, () => list(reason, group, "Причина закрытия."))).join("")}</div>` : empty("Провалов за период нет."));
     if (groups.success.length + groups.fail.length !== groups.all.length) html += `<p class="hintline">Ошибка расчёта: успех и провал не дают сумму закрытых сделок.</p>`;
   }
-  return html + qualityLine(groups.all) + `<details><summary>Как определяются целевые, квалы и касание?</summary><p>Успех автоматически считается и целевым, и квалом. Провал сам по себе целевым не становится. Без касания: заявки раньше не было, и консультант создал её сразу в успехе или провале. Если следа недостаточно, касание не определено и в оба фильтра не входит.</p></details>`;
+  return html + qualityLine(groups.all) + `<details class="aside"><summary>Как определяются целевые, квалы и касание?</summary><p>Успех автоматически считается и целевым, и квалом. Провал сам по себе целевым не становится. Без касания: заявки раньше не было, и консультант создал её сразу в успехе или провале. Если следа недостаточно, касание не определено и в оба фильтра не входит.</p></details>`;
 }
 function qualityLine(group) {
   const items = [
@@ -159,19 +161,21 @@ function qualityReport() {
   const group = cohort(deals, "results", bounds(), {});
   const tasks = overdueTasks(group);
   const stages = overdueStages(group, builtAt);
+  const replies = responseSummary(group);
+  const chatReady = meta.chat === "wazzup";
   const cards = [
-    metric("Среднее время ответа", "нет источника", "Журнал первого ответа не найден", () => missingSource("Среднее время ответа", QUALITY_SOURCES.response.reason)),
-    metric("Просроченные задачи", fmt(tasks.length), "срок раньше выполнения или закрытия", () => list("Просроченные задачи", tasks.map((row) => row.deal), "Время выполнения взято из updated_at: отдельного поля amo не отдаёт.")),
-    metric("Просроченные этапы", fmt(stages.overdue.length), "только где срок сохранился", () => list("Просроченные этапы", stages.overdue.map((row) => row.deal), "Сегодняшний календарный день ещё не просрочка. Срок без сохранившейся даты сюда не входит.")),
-    metric("Пропущенные звонки", "нет источника", "Полного журнала звонков нет", () => missingSource("Пропущенные звонки", QUALITY_SOURCES.calls.reason)),
-    metric("Перезвонили", "нет источника", "Без журнала звонков не считается", () => missingSource("Перезвоны", QUALITY_SOURCES.calls.reason)),
+    metric("Среднее время ответа", chatReady ? (replies.mean == null ? "—" : fmt(replies.mean) + " мин") : "нет источника", chatReady ? (replies.count ? fmt(replies.count) + " " + plural(replies.count, "ответ", "ответа", "ответов") : "нет ответов") : "Wazzup не прочитан", () => chatReady ? list("Ответы Wazzup", replies.deals, "Серии сообщений Wazzup, в которых был ответ.") : missingSource("Среднее время ответа", QUALITY_SOURCES.response.reason)),
+    metric("Просроченные задачи", fmt(tasks.length), "задач", () => list("Просроченные задачи", tasks.map((row) => row.deal), "Время выполнения взято из updated_at: отдельного поля amo не отдаёт.")),
+    metric("Просроченные этапы", fmt(stages.overdue.length), "этапов", () => list("Просроченные этапы", stages.overdue.map((row) => row.deal), "Сегодняшний календарный день ещё не просрочка. Срок без сохранившейся даты сюда не входит.")),
   ];
   const byName = new Map();
   for (const row of tasks) { const list = byName.get(row.task.name) ?? []; list.push(row.deal); byName.set(row.task.name, list); }
   const byStage = new Map();
   for (const row of stages.overdue) { const list = byStage.get(row.stage) ?? []; list.push(row.deal); byStage.set(row.stage, list); }
-  const digest = meta.digest?.complete ? `<p class="note">Сейчас просрочено, по правилам ежедневной сводки: задач ${fmt(meta.digest.tasks)}, этапов ${fmt(meta.digest.stages)}. Это другое число и с периодом не складывается. Без обязательной даты: ${fmt(meta.digest.missing)}. Задач с недоступной карточкой: ${fmt(meta.digest.unavailable)}.</p>` : `<p class="note">Сейчас просрочено в этот срез не вошло: список открытых задач собран не полностью.</p>`;
-  return `<p class="hintline">По дате завершения. Просрочка периода включает уже выполненные задачи. Срок, который не сохранился, в просрочку не ставится: таких пребываний ${fmt(stages.missing.length)}.</p><div class="metrics">${cards.join("")}</div><div class="double">${groupPanel("Какие задачи просрочили?", byName, tasks.length)}${groupPanel("На каких этапах задержались?", byStage, stages.overdue.length)}</div>${digest}`;
+  const digest = meta.digest?.complete
+    ? `<p class="note">Сейчас просрочено: задачи ${fmt(meta.digest.tasks)}, этапы ${fmt(meta.digest.stages)}.</p><p class="note aside">Это другое число и с периодом не складывается. Без обязательной даты: ${fmt(meta.digest.missing)}. Задач с недоступной карточкой: ${fmt(meta.digest.unavailable)}.${chatReady ? ` Неотвеченных серий Wazzup: ${fmt(replies.pending)}.` : ""}</p>`
+    : `<p class="note">Сейчас просрочено в этот срез не вошло.</p><p class="note aside">Список открытых задач собран не полностью.</p>`;
+  return `<p class="hintline aside">По дате завершения. Просрочка периода включает уже выполненные задачи. Срок, который не сохранился, в просрочку не ставится: таких пребываний ${fmt(stages.missing.length)}. Ответ считается от первого входящего Wazzup в серии до следующего исходящего. Звонки не входят.</p><div class="metrics">${cards.join("")}</div><div class="double">${groupPanel("Какие задачи просрочили?", byName, tasks.length)}${groupPanel("На каких этапах задержались?", byStage, stages.overdue.length)}</div>${digest}`;
 }
 function groupPanel(title, map, total) {
   const entries = [...map.entries()].sort((a, b) => b[1].length - a[1].length);
@@ -191,8 +195,8 @@ function funnelReport(logistics) {
     panel("Цель · " + (report.goal || "в живой воронке не найдена"), "Повторный вход заявку не удваивает. Цель считается, только если она наступила в этот заход или позже. Имя этапа берётся из amo.", stages.length ? `<div class="stack">${rowsHtml}</div>` : empty("В живой воронке нет этапов этой цепочки.")) +
     speedPanel +
     panel("Чтобы сумма сходилась с закрытыми", "Сделки вне цепочки и сделки с неполной историей показаны отдельно.", rest) +
-    `<p class="note">В другой канал или в конфликт воронки и поля ушло ${fmt(aside.length)} закрытых сделок. Они в строки этого канала не раскидываются.</p>` +
-    `<details><summary>Как считается достижение цели?</summary><p>Одна заявка на этап. Сертификат, аренда и «не готов» в эти цепочки не входят. Успех без посещения цели остаётся в «не дошли» как успех без этого этапа. Медиана логистики считается отдельно и не меняет число дошедших до цели.</p></details>`;
+    (aside.length ? `<p class="note">Другой канал: ${fmt(aside.length)}</p>` : "") +
+    `<details class="aside"><summary>Как считается достижение цели?</summary><p>Одна заявка на этап. Сертификат, аренда и «не готов» в эти цепочки не входят. Успех без посещения цели остаётся в «не дошли» как успех без этого этапа. Медиана логистики считается отдельно и не меняет число дошедших до цели. Строка «Другой канал» — это закрытые сделки, которые не попали в выбранный канал.</p></details>`;
 }
 function stageDetail(item, goal) {
   const missed = item.missed;
@@ -222,7 +226,7 @@ function queueReport() {
   const trail = archivedQueue();
   const max = Math.max(...trail.map((point) => point.ids.length), 1);
   const chart = trail.length ? panel("Очередь на конец дня", "Последние полные дни. Столбец открывает состав именно на тот вечер. Этап внутри берётся из истории, а не из сегодняшней карточки.", `<div class="chart">${trail.map((point) => `<button title="${dateFmt(point.at)} · ${point.ids.length}" aria-label="${dateFmt(point.at)}: ${point.ids.length} в работе" ${reg(() => queuePoint(point))}><i style="height:${Math.max(2, 100 * point.ids.length / max)}%"></i></button>`).join("")}</div><div class="axis"><span>${dateFmt(trail[0].at)} · ${fmt(trail[0].ids.length)}</span><span>${dateFmt(trail.at(-1).at)} · ${fmt(trail.at(-1).ids.length)}</span></div>`) : `<p class="note">История по дням в этот срез не вошла: список сделок, закрытых за эти дни, прочитан не полностью. Текущая очередь ниже от этого не собирается по частям.</p>`;
-  return `<p class="hintline">Срез на ${stamp(builtAt)}. Период на эту очередь не влияет.</p><div class="metrics">${metric("Открытые заявки", fmt(open.length), "включая неразобранное", () => list("Все открытые заявки", open.slice().sort((a, b) => a.created - b.created), "Сначала самые ранние."))}</div>${chart}` +
+  return `<p class="hintline">Срез на ${stamp(builtAt)}<span class="aside">. Период на эту очередь не влияет.</span></p><div class="metrics">${metric("Открытые заявки", fmt(open.length), "включая неразобранное", () => list("Все открытые заявки", open.slice().sort((a, b) => a.created - b.created), "Сначала самые ранние."))}</div>${chart}` +
     panel("На каких этапах накопились заявки?", "Текущий этап взят с карточки amo.", `<div class="stack">${entries.map(([stage, group]) => barRow(stage, group.length, open.length, () => list(stage, group, "Открытые заявки на этом этапе."))).join("")}</div>`);
 }
 function kassaLine() {
@@ -235,21 +239,22 @@ function review() {
   const blockers = meta.blockers?.length ? `<ul class="reasonlist">${meta.blockers.map((item) => `<li>${esc(item)}</li>`).join("")}</ul>` : `<p class="note">Список расхождений этой недели пуст.</p>`;
   const fields = meta.fieldProblems?.length ? `<p class="note">${meta.fieldProblems.map((item) => esc(item)).join("<br>")}</p>` : "";
   return panel("Почему бейдж сверки ещё на экране", meta.reopen?.note ?? "", blockers + fields) +
-    panel("Что не подключено", "Пока журнала нет, здесь нет нуля.", `<div class="stack"><button class="item" ${reg(() => missingSource("Среднее время ответа", QUALITY_SOURCES.response.reason))}><span>Время ответа<small>${esc(QUALITY_SOURCES.response.reason)}</small></span>${ic("right")}</button><button class="item" ${reg(() => missingSource("Звонки", QUALITY_SOURCES.calls.reason))}><span>Пропущенные звонки<small>${esc(QUALITY_SOURCES.calls.reason)}</small></span>${ic("right")}</button></div>`) +
-    panel("Касса", kassaLine(), "") +
+    panel("Время ответа", "", meta.chat === "wazzup" ? `<p class="note aside">Сообщения Wazzup. Звонки не входят.</p>` : `<p class="note">${QUALITY_SOURCES.response.reason}</p>`) +
+    panel("Касса", "", `<p class="note">${kassaLine()}</p>`) +
     `<p class="note">Неделя среза: ${esc(meta.week.label)}. Закрыто ${fmt(meta.week.closed)}, создано ${fmt(meta.week.created)}. Расхождений с фильтром amo: ${fmt(meta.week.discrepancies)}. Расхождений чекбокса «Целевой»: ${fmt(meta.week.checkbox)}. Сдвоенных карточек: ${fmt(meta.week.duplicates)}.</p>`;
 }
 function uncovered() { return `<div class="empty"><strong>Этот период в срезе не собран</strong>Срез покрывает ${esc(meta.week.label)}. Непокрытый период не показывается нулями.</div>`; }
 function render() {
   actions.clear();
   document.body.classList.toggle("hub", page === "home");
+  document.body.classList.toggle("explain", state.explain);
   const inCrm = ["quality", "general", "effect"].includes(page);
   const report = inCrm || page === "log";
   const crumbs = `<nav class="crumbs" aria-label="Путь раздела"><span>Касса</span>${ic("right")}${page === "home" ? "<b>Статистика</b>" : `<button data-page="home">Статистика</button>${ic("right")}${inCrm ? `<button data-page="crm">CRM</button>${ic("right")}` : ""}<b>${titles[page]}</b>`}</nav>`;
   const content = { home, crm, quality: qualityReport, general: generalReport, effect: () => funnelReport(false), log: () => funnelReport(true), queue: queueReport, review }[page];
-  app.innerHTML = crumbs + `<header class="intro"><h1>${titles[page]}</h1><p>${intro[page]}</p></header>` +
+  app.innerHTML = crumbs + `<header class="intro"><h1>${titles[page]}</h1><p class="aside">${intro[page]}</p></header>` +
     (inCrm ? `<nav class="subnav" aria-label="Отчёты CRM">${[["quality", "Качество"], ["general", "Общая статистика"], ["effect", "Эффективность"]].map(([key, label]) => `<button data-page="${key}" ${page === key ? 'aria-current="page"' : ""}>${label}</button>`).join("")}</nav>` : "") +
-    (report ? toolbar() : "") + content() + `<footer class="footer"><span>${meta.accepted ? "Боевой срез" : "Сверка не закрыта"} · ${stamp(builtAt)}</span><div class="flex"><button class="link" data-page="review">Границы среза</button><button class="link" ${reg(methodology)}>Как читать статистику</button></div></footer>`;
+    (report ? toolbar() : "") + content() + `<footer class="footer"><span>${meta.accepted ? "Боевой срез" : "Сверка не закрыта"} · ${stamp(builtAt)}</span><div class="flex"><label class="switch"><input type="checkbox" id="explain" ${state.explain ? "checked" : ""}><span>Пояснения</span></label><button class="link" data-page="review">Границы среза</button><button class="link" ${reg(methodology)}>Как читать статистику</button></div></footer>`;
   document.title = titles[page] + " · MANSBAND";
 }
 render();

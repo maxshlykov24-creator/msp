@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import {
   DICTIONARY, QUALITY_SOURCES, SALES, OFFLINE, ONLINE, TEST_TAG, acceptance,
   catalogProblems, chain, classifyTouch, checkboxDisagreements, cohort, digestOverdue,
-  funnel, general, isKassaWeekSuccess, kassaCases, kassaNumberFromLink, kassaStatus, liveStageNames, medianHours, normalizeLead, outcomeAt, overdueStages, reopenGate,
+  funnel, general, isKassaWeekSuccess, kassaCases, kassaNumberFromLink, kassaStatus, liveStageNames, medianHours, normalizeLead, outcomeAt, overdueStages, reopenGate, responseSummary, wazzupReplies,
   overdueTasks, periodBounds, periodCovered, qualOutsideTarget, queueArchiveStart, queueAt, queueHistory, stageAt, zonedParts, zonedTimeToUtc,
 } from "../reports/crm-analytics-calc.mjs";
 
@@ -117,8 +117,9 @@ const offlineOnly = cohort([conflict], "sources", bounds, { lane: "off" });
 assert.equal(offlineOnly.length, 0);
 
 assert.equal(QUALITY_SOURCES.response.available, false);
-assert.equal(QUALITY_SOURCES.calls.available, false);
-assert.equal(DICTIONARY.some((row) => row.id === "response" && row.empty.includes("нет источника")), true);
+assert.equal(QUALITY_SOURCES.calls, undefined);
+assert.equal(DICTIONARY.some((row) => row.id === "calls"), false);
+assert.equal(DICTIONARY.some((row) => row.id === "response" && row.empty.includes("не ноль")), true);
 
 const now = zonedTimeToUtc(2026, 11, 20, 15, 0, 0, TZ);
 const dueToday = zonedTimeToUtc(2026, 11, 20, 0, 0, 0, TZ);
@@ -176,6 +177,11 @@ const stageRows = overdueStages([deal({ id: 24, status: 142, closed: monday + 2 
 })], now);
 assert.equal(stageRows.overdue.length, 1);
 assert.equal(medianHours([], ["Дано обещание", "Доставлен"]).hours, null);
+const replies = wazzupReplies([{ at: 0, dir: "in" }, { at: 60_000, dir: "in" }, { at: 5 * 60_000, dir: "out" }, { at: 10 * 60_000, dir: "out" }, { at: 11 * 60_000, dir: "in" }]);
+assert.deepEqual(replies.minutes, [5]);
+assert.equal(replies.pending, 1);
+assert.equal(responseSummary([{ messages: [{ at: 0, dir: "in" }, { at: 2 * 60_000, dir: "out" }] }, { messages: null }, { messages: [] }]).mean, 2);
+assert.equal(responseSummary([{ messages: [{ at: 0, dir: "out" }] }]).mean, null);
 const paced = deal({ id: 25, status: 142, closed: monday + 5 * 3600000 }, {
   historyComplete: true,
   history: [{ stage: "Дано обещание", at: monday }, { stage: "Доставлен", at: monday + 5 * 3600000 }],

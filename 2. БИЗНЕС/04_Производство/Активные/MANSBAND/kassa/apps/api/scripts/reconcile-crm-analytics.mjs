@@ -282,37 +282,83 @@ async function entityPages(pathname, key, leadId, completed) {
   return { rows: result.rows.filter((row) => Number(row.entity_id) === Number(leadId)), complete: result.complete && foreign.length === 0, ignored: foreign.length > 0 };
 }
 
-async function storeCard(id, allowDisable) {
+async function chatPages(leadId) {
+  const result = await pages("/events", "events", {
+    "filter[entity]": "lead",
+    "filter[entity_id]": leadId,
+    "filter[type][]": ["incoming_chat_message", "outgoing_chat_message"],
+  }, 20);
+  const foreign = result.rows.filter((row) => Number(row.entity_id) !== Number(leadId));
+  return { rows: result.rows.filter((row) => Number(row.entity_id) === Number(leadId)), complete: result.complete && foreign.length === 0, ignored: foreign.length > 0 };
+}
+function wazzupMessages(rows) {
+  const messages = [];
+  for (const event of rows) {
+    if (event.type !== "incoming_chat_message" && event.type !== "outgoing_chat_message") continue;
+    const origin = String(event.value_after?.[0]?.message?.origin ?? "");
+    if (!origin.startsWith("com.wazzup24")) continue;
+    const at = Number(event.created_at) * 1000;
+    if (!Number.isFinite(at)) continue;
+    messages.push({ at, dir: event.type === "incoming_chat_message" ? "in" : "out" });
+  }
+  return messages;
+}
+async function storeCard(id, allowDisable, withMessages) {
   const savedLead = checkpoint.leads[id];
   const needsEvents = eventsAvailable && !savedLead?.eventsComplete;
   const needsTasks = tasksAvailable && !savedLead?.tasksComplete;
-  if (savedLead && !needsEvents && !needsTasks) return "ready";
-  const events = eventsAvailable ? await entityPages("/events", "events", id) : { rows: [], complete: false, ignored: false };
-  const openTasks = tasksAvailable ? await entityPages("/tasks", "tasks", id, 0) : { rows: [], complete: false, ignored: false };
-  const doneTasks = tasksAvailable ? await entityPages("/tasks", "tasks", id, 1) : { rows: [], complete: false, ignored: false };
-  if (events.ignored || openTasks.ignored || doneTasks.ignored) {
-    if (allowDisable) {
-      eventsAvailable = events.ignored ? false : eventsAvailable;
-      tasksAvailable = openTasks.ignored || doneTasks.ignored ? false : tasksAvailable;
+  const needsMessages = withMessages && !savedLead?.messagesComplete;
+  if (savedLead && !needsEvents && !needsTasks && !needsMessages) return "ready";
+  let events = savedLead?.events ?? [];
+  let eventsComplete = savedLead?.eventsComplete === true;
+  let tasks = savedLead?.tasks ?? [];
+  let tasksComplete = savedLead?.tasksComplete === true;
+  let messages = savedLead?.messages ?? [];
+  let messagesComplete = savedLead?.messagesComplete === true;
+  if (!savedLead || needsEvents || needsTasks) {
+    const eventPage = eventsAvailable ? await entityPages("/events", "events", id) : { rows: [], complete: false, ignored: false };
+    const openTasks = tasksAvailable ? await entityPages("/tasks", "tasks", id, 0) : { rows: [], complete: false, ignored: false };
+    const doneTasks = tasksAvailable ? await entityPages("/tasks", "tasks", id, 1) : { rows: [], complete: false, ignored: false };
+    if (eventPage.ignored || openTasks.ignored || doneTasks.ignored) {
+      if (allowDisable) {
+        eventsAvailable = eventPage.ignored ? false : eventsAvailable;
+        tasksAvailable = openTasks.ignored || doneTasks.ignored ? false : tasksAvailable;
+      }
+      console.log(JSON.stringify({ filterIgnored: true, events: eventPage.ignored, tasks: openTasks.ignored || doneTasks.ignored, allowDisable }));
+      return "ignored";
     }
-    console.log(JSON.stringify({ filterIgnored: true, events: events.ignored, tasks: openTasks.ignored || doneTasks.ignored, allowDisable }));
-    return "ignored";
-  }
-  checkpoint.leads[id] = {
-    events: events.rows.map((event) => ({ id: event.id, created_at: event.created_at, value_before: event.value_before, value_after: event.value_after })),
-    tasks: [...openTasks.rows, ...doneTasks.rows].map((task) => ({
+    events = eventPage.rows.map((event) => ({ id: event.id, created_at: event.created_at, value_before: event.value_before, value_after: event.value_after }));
+    tasks = [...openTasks.rows, ...doneTasks.rows].map((task) => ({
       id: task.id, text: String(task.text ?? "Задача").replace(/\d{5,}/g, "••••").slice(0, 80), complete_till: task.complete_till, is_completed: task.is_completed,
       updated_at: task.updated_at, responsible_user_id: task.responsible_user_id, entity_id: task.entity_id,
-    })),
-    eventsComplete: events.complete,
-    tasksComplete: openTasks.complete && doneTasks.complete,
-  };
+    }));
+    eventsComplete = eventPage.complete;
+    tasksComplete = openTasks.complete && doneTasks.complete;
+  }
+  if (needsMessages) {
+    try {
+      const chat = await chatPages(id);
+      if (chat.ignored || !chat.complete) {
+        messages = [];
+        messagesComplete = false;
+        console.log(JSON.stringify({ chat: chat.ignored ? "ignored" : "partial", id }));
+      } else {
+        messages = wazzupMessages(chat.rows);
+        messagesComplete = true;
+      }
+    } catch (error) {
+      messages = [];
+      messagesComplete = false;
+      console.log(JSON.stringify({ chat: "error", id, message: error.message }));
+    }
+  }
+  checkpoint.leads[id] = { events, tasks, eventsComplete, tasksComplete, messages, messagesComplete };
   return "read";
 }
-async function readCards(ids, allowDisable) {
+async function readCards(ids, allowDisable, withMessages) {
   let done = 0;
   for (const id of ids) {
-    const status = await storeCard(id, allowDisable);
+    const status = await storeCard(id, allowDisable, withMessages);
     if (status === "ignored") {
       writePrivate(checkpointPath, checkpoint);
       return false;
@@ -325,7 +371,7 @@ async function readCards(ids, allowDisable) {
   return true;
 }
 const weekIds = [...byId.keys()];
-await readCards(weekIds, true);
+await readCards(weekIds, true, true);
 const unread = weekIds.filter((id) => {
   const saved = checkpoint.leads[id];
   if (!saved) return eventsAvailable || tasksAvailable;
@@ -349,7 +395,7 @@ if (openFetch.complete) for (const lead of openFetch.rows) takeLead(lead);
 let extraCards = true;
 if (extraIds.length) {
   try {
-    extraCards = await readCards(extraIds, false);
+    extraCards = await readCards(extraIds, false, false);
   } catch (error) {
     extraCards = false;
     console.log(JSON.stringify({ extraCards: "stopped", message: error.message }));
@@ -387,6 +433,7 @@ function build(lead) {
       done: task.is_completed ? Number(task.updated_at) * 1000 : null,
       responsibleId: task.responsible_user_id, completion: "updated_at",
     })),
+    messages: saved.messagesComplete ? (saved.messages ?? []) : null,
   });
 }
 
@@ -522,6 +569,7 @@ const meta = {
   queueHistory: archiveFetch.complete && openFetch.complete ? "closed_at" : "not_archive",
   queueArchiveFrom: archiveFetch.complete && openFetch.complete ? archiveFrom : null,
   queueComplete: openFetch.complete,
+  chat: weekIds.every((id) => checkpoint.leads[id]?.messagesComplete) ? "wazzup" : "missing",
   digest,
   liveStages: stages,
   chains: {
