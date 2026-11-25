@@ -110,6 +110,9 @@ export async function issueQueue(
     if (["invoice", "invoice_check", "documents", "documents_hand"].includes(current.kind)) {
       throw new Error("Документ не является денежной выплатой");
     }
+    if (current.status !== "pending" && current.status !== "issued") {
+      throw Object.assign(new Error("Позиция снята с выдачи"), { statusCode: 409 });
+    }
     const remaining = current.amount - current.issuedAmount;
     if (current.status === "issued" || remaining <= 0) {
       const rows = await tx.select().from(queuePayouts).where(eq(queuePayouts.queueId, id));
@@ -192,6 +195,9 @@ export async function issueSalary(
 
     if (["invoice", "invoice_check", "documents", "documents_hand"].includes(current.kind)) {
       throw new Error("Документ не является денежной выплатой");
+    }
+    if (current.status !== "pending" && current.status !== "issued") {
+      throw Object.assign(new Error("Позиция снята с выдачи"), { statusCode: 409 });
     }
     const remaining = current.amount - current.issuedAmount;
     if (current.status === "issued" || remaining <= 0) {

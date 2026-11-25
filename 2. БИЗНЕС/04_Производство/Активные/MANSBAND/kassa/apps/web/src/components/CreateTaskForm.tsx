@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ClipboardList } from "lucide-react";
 import { STORES, TASK_FLOW, TASK_QUEUES, taskTitle } from "@kassa/shared";
 import { api, USE_MOCK } from "../api/client";
-import { CONSULTANTS } from "../data/mock";
+import { useStaffDirectory } from "../auth/staffDirectory";
 import { Button, Field, Select, opts } from "./ui";
 
 // Виды задач и подписи — из реестра формулы (@kassa/shared/taskFlow).
@@ -34,16 +34,13 @@ const ROLE_LABEL: Record<TaskAssigneeRole, string> = Object.fromEntries(
 
 const STORE_OPTIONS = STORES.filter((s) => s !== "Онлайн-магазин");
 
-function peopleForRole(role: TaskAssigneeRole): string[] {
-  if (role === "consultant") {
-    return CONSULTANTS.filter((c) => c.role === "consultant").map((c) => c.name);
-  }
-  if (role === "logist") {
-    const supply = CONSULTANTS.filter((c) => c.role === "supply").map((c) => c.name);
-    return supply.length ? supply : ["Илья"];
-  }
-  const crm = CONSULTANTS.filter((c) => c.role === "callmanager").map((c) => c.name);
-  return crm.length ? crm : ["Call-менеджер"];
+function peopleForRole(
+  role: TaskAssigneeRole,
+  staff: Array<{ name: string; role: string }>
+): string[] {
+  if (role === "consultant") return staff.filter((person) => person.role === "consultant").map((person) => person.name);
+  if (role === "logist") return staff.filter((person) => person.role === "supply" || person.role === "logist").map((person) => person.name);
+  return staff.filter((person) => person.role === "crm").map((person) => person.name);
 }
 
 export function CreateTaskForm({
@@ -73,7 +70,8 @@ export function CreateTaskForm({
   const [store, setStore] = useState(defaultStore || STORE_OPTIONS[0] || "");
   const [dealNo, setDealNo] = useState(dealNumber != null ? String(dealNumber) : "");
   const [assigneeRole, setAssigneeRole] = useState<TaskAssigneeRole>("consultant");
-  const people = peopleForRole(assigneeRole);
+  const staff = useStaffDirectory();
+  const people = peopleForRole(assigneeRole, staff);
   const [assigneeName, setAssigneeName] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [saving, setSaving] = useState(false);

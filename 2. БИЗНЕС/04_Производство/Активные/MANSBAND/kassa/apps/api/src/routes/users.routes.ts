@@ -4,6 +4,8 @@ import * as auth from "../services/auth.js";
 import { appendAudit } from "../services/audit.js";
 
 export default async function usersRoutes(app: FastifyInstance) {
+  app.get("/users/directory", { preHandler: [app.authenticate] }, async () => auth.listStaffDirectory());
+
   app.get("/users", { preHandler: [app.requireRoles(["rop", "admin"])] }, async () => auth.listUsers());
 
   // Заводка учёток команды из интерфейса (созвон 20.08, п.7). Только admin.

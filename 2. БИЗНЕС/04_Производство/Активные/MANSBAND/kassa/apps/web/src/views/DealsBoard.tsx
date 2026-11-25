@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { isDealOverdue, isDealRelevantToUser, type Task } from "@kassa/shared";
 import { useAuth } from "../auth/AuthContext";
+import { useStaffDirectory } from "../auth/staffDirectory";
 import { api, USE_MOCK } from "../api/client";
 import { ArrowRight, Search, Filter, X, ChevronDown, ChevronUp } from "lucide-react";
 import { useStore } from "../store";
@@ -115,6 +116,11 @@ export function DealsBoard({
 }) {
   const { deals, dealsLoading } = useStore();
   const { user } = useAuth();
+  const staff = useStaffDirectory();
+  const consultantOptions = useMemo(() => {
+    const live = staff.filter((person) => person.role === "consultant").map((person) => person.name);
+    return [...new Set([...CONSULTANT_OPTIONS, ...live])];
+  }, [staff]);
   const moscowDay = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Moscow" }).format(new Date());
   const [today, setToday] = useState(moscowDay);
   const [attentionTasks, setAttentionTasks] = useState<Task[]>([]);
@@ -135,7 +141,9 @@ export function DealsBoard({
   ).map((d) => d.number)), [deals, today, user, attentionTasks]);
   const [q, setQ] = useState("");
   const [kindGroup, setKindGroup] = useState<string>(initialGroup ?? "all");
-  const [statusFilter, setStatusFilter] = useState<string>(initialStatus ?? "all");
+  const [statusFilter, setStatusFilter] = useState<string>(
+    initialStatus ?? (user?.role === "admin" ? "all" : "open")
+  );
   const [storeFilter, setStoreFilter] = useState<string>("all");
   const [consultantFilter, setConsultantFilter] = useState<string>("all");
   const [stageFilter, setStageFilter] = useState<string>("all");
@@ -161,9 +169,9 @@ export function DealsBoard({
   }, [initialGroup]);
   useEffect(() => {
     // Старые ссылки #board/.../done → успешные
-    const s = initialStatus === "done" ? "success" : (initialStatus ?? "all");
+    const s = initialStatus === "done" ? "success" : (initialStatus ?? (user?.role === "admin" ? "all" : "open"));
     setStatusFilter(s);
-  }, [initialStatus]);
+  }, [initialStatus, user?.role]);
 
   /**
    * Закрытие карточки: вернуться туда, откуда зашли (очередь Эдвина, Миши,
@@ -391,7 +399,7 @@ export function DealsBoard({
                 size="sm"
                 value={consultantFilter}
                 onChange={setConsultantFilter}
-                options={opts(["all", "Все"], ...CONSULTANT_OPTIONS)}
+                options={opts(["all", "Все"], ...consultantOptions)}
               />
             </div>
             <div className="min-w-[140px] flex-1">

@@ -11,6 +11,7 @@ import {
   taskFlowOf,
   taskTitle,
   isObsoleteStageTask,
+  isTestDeal,
 } from "@kassa/shared";
 import * as deals from "./deals.js";
 import * as financeQueue from "./queue.js";
@@ -548,6 +549,7 @@ export async function scanOverdueReserves(): Promise<number> {
   let created = 0;
   for (const row of rows) {
     const deal = row.data as Deal;
+    if (isTestDeal(deal)) continue;
     const until = deal.reservedUntil ?? deal.deferredUntil;
     if (!until || until >= today) continue;
 
@@ -607,6 +609,7 @@ export async function scanOverdueRentals(): Promise<number> {
   let changed = 0;
   for (const row of rows) {
     const deal = row.data as Deal;
+    if (isTestDeal(deal)) continue;
     if (!rentalEndPassed(deal.rentalTo, today)) continue;
     const saved = await deals.markRentalOverdue(deal);
     if (saved.stage === "Аренда просрочена" && deal.stage === "Аренда оплачена") changed += 1;

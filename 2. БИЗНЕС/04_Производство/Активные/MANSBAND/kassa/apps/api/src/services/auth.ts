@@ -42,6 +42,15 @@ export async function listUsers(): Promise<User[]> {
   return rows.map(toUser);
 }
 
+/** Имена живых продавцов и колл-менеджеров. Без логина и пароля. */
+export async function listStaffDirectory(): Promise<Array<{ name: string; role: string; store: string | null }>> {
+  const rows = await db
+    .select({ name: users.name, role: users.role, store: users.store })
+    .from(users)
+    .orderBy(users.name);
+  return rows.filter((row) => row.role === "consultant" || row.role === "crm");
+}
+
 export async function updateUserRole(id: string, role: User["role"]): Promise<User | null> {
   const [row] = await db.update(users).set({ role }).where(eq(users.id, id)).returning();
   return row ? toUser(row) : null;

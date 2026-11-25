@@ -11,12 +11,16 @@ import {
 } from "@kassa/shared";
 import * as q from "../services/queue.js";
 import * as deals from "../services/deals.js";
-import { isTestDeal } from "@kassa/shared";
 import { appendAudit } from "../services/audit.js";
 
 export default async function queueRoutes(app: FastifyInstance) {
   // Очередь Эдвина
-  app.get("/queue", { preHandler: [app.authenticate] }, async () => q.listQueue());
+  app.get("/queue", { preHandler: [app.authenticate] }, async (req) => {
+    const rows = await q.listQueue();
+    if (req.user.role === "admin") return rows;
+    const hidden = await deals.testDealKeys();
+    return rows.filter((row) => !hidden.numbers.has(row.dealNumber));
+  });
 
   app.post("/queue", { preHandler: [app.authenticate] }, async (req, reply) => {
     const parsed = queueItemSchema.safeParse(req.body);
@@ -167,7 +171,12 @@ export default async function queueRoutes(app: FastifyInstance) {
   });
 
   // Сары
-  app.get("/sary", { preHandler: [app.authenticate] }, async () => q.listSary());
+  app.get("/sary", { preHandler: [app.authenticate] }, async (req) => {
+    const rows = await q.listSary();
+    if (req.user.role === "admin") return rows;
+    const hidden = await deals.testDealKeys();
+    return rows.filter((row) => row.refDealNumber == null || !hidden.numbers.has(row.refDealNumber));
+  });
 
   app.post("/sary", { preHandler: [app.authenticate] }, async (req, reply) => {
     const parsed = createSarySchema.safeParse(req.body);

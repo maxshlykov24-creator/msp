@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import { StoreProvider } from "./store";
+import { useAuth } from "./auth/AuthContext";
 import { Layout, SHOW_SHIFT_CLOSE, type Route } from "./components/Layout";
 import type { DealKind } from "./data/types";
 import { DealsBoard } from "./views/DealsBoard";
@@ -181,6 +182,8 @@ function parseHash(): HashState {
 }
 
 export default function App() {
+  const { user } = useAuth();
+  const boardHome = user?.role === "admin" ? "all" : "open";
   const [state, setState] = useState<HashState>(parseHash);
   const [navSeq, setNavSeq] = useState(0);
 
@@ -192,9 +195,9 @@ export default function App() {
 
   useEffect(() => {
     if (SHOW_SHIFT_CLOSE || state.route !== "shift") return;
-    setState({ ...EMPTY, route: "board", boardGroup: "all", boardStatus: "all" });
-    window.location.hash = "board/all/all";
-  }, [state.route]);
+    setState({ ...EMPTY, route: "board", boardGroup: "all", boardStatus: boardHome });
+    window.location.hash = `board/all/${boardHome}`;
+  }, [state.route, boardHome]);
 
   const setRoute = (r: Route) => {
     setNavSeq((n) => n + 1);
@@ -227,7 +230,7 @@ export default function App() {
         route={state.route}
         setRoute={setRoute}
         onBoard={goBoard}
-        onHome={() => goBoard("all", "all")}
+        onHome={() => goBoard("all", boardHome)}
       >
         <Screens
           route={state.route}

@@ -22,7 +22,7 @@ import {
 import { useStore } from "../store";
 import { useAuth } from "../auth/AuthContext";
 import { canSeeFinanceQueues } from "../auth/roles";
-import { CONSULTANTS, STORES } from "../data/mock";
+import { STORES } from "../data/mock";
 import { OfflineBanner } from "./OfflineBanner";
 import { Select, opts } from "./Select";
 import { HintsToggle } from "../lib/hints";
@@ -109,11 +109,8 @@ export function Layout({
   // Дефолт консультанта в формах = имя залогиненного, если он в справочнике.
   useEffect(() => {
     if (!user?.name) return;
-    const names = CONSULTANTS.filter(
-      (c) => c.role === "consultant" || c.role === "callmanager"
-    ).map((c) => c.name);
-    if (names.includes(user.name)) setActiveConsultant(user.name);
-  }, [user?.name, setActiveConsultant]);
+    if (user.role === "consultant" || user.role === "crm") setActiveConsultant(user.name);
+  }, [user?.name, user?.role, setActiveConsultant]);
 
   const displayName = user?.name ?? "Пользователь";
   const [railOpen, setRailOpen] = useState(() => {
@@ -166,7 +163,7 @@ export function Layout({
       label: "Заявки",
       icon: <LayoutList {...ICO} />,
       active: route === "board",
-      onClick: () => onBoard("all", "all"),
+      onClick: () => onBoard("all", user?.role === "admin" ? "all" : "open"),
     },
     {
       id: "products",

@@ -517,6 +517,7 @@ export async function updateLead(
   if (patch.pipelineId) body.pipeline_id = patch.pipelineId;
   if (typeof patch.price === "number") body.price = patch.price;
   if (patch.customFields?.length) body.custom_fields_values = patch.customFields;
+  if (Object.keys(body).length === 0) return;
   await http.patch(`/leads/${id}`, body);
 }
 

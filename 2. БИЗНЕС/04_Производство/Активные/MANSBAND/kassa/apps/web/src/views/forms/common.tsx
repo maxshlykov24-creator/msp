@@ -12,7 +12,8 @@ import {
   UserCheck,
 } from "lucide-react";
 import { Button, Field, Select, StageBadge, opts } from "../../components/ui";
-import { CONSULTANTS, HIDDEN_STAGES, PURPOSES, SALE_STAGES } from "../../data/mock";
+import { HIDDEN_STAGES, PURPOSES, SALE_STAGES } from "../../data/mock";
+import { useStaffDirectory } from "../../auth/staffDirectory";
 import { CHANNEL_GROUPS } from "../../lib/selectGroups";
 import { dateCompact, dateRu, formatPhone, money, moneyPlain } from "../../lib/format";
 import { useStore } from "../../store";
@@ -210,8 +211,9 @@ export function ConsultantFields({
   allowEmptyConsultant?: boolean;
 }) {
   const { activeConsultant } = useStore();
-  const consultants = CONSULTANTS.filter((c) => c.role === "consultant").map((c) => c.name);
-  const callManagers = CONSULTANTS.filter((c) => c.role === "callmanager").map((c) => c.name);
+  const staff = useStaffDirectory();
+  const consultants = staff.filter((person) => person.role === "consultant").map((person) => person.name);
+  const callManagers = staff.filter((person) => person.role === "crm").map((person) => person.name);
 
   return (
     <div className="grid sm:grid-cols-2 gap-4">
