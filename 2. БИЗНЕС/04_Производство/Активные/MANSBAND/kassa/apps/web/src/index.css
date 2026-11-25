@@ -706,7 +706,8 @@ html.theme-light nav {
 .analytics-layout .kassa-main,
 .analytics-layout .kassa-main > .page-in,
 .analytics-layout .analytics-screen { display: flex; flex: 1 1 0%; flex-direction: column; min-height: 0; }
-.analytics-layout .analytics-screen iframe { flex: 1 1 0%; min-height: 0; }
+.analytics-layout .kassa-main { padding-top: 12px; padding-bottom: 8px; }
+.analytics-layout .analytics-screen iframe { flex: 1 1 0%; min-height: 0; width: 100%; }
 
 .kassa-action-dock {
   bottom: var(--mobile-nav-height);
@@ -993,6 +994,9 @@ html:not(.theme-light) .rail-mark-img {
   }
   .kassa-main {
     padding-bottom: calc(var(--mobile-nav-height) + 1.5rem);
+  }
+  .analytics-layout .kassa-main {
+    padding-bottom: calc(var(--mobile-nav-height) + 12px);
   }
   .kassa-ov {
     bottom: var(--mobile-nav-height);

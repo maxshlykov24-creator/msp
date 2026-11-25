@@ -215,6 +215,7 @@ function review() {
 function uncovered() { return `<div class="empty"><strong>Этот период в срезе не собран</strong>Срез покрывает ${esc(meta.week.label)}. Непокрытый период не показывается нулями.</div>`; }
 function render() {
   actions.clear();
+  document.body.classList.toggle("hub", page === "home");
   const inCrm = ["quality", "general", "effect"].includes(page);
   const report = inCrm || page === "log";
   const crumbs = `<nav class="crumbs" aria-label="Путь раздела"><span>Касса</span>${ic("right")}${page === "home" ? "<b>Статистика</b>" : `<button data-page="home">Статистика</button>${ic("right")}${inCrm ? `<button data-page="crm">CRM</button>${ic("right")}` : ""}<b>${titles[page]}</b>`}</nav>`;

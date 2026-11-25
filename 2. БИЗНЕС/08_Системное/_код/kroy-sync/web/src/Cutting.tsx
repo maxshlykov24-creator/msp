@@ -1,5 +1,5 @@
 import {SalesFile} from './SalesFile';
-import { Choice, Select, Icon, HelpTip, ActionMenu, confirmAction } from './UI';
+import { Choice, Select, Icon, HelpTip, ActionMenu, confirmAction, DialogFrame } from './UI';
 import { DatePicker } from './DatePicker';
 import React, { useEffect, useState, useRef } from 'react';
 import './Cutting.css';
@@ -12,15 +12,15 @@ type Api = (path: string, body?: any) => Promise<any>;
 const states: Record<string, string> = { draft: 'Черновик', approved: 'Выдано', partial: 'Частично выполнено', complete: 'Завершено', cancelled: 'Отменено' };
 const n = (v: any) => v == null ? '—' : Number(v).toLocaleString('ru-RU');
 const platformLabel = (name: string) => name === 'wb' ? 'Wildberries' : 'Ozon';
-function SourceNotice({ label, data, period }: { label: string; data?: Row; period: Row }) {
-    if (!data) return null;
+function sourceRemark(label: string, data: Row | undefined, period: Row) {
+    if (!data) return '';
     const operational = String(data.reason || '').startsWith('Оперативные продажи');
     const gap = Boolean(data.start && data.end && (data.start > period.start || data.end < period.end));
     const failed = Boolean(data.reason) && !operational;
-    if (!gap && !failed && ['ready', 'ready_cached'].includes(data.state)) return null;
+    if (!gap && !failed && ['ready', 'ready_cached'].includes(data.state)) return '';
     const retry = data.next_retry_at ? ' Повтор не раньше ' + new Date(data.next_retry_at).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' }) + '.' : '';
     const coverage = gap ? ' Сверка покрывает ' + data.start + ' по ' + data.end + ', выбранный период шире. Пропуск не заменён нулём.' : '';
-    return <CutNotice>{label}: {data.reason || 'данные ещё загружаются'}.{coverage}{retry} Количество к крою не обнуляется.</CutNotice>;
+    return label + ': ' + (data.reason || 'данные ещё загружаются') + '.' + coverage + retry + ' Количество к крою не обнуляется.';
 }
 const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Moscow', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 const createdDay = (r: Row) => r.created_at ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Moscow', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(r.created_at)) : '';
@@ -82,62 +82,7 @@ function hasDuplicatePairs(items: Row[]) {
     }
     return false;
 }
-function demandFigures(row: Row) {
-    const sales = row.net != null ? n(row.net) : row.net_known != null ? n(row.net_known) : '—';
-    const stock = row.stock_assumed_zero ? '—' : n(row.free);
-    const fboKnown = Object.values(row.fbo || {}).some((v: any) => v.known && !v.stale);
-    const fbo = row.fbo_missing?.length ? (fboKnown ? n(row.fbo_counted) : '—') : n(row.fbo_total);
-    return { sales, stock, fbo, future: n(row.future), recommendation: n(row.recommendation) };
-}
-function demandGaps(row: Row, previous: Row | null) {
-    const gaps: string[] = [];
-    if (row.net == null && row.net_known != null) gaps.push('Не все площадки. Это не ноль.');
-    if (row.stock_assumed_zero) gaps.push('Остаток не внесён');
-    if (row.fbo_missing?.length) gaps.push(Object.values(row.fbo || {}).some((v: any) => v.known && !v.stale) ? 'ФБО без ' + row.fbo_missing.map(platformLabel).join(' и ') : 'ФБО: нет данных, это не ноль');
-    if (Object.values(row.fbo || {}).some((v: any) => v.stale && v.known)) gaps.push('ФБО нужно обновить');
-    if (row.recommendation == null) gaps.push(row.net_known != null ? 'Нет полной выгрузки, рекомендация не обнулена' : row.net == null ? 'Нужны данные продаж' : 'Нужны данные ФБО');
-    if (row.recommendation_partial) gaps.push('Без недостающих остатков ФБО');
-    if (previous && previous.rows.find((x: Row) => x.item_id === row.item_id)?.recommendation !== row.recommendation) gaps.push('Было ' + n(previous.rows.find((x: Row) => x.item_id === row.item_id)?.recommendation));
-    return gaps;
-}
-function DemandCell({ item, row, value, previous, targetDate, uncertain, onQty, onUncertain }: {
-    item: Row;
-    row: Row;
-    value: string;
-    previous: Row | null;
-    targetDate: string;
-    uncertain: string[];
-    onQty: (value: string) => void;
-    onUncertain: (id: string, checked: boolean) => void;
-}) {
-    const figures = demandFigures(row);
-    const gaps = demandGaps(row, previous);
-    const platforms = Object.entries(row.platforms || {});
-    const fbo = Object.entries(row.fbo || {});
-    const coverage = row.coverage || [];
-    const hasMore = platforms.length > 0 || fbo.length > 0 || coverage.length > 0;
-    return <div className="cut-demand-cell">
-      <label className="cut-matrix-qty"><span>К крою</span><input aria-label={'К крою ' + item.name} className="cut-qty" type="number" min="0" step="1" value={value} onChange={e => onQty(e.target.value)}/></label>
-      <p className="cut-figure-line"><span>пр. {figures.sales}</span><span>склад {figures.stock}</span><span>ФБО {figures.fbo}</span><span>ож. {figures.future}</span><span>рек. {figures.recommendation}</span></p>
-      {gaps.map(text => <small className="cut-gap" key={text}>{text}</small>)}
-      {hasMore && <details className="cut-cell-more"><summary>Разбивка</summary>
-        {platforms.length > 0 && <div className="cut-breakdown">{platforms.map(([key, v]: [string, any]) => <div key={key} title={v.known ? 'Загружено ' + new Date(v.at).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' }) + ' · ' + (v.source || '') : undefined}><span>{key === 'wb' ? 'ВБ' : 'Ozon'}</span><strong>{v.known ? `${v.sales} − ${v.returns} = ${v.net ?? v.sales - v.returns}` : '—'}</strong>{key==='ozon'&&(v.catalog_matches||[]).map((card:Row)=><small key={card.product_id}><a href={'https://www.ozon.ru/product/'+(card.skus?.[0]||card.product_id)+'/'} target="_blank" rel="noreferrer">{card.archived?'Карточка в архиве':'Карточка Ozon'}</a>{card.offer_id&&<span> · {card.offer_id}</span>}</small>)}{(!v.known || v.listed === false) && <small className={!v.known ? 'cut-warning' : ''}>{v.known ? 'Не найдено в подключённом каталоге' : v.reason || 'Нет сверенных данных'}</small>}</div>)}</div>}
-        {fbo.length > 0 && <div className="cut-cell-note">{fbo.map(([platform, v]: [string, any]) => <p key={platform}>{platform==='wb'?'Wildberries':'Ozon'}: {v.known?n(v.quantity):'Нет сверенных данных'}{v.stale&&v.known?' · нужно обновить':''}</p>)}</div>}
-        {coverage.length > 0 && <div className="cut-breakdown">{coverage.map((c: Row) => <div key={c.id}><strong>{c.title}</strong><span>{n(c.quantity)} · {c.date ? dateText(c.date) : 'Без даты'}{c.included ? ' · учтено' : ''}</span>{c.date>targetDate&&<small>Позже выбранной даты</small>}{c.uncertain && (!c.date||c.date<=targetDate) && <label className="cut-check"><input type="checkbox" checked={uncertain.includes(c.id)} onChange={e => onUncertain(c.id, e.target.checked)}/><span>Учесть после обновления</span></label>}</div>)}</div>}
-      </details>}
-    </div>;
-}
-function ModelDemand({ title, sum, openedByData, children }: {
-    title: string;
-    sum: string;
-    openedByData: boolean;
-    children: React.ReactNode;
-}) {
-    const [open, setOpen] = useState(openedByData);
-    useEffect(() => { if (openedByData) setOpen(true); }, [openedByData]);
-    return <details className="cut-model" open={open} onToggle={event => setOpen(event.currentTarget.open)}><summary><strong>{title}</strong><span className="cut-model-sum">{sum}</span><Icon name="down" size={16}/></summary><div className="cut-model-body">{children}</div></details>;
-}
-function DemandBoard({ rows, items, qty, previous, targetDate, uncertain, onQty, onUncertain }: {
+function DemandTable({ rows, items, qty, previous, targetDate, uncertain, onQty, onUncertain }: {
     rows: Row[];
     items: Row[];
     qty: Record<string, string>;
@@ -149,25 +94,22 @@ function DemandBoard({ rows, items, qty, previous, targetDate, uncertain, onQty,
 }) {
     const byId = (id: string) => items.find(i => i.id === id)!;
     const ordered = rows.slice().sort((a, b) => compareVariants(byId(a.item_id), byId(b.item_id)));
-    const models = new Map<string, Row[]>();
-    ordered.forEach(row => {
+    return <div className="table-wrap"><table className="cut-data-table cut-demand-table"><thead><tr><th>Товар</th><th>Продажи − возвраты</th><th>Доступно у нас</th><th>ФБО</th><th>Ожидается</th><th>Рекомендация</th><th>К крою</th></tr></thead><tbody>{ordered.map(row => {
         const item = byId(row.item_id);
-        const name = item?.model || item?.name || 'Без модели';
-        const list = models.get(name);
-        if (list) list.push(row); else models.set(name, [row]);
-    });
-    return <div className="cut-demand-models">{[...models.entries()].map(([model, list]) => {
-        const modelItems = list.map(row => byId(row.item_id));
-        const entered = list.reduce((sum, row) => sum + (Number(qty[row.item_id]) || 0), 0);
-        const knownRecommendations = list.map(row => row.recommendation).filter((value: any) => value != null);
-        const recommendationSum = knownRecommendations.reduce((sum: number, value: any) => sum + Number(value), 0);
-        const openedByData = list.some(row => String(qty[row.item_id] ?? '').trim() !== '' || Number(row.recommendation) > 0);
-        const cell = (row: Row) => <DemandCell key={row.item_id} item={byId(row.item_id)} row={row} value={qty[row.item_id] || ''} previous={previous} targetDate={targetDate} uncertain={uncertain} onQty={value => onQty(row.item_id, value)} onUncertain={onUncertain}/>;
-        const body = hasDuplicatePairs(modelItems)
-            ? <div className="cut-demand-list">{list.map(row => <div className="cut-demand-list-row" key={row.item_id}><ProductCell item={byId(row.item_id)}/>{cell(row)}</div>)}</div>
-            : <div className="cut-matrix-scroll"><table className="cut-demand-matrix"><thead><tr><th scope="col">Цвет</th>{[...new Set(modelItems.map(item => item.size || ''))].sort(compareSizes).map(size => <th scope="col" key={size || 'none'}>{size || 'Без размера'}</th>)}</tr></thead><tbody>{[...new Set(modelItems.map(item => item.color || ''))].map(color => { const sizes = [...new Set(modelItems.map(item => item.size || ''))].sort(compareSizes); return <tr key={color || 'none'}><th scope="row">{color || 'Цвет не указан'}</th>{sizes.map(size => { const row = list.find(entry => { const item = byId(entry.item_id); return (item.color || '') === color && (item.size || '') === size; }); return <td key={size || 'none'} className={row ? undefined : 'cut-matrix-empty'}>{row && cell(row)}</td>; })}</tr>; })}</tbody></table></div>;
-        return <ModelDemand key={model} title={model} sum={n(entered) + ' к крою' + (knownRecommendations.length ? ' · рек. ' + n(recommendationSum) : '')} openedByData={openedByData}>{body}</ModelDemand>;
-    })}</div>;
+        const platforms = Object.entries(row.platforms || {});
+        const fbo = Object.entries(row.fbo || {});
+        const sales = row.net != null ? n(row.net) : row.net_known != null ? n(row.net_known) : '—';
+        const previousRecommendation = previous?.rows.find((x: Row) => x.item_id === item.id)?.recommendation;
+        return <tr key={item.id}>
+            <td><ProductCell item={item}/></td>
+            <td data-label="Продажи − возвраты">{platforms.length ? <details className="cut-disclosure"><summary><strong>{sales}</strong>{row.net == null && row.net_known != null && <small>Не все площадки. Это не ноль.</small>}<Icon name="down" size={13}/></summary><div className="cut-breakdown">{platforms.map(([key, v]: [string, any]) => <div key={key} title={v.known ? 'Загружено ' + new Date(v.at).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' }) + ' · ' + (v.source || '') : undefined}><span>{key === 'wb' ? 'ВБ' : 'Ozon'}</span><strong>{v.known ? `${v.sales} − ${v.returns} = ${v.net ?? v.sales - v.returns}` : '—'}</strong>{key==='ozon'&&(v.catalog_matches||[]).map((card:Row)=><small key={card.product_id}><a href={'https://www.ozon.ru/product/'+(card.skus?.[0]||card.product_id)+'/'} target="_blank" rel="noreferrer">{card.archived?'Карточка в архиве':'Карточка Ozon'}</a>{card.offer_id&&<span> · {card.offer_id}</span>}</small>)}{(!v.known || v.listed === false) && <small className={!v.known ? 'cut-warning' : ''}>{v.known ? 'Не найдено в подключённом каталоге' : v.reason || 'Нет сверенных данных'}</small>}</div>)}</div></details> : <strong>{sales}</strong>}</td>
+            <td data-label="Доступно у нас">{row.stock_assumed_zero ? <span title="Для рекомендации принято 0. Складской остаток не изменён.">—<small>Остаток не внесён</small></span> : n(row.free)}</td>
+            <td data-label="ФБО">{fbo.length ? <details className="cut-disclosure"><summary>{row.fbo_missing?.length ? (Object.values(row.fbo || {}).some((v: any) => v.known && !v.stale) ? <>{n(row.fbo_counted)}<small>без {row.fbo_missing.map(platformLabel).join(' и ')}</small></> : <>—<small>Нет данных, это не ноль</small></>) : n(row.fbo_total)}</summary>{fbo.map(([platform, v]: [string, any]) => <p key={platform}>{platform==='wb'?'Wildberries':'Ozon'}: {v.known?n(v.quantity):'Нет сверенных данных'}{v.stale&&v.known?' · нужно обновить':''}</p>)}</details> : n(row.fbo_total)}</td>
+            <td data-label="Ожидается">{row.coverage?.length ? <details className="cut-disclosure"><summary><strong>{n(row.future)}</strong><Icon name="down" size={13}/></summary><div className="cut-breakdown">{row.coverage.map((c: Row) => <div key={c.id}><strong>{c.title}</strong><span>{n(c.quantity)} · {c.date ? dateText(c.date) : 'Без даты'}{c.included ? ' · учтено' : ''}</span>{c.date>targetDate&&<small>Позже выбранной даты</small>}{c.uncertain && (!c.date||c.date<=targetDate) && <label className="cut-check"><input type="checkbox" checked={uncertain.includes(c.id)} onChange={e => onUncertain(c.id, e.target.checked)}/><span>Учесть после обновления</span></label>}</div>)}</div></details> : n(row.future)}</td>
+            <td data-label="Рекомендация"><strong>{n(row.recommendation)}</strong>{row.recommendation==null&&<small>{row.net_known!=null?'Нет полной выгрузки, рекомендация не обнулена':row.net==null?'Нужны данные продаж':'Нужны данные ФБО'}</small>}{row.recommendation_partial&&<small>Без недостающих остатков ФБО</small>}{previous && previousRecommendation !== row.recommendation && <small>Было {n(previousRecommendation)}</small>}</td>
+            <td data-label="К крою"><input aria-label={'К крою ' + item.name} className="cut-qty" type="number" min="0" step="1" value={qty[item.id] || ''} onChange={e => onQty(item.id, e.target.value)}/></td>
+        </tr>;
+    })}</tbody></table></div>;
 }
 function ReleaseMatrix({ products, values, onChange }: {
     products: Row[];
@@ -233,7 +175,7 @@ function CutEditor({ api, items, locations, users, existing, close, saved, onPul
     const [draftId] = useState(() => crypto.randomUUID()), [salesStatus, setSalesStatus] = useState<Row>({});
     useEffect(() => { let active=true;const refresh=()=>api('cutting/sales-status').then(data=>{if(active)setSalesStatus(data)}).catch(()=>{});refresh();const timer=setInterval(refresh,60000);return()=>{active=false;clearInterval(timer)}; }, []);
     const [step, setStep] = useState(0), [title, setTitle] = useState(existing?.title || ''), [location, setLocation] = useState(existing?.location || locations[0] || ''), [selected, setSelected] = useState<string[]>(old.selected || existing?.products.map((l: Row) => l.item_id) || []), [qty, setQty] = useState<Record<string, string>>(old.quantities || Object.fromEntries((existing?.products || []).map((l: Row) => [l.item_id, String(l.quantity)]))), [params, setParams] = useState<Row>(old.parameters || defaults()), [calc, setCalc] = useState<Row | null>(old.calculation || null), [previous, setPrevious] = useState<Row | null>(null), [reason, setReason] = useState(old.manual_reason || ''), [due, setDue] = useState(old.due_on || existing?.due_on || ''), [available, setAvailable] = useState(old.available_on || existing?.available_on || ''), [assignee, setAssignee] = useState(old.assignee || existing?.assignee || ''), [groups, setGroups] = useState<Row[]>(old.groups || []), [confirmed, setConfirmed] = useState(false), [search, setSearch] = useState(''), [error, setError] = useState(''), [busy, setBusy] = useState(false), [norms, setNorms] = useState<Record<string, number>>({}), [pending, setPending] = useState<Row | null>(null), [dirty, setDirty] = useState(false);
-    const [calcStale, setCalcStale] = useState(false), [periodOpen, setPeriodOpen] = useState(!old.calculation), [commentOpen, setCommentOpen] = useState(Boolean((old.comment || existing?.comment || '').trim())), [layoutEdit, setLayoutEdit] = useState<string | null>(null);
+    const [calcStale, setCalcStale] = useState(false), [periodOpen, setPeriodOpen] = useState(!old.calculation), [commentOpen, setCommentOpen] = useState(Boolean((old.comment || existing?.comment || '').trim())), [layoutEdit, setLayoutEdit] = useState<string | null>(null), [remarksOpen, setRemarksOpen] = useState(false);
     const chromeRef = useCutChrome(), stepsRef = useRef<HTMLElement>(null), calcSeen = useRef(calc);
     calcSeen.current = calc;
     function clearCalc() { if (calcSeen.current) setCalcStale(true); setCalc(null); }
@@ -344,6 +286,16 @@ function CutEditor({ api, items, locations, users, existing, close, saved, onPul
     const outsideTolerance = Object.entries(productTotals).some(([id, value]) => value > 0 && (!(Number(qty[id]) > 0) || value < Number(qty[id]) * .8 || value > Number(qty[id]) * 1.2));
     const canIssue = completeGroups && !outsideTolerance && !!due && !!assignee && (!available || available >= due);
     const blocked = step === 1 && !hasNeed && calc ? 'Укажи количество хотя бы для одного товара.' : step === 2 && !completeGroups ? 'Заполни ткань, расход и план выпуска каждого кроя.' : step === 3 && !canIssue ? 'Проверь исполнителя, сроки и отклонения.' : '';
+    const remarks = [...new Set([
+        sourceRemark('Ozon', salesStatus.platforms?.ozon, params),
+        sourceRemark('Wildberries', salesStatus.platforms?.wb, params),
+        ...(calc?.warnings || []),
+        calc && calc.rows.some((r: Row) => r.stock_assumed_zero) ? 'Невнесённый остаток принят за 0 только для рекомендации. Складской учёт не меняется.' : '',
+        ['ready', 'ready_cached'].includes(salesStatus.platforms?.wb?.state) && String(salesStatus.platforms?.wb?.reason || '').startsWith('Оперативные') ? 'Wildberries: оперативные данные продаж. Итоговый финансовый отчёт ещё не сверён.' : '',
+        calc && params.include_fbo === true && calc.rows.some((r: Row) => Object.values(r.fbo || {}).some((v: any) => !v.known || v.stale)) ? 'Для части товаров нет полных актуальных данных ФБО. Их автоматическая рекомендация недоступна. Можно отключить учёт ФБО в периоде и рассчитать потребность только по нашему складу и ожидаемому выпуску.' : '',
+        previous && calc && previous.fingerprint !== calc.fingerprint ? 'Исходные данные изменились. Ручные количества сохранены. Пустая рекомендация не обнуляет количество к крою.' : '',
+    ].filter(Boolean))] as string[];
+    const gapsAreRecent = params.start === shift(-30) && params.end === shift(-1);
     return <div className="cutting cut-editor">
   <div className="cut-chrome no-print" ref={chromeRef}>
     <div className="cut-chrome-bar">
@@ -369,26 +321,20 @@ function CutEditor({ api, items, locations, users, existing, close, saved, onPul
    </>}
    {step === 1 && <div className="cut-step">
      <SalesFile key={params.start+'|'+params.end} api={api} params={params} apply={(platform,id)=>{const report_ids={...params.report_ids};if(id)report_ids[platform]=id;else delete report_ids[platform];setParams({...params,report_ids});clearCalc();setGroups([]);changed()}}/>
-     <SourceNotice label="Ozon" data={salesStatus.platforms?.ozon} period={params}/>
-     <SourceNotice label="Wildberries" data={salesStatus.platforms?.wb} period={params}/>
-     {calc?.warnings?.map((text: string) => <CutNotice key={text}>{text}</CutNotice>)}
-     {calc && onPulse && <button type="button" className="text-button" onClick={onPulse}>{params.start === shift(-30) && params.end === shift(-1) ? 'Все пробелы' : 'Все пробелы за последние 30 дней. В этом задании другой период.'}</button>}
-     {calc && calc.rows.some((r: Row) => r.stock_assumed_zero) && <CutNotice>Невнесённый остаток принят за 0 только для рекомендации. Складской учёт не меняется.</CutNotice>}
-     {['ready','ready_cached'].includes(salesStatus.platforms?.wb?.state) && String(salesStatus.platforms?.wb?.reason || '').startsWith('Оперативные') && <p className="cut-hint">Wildberries: оперативные данные продаж. Итоговый финансовый отчёт ещё не сверён.</p>}
-     {calc&&params.include_fbo===true&&calc.rows.some((r:Row)=>Object.values(r.fbo||{}).some((v:any)=>!v.known||v.stale))&&<CutNotice>Для части товаров нет полных актуальных данных ФБО. Их автоматическая рекомендация недоступна. Можно явно отключить учёт ФБО ниже и рассчитать потребность только по нашему складу и ожидаемому выпуску.</CutNotice>}
      <div className="cut-period">
       <div className="cut-period-line">
        <button type="button" className="cut-period-toggle" aria-expanded={periodOpen} onClick={() => setPeriodOpen(value => !value)}><span>Продажи {dateText(params.start)} — {dateText(params.end)} · запас {params.horizon} дн. · покрытие к {dateText(params.target_date)} · ФБО {params.include_fbo === true ? 'включено' : 'выключено'}</span>{calcStale && !calc && <span className="cut-period-stale">Расчёт сброшен. Нужен новый расчёт.</span>}</button>
+       {remarks.length > 0 && <button type="button" className="secondary" onClick={() => setRemarksOpen(true)}>{words(remarks.length, 'замечание', 'замечания', 'замечаний')}</button>}
        <button disabled={!selected.length} onClick={() => calculate(!!calc)}>{busy ? syncMessage || 'Сверяем…' : calc ? 'Обновить данные' : 'Рассчитать потребность'}</button>
        {!selected.length && <span className="cut-hint">Сначала выбери товары выше.</span>}
       </div>
       {periodOpen && <div className="cut-period-edit"><div className="cut-form-grid cut-period-grid"><label>Продажи с<DatePicker label="Продажи с" value={params.start} onChange={value => { setParams({ ...params, report_ids:{}, start: value }); clearCalc(); changed(); }}/></label><label>По<DatePicker label="Продажи по" max={shift(-1)} value={params.end} onChange={value => { setParams({ ...params, report_ids:{}, end: value }); clearCalc(); changed(); }}/></label><label>Запас на дней<input type="number" min="1" max="365" value={params.horizon} onChange={e => { setParams({ ...params, horizon: Number(e.target.value) }); clearCalc(); changed(); }}/></label><label>Покрытие к дате<DatePicker label="Покрытие к дате" value={params.target_date} onChange={value => { setParams({ ...params, target_date: value }); clearCalc(); changed(); }}/></label></div><label className="cut-check"><input type="checkbox" checked={params.include_fbo===true} onChange={e=>{setParams({...params,include_fbo:e.target.checked});clearCalc();changed()}}/><span>Учитывать доступные остатки ФБО. При отключении расчёт не вычитает запасы площадок.</span></label></div>}
      </div>
      {calc && <div className="cut-result-stack"><div className="cut-result-heading"><span className="cut-hint">Обновлено {new Date(calc.calculated_at).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' })}</span><button className="secondary" onClick={applyRecommendations}>Применить рекомендации</button></div>
-      {previous && previous.fingerprint !== calc.fingerprint && <CutNotice>Исходные данные изменились. Ручные количества сохранены. Пустая рекомендация не обнуляет количество к крою.</CutNotice>}
-      <div className="cut-demand-breakout"><DemandBoard rows={calc.rows} items={items} qty={qty} previous={previous} targetDate={params.target_date} uncertain={params.include_uncertain || []} onQty={(id, value) => { setManualQty(ids => [...new Set([...ids, id])]); setQty({ ...qty, [id]: value }); setGroups([]); changed(); }} onUncertain={(id, checked) => { const current = params.include_uncertain || []; setParams({ ...params, include_uncertain: checked ? [...current, id] : current.filter((item: string) => item !== id) }); clearCalc(); changed(); }}/></div>
+      <DemandTable rows={calc.rows} items={items} qty={qty} previous={previous} targetDate={params.target_date} uncertain={params.include_uncertain || []} onQty={(id, value) => { setManualQty(ids => [...new Set([...ids, id])]); setQty({ ...qty, [id]: value }); setGroups([]); changed(); }} onUncertain={(id, checked) => { const current = params.include_uncertain || []; setParams({ ...params, include_uncertain: checked ? [...current, id] : current.filter((item: string) => item !== id) }); clearCalc(); changed(); }}/>
       <label>Основание при неполных данных<textarea value={reason} onChange={e => { setReason(e.target.value); changed(); }} placeholder="Необязательно для обычной поправки. Укажи основание, если исходных данных недостаточно."/></label>
      </div>}
+     {remarksOpen && <DialogFrame title="Замечания к расчёту" close={() => setRemarksOpen(false)} className="cut-remark-dialog"><ul className="cut-remark-list">{remarks.map(text => <li key={text}>{text}</li>)}</ul>{calc && onPulse && <div className="cut-remark-actions">{!gapsAreRecent && <p className="cut-hint">В этом задании другой период. Список пробелов показывает последние 30 дней.</p>}<button type="button" className="secondary" onClick={() => { setRemarksOpen(false); onPulse(); }}>Все пробелы</button></div>}</DialogFrame>}
     </div>}
    {step === 2 && <div className="cut-step">
     <LayoutBuilder api={api} selected={orderedIds(selected).map(byId).filter(i => Number(qty[i.id]) > 0)} qty={qty} groups={groups} materials={materials} norms={norms} location={location} pinnedOpen={!groups.length} add={g => { changed(); setGroups([...groups.filter(x=>!g.some(y=>y.model===x.model)), ...g]); }}/>

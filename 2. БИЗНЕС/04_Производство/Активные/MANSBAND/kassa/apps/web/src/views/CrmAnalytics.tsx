@@ -29,7 +29,7 @@ export function CrmAnalytics() {
   }, [admin, user?.id, attempt]);
 
   return <section className="analytics-screen">
-    <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-sm">
+    <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-sm">
       <a href="#dashboard" className="text-mute-soft underline underline-offset-4">К статистике кассы</a>
       {admin && <span className="rounded-full border border-ink-600 px-3 py-1 text-mute-soft">{mode === "live" ? "Боевой срез" : mode === "review" ? "Сверка не закрыта" : "Прототип · демоданные"}</span>}
     </div>
