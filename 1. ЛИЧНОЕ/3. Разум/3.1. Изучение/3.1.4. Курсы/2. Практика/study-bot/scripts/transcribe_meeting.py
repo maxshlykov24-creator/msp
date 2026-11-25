@@ -261,6 +261,7 @@ async def transcribe_file(
     api_key: str,
     *,
     diarize: bool = False,
+    num_speakers: int = 2,
 ) -> dict:
     if not file_path.is_file():
         raise FileNotFoundError(file_path)
@@ -273,10 +274,11 @@ async def transcribe_file(
     sock_read = max(300, timeout_sec + 120)
 
     logger.info(
-        "Загрузка %s (%s МБ), diarize=%s, timeout sock_read=%s",
+        "Загрузка %s (%s МБ), diarize=%s, speakers=%s, timeout sock_read=%s",
         file_path.name,
         round(file_path.stat().st_size / 1024 / 1024, 1),
         diarize,
+        num_speakers if diarize else "—",
         sock_read,
     )
 
@@ -297,7 +299,7 @@ async def transcribe_file(
             data.add_field("model", "nexara-ru")
             if diarize:
                 data.add_field("task", "diarize")
-                data.add_field("num_speakers", "2")
+                data.add_field("num_speakers", str(num_speakers))
 
             async with session.post(
                 TRANSCRIBE_URL,
@@ -328,8 +330,14 @@ async def async_main(
     api_key: str,
     *,
     diarize: bool,
+    num_speakers: int,
 ) -> None:
-    payload = await transcribe_file(input_path, api_key, diarize=diarize)
+    payload = await transcribe_file(
+        input_path,
+        api_key,
+        diarize=diarize,
+        num_speakers=num_speakers,
+    )
     md = payload_to_markdown(payload, input_path, diarize=diarize)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(md, encoding="utf-8")
@@ -351,6 +359,12 @@ def main() -> None:
         action="store_true",
         help="Разбить по спикерам. По умолчанию выкл. Только после «да».",
     )
+    parser.add_argument(
+        "--speakers",
+        type=int,
+        default=2,
+        help="Сколько спикеров передать в Nexara при --diarize. По умолчанию 2.",
+    )
     args = parser.parse_args()
 
     src = Path(args.input).expanduser().resolve()
@@ -360,10 +374,18 @@ def main() -> None:
 
     out = resolve_output(args, src)
     print(f"Выход: {out}")
-    print(f"Спикеры: {'да' if args.diarize else 'нет'}")
+    print(f"Спикеры: {'да, ' + str(args.speakers) if args.diarize else 'нет'}")
 
     api_key = resolve_api_key()
-    asyncio.run(async_main(src, out, api_key, diarize=args.diarize))
+    asyncio.run(
+        async_main(
+            src,
+            out,
+            api_key,
+            diarize=args.diarize,
+            num_speakers=args.speakers,
+        )
+    )
 
 
 if __name__ == "__main__":
