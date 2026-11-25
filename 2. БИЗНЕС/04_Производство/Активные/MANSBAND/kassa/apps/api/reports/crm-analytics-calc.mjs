@@ -589,17 +589,17 @@ export function workingMinutes(fromMs, toMs, timeZone = "Europe/Moscow") {
 /** Минуты до ответа Wazzup внутри рабочего окна. Повторные входящие в той же серии таймер не сбрасывают. Исходящее без вопроса не считается. */
 export function wazzupReplies(messages, timeZone = "Europe/Moscow") {
   const sorted = [...(messages ?? [])].filter((item) => item && (item.dir === "in" || item.dir === "out") && Number.isFinite(item.at)).sort((a, b) => a.at - b.at);
-  const minutes = [];
+  const series = [];
   let waiting = null;
   for (const message of sorted) {
     if (message.dir === "in") {
       if (waiting == null) waiting = message.at;
     } else if (waiting != null) {
-      minutes.push(workingMinutes(waiting, message.at, timeZone));
+      series.push({ from: waiting, to: message.at, minutes: workingMinutes(waiting, message.at, timeZone) });
       waiting = null;
     }
   }
-  return { minutes, pending: waiting == null ? 0 : 1 };
+  return { minutes: series.map((item) => item.minutes), series, pending: waiting == null ? 0 : 1, pendingFrom: waiting };
 }
 
 export function responseSummary(deals, timeZone = "Europe/Moscow") {

@@ -54,10 +54,22 @@ const bounds = () => periodBounds(state.kind, state.date, builtAt, tz, meta.week
 const modeOf = () => state.mode === "created" ? "sources" : "results";
 const ready = () => periodCovered(modeOf(), bounds(), meta.coverage);
 function rows() { return ready() ? cohort(deals, modeOf(), bounds(), { touch: state.touch, source: state.mode === "created" ? state.source : "*", lane: "*" }) : []; }
-function list(title, records, explain) {
+function replyClock(deal) {
+  const stat = wazzupReplies(deal.messages, tz);
+  if (!stat.series.length) return "";
+  return stat.series.map((item) => fmt(item.minutes)).join(" · ") + " мин";
+}
+function replyRows(deal) {
+  const stat = wazzupReplies(deal.messages, tz);
+  if (!stat.series.length && !stat.pending) return "";
+  const rows = stat.series.map((item) => `<div class="dlgrow"><span>Вопрос ${esc(stamp(item.from))}<br>ответ ${esc(stamp(item.to))}</span><strong>${esc(fmt(item.minutes))} мин</strong></div>`).join("");
+  const waiting = stat.pending ? `<div class="dlgrow"><span>Серия без ответа с ${esc(stamp(stat.pendingFrom))}</span><strong>ещё нет</strong></div>` : "";
+  return `<h3 class="sectiontitle">Время ответа</h3>${rows}${waiting}`;
+}
+function list(title, records, explain, timeOf) {
   const openList = (limit = 40) => {
     dialogActions.clear();
-    const items = records.slice(0, limit).map((deal) => `<button class="item" ${reg(() => detail(deal), true)}><span><strong>${deal.id}</strong> · ${esc(deal.stage || deal.result || "Без этапа")}<small>${esc(dateFmt(deal.created) + " · " + (CHANNEL[deal.lane] ?? "") + " · " + deal.source)}</small></span>${ic("right")}</button>`).join("");
+    const items = records.slice(0, limit).map((deal) => { const time = timeOf ? timeOf(deal) : ""; return `<button class="item${time ? " timed" : ""}" ${reg(() => detail(deal), true)}><span><strong>${deal.id}</strong> · ${esc(deal.stage || deal.result || "Без этапа")}<small>${esc(dateFmt(deal.created) + " · " + (CHANNEL[deal.lane] ?? "") + " · " + deal.source)}</small></span>${time ? `<b class="replytime">${esc(time)}</b>` : ""}${ic("right")}</button>`; }).join("");
     show(title, `${fmt(records.length)} записей`, (explain ? `<p class="note">${esc(explain)}</p>` : "") + (items ? `<div class="stack">${items}</div>` : empty("По выбранным условиям ничего не найдено.")) + (limit < records.length ? `<p class="actions"><button class="pill" ${reg(() => openList(limit + 60), true)}>Показать ещё</button></p>` : ""));
   };
   openList();
@@ -73,7 +85,7 @@ function detail(deal) {
   if (deal.kassaNumber) props.push(["Заявка кассы", String(deal.kassaNumber)]);
   const history = (deal.history ?? []).map((event) => `<li>${esc(event.stage)}<small>${stamp(event.at)}</small></li>`).join("");
   const tasks = (deal.tasks ?? []).map((task) => `<div class="dlgrow"><span class="taskname">${esc(task.name)}</span><strong>Срок ${stamp(task.due)}<br><small class="tiny">${task.done ? "Обновлена " + stamp(task.done) + ". Отдельного времени выполнения amo не отдаёт." : "Ещё открыта"}</small></strong></div>`).join("");
-  show("Заявка " + deal.id, deal.result ?? "В работе", `<p><a class="link" href="https://mansband.amocrm.ru/leads/detail/${deal.id}" target="_blank" rel="noreferrer">Открыть в amoCRM</a>${deal.kassaNumber ? ` · <a class="link" href="https://mansband-kassa.ru/#board/all/all/${deal.kassaNumber}" target="_blank" rel="noreferrer">Заявка кассы ${deal.kassaNumber}</a>` : ""}</p>` + props.map(([key, value]) => `<div class="dlgrow"><span>${esc(key)}</span><strong>${esc(value)}</strong></div>`).join("") + `<h3 class="sectiontitle">История этапов</h3>${history ? `<ol class="timeline">${history}</ol>` : empty(deal.historyComplete ? "Смен этапа нет." : "История этапа неполная, исход по ней не достраивается.")}` + (tasks ? `<h3>Задачи</h3>${tasks}` : ""));
+  show("Заявка " + deal.id, deal.result ?? "В работе", `<p><a class="link" href="https://mansband.amocrm.ru/leads/detail/${deal.id}" target="_blank" rel="noreferrer">Открыть в amoCRM</a>${deal.kassaNumber ? ` · <a class="link" href="https://mansband-kassa.ru/#board/all/all/${deal.kassaNumber}" target="_blank" rel="noreferrer">Заявка кассы ${deal.kassaNumber}</a>` : ""}</p>` + props.map(([key, value]) => `<div class="dlgrow"><span>${esc(key)}</span><strong>${esc(value)}</strong></div>`).join("") + replyRows(deal) + `<h3 class="sectiontitle">История этапов</h3>${history ? `<ol class="timeline">${history}</ol>` : empty(deal.historyComplete ? "Смен этапа нет." : "История этапа неполная, исход по ней не достраивается.")}` + (tasks ? `<h3>Задачи</h3>${tasks}` : ""));
 }
 function methodology() {
   show("Как читать статистику", "Правила расчёта", `<div class="stack"><section><h3>Результаты</h3><p class="note">Качество, общая статистика, эффективность и логистика берут сделки, закрытые в выбранный период. Успех и провал в сумме дают все закрытые. Возврат и обмен уже закрытый успех не уменьшают.</p></section><section><h3>Источники</h3><p class="note">Сделки группируются по дате создания. Успех и провал берутся из событий этапа на конец периода. Если история обрывается, заявка остаётся в общем числе и не попадает ни в успех, ни в провал.</p></section><section><h3>Целевые и квалы</h3><p class="note">Целевая: дата взятия в работу не позже границы или успех уже наступил. Квал: дата квалификации или успех. Провал «Спам» квалом не считается. Чекбокс «Целевой» число не меняет. Квал без даты взятия в работу в целевые не дописывается.</p></section><section><h3>Сроки</h3><p class="note">Просрочка закрытого периода считается только там, где срок сохранился на карточке или в задаче. «Сейчас просрочено» считается отдельно, по правилам ежедневной сводки, и с закрытым периодом не складывается.</p></section></div>`);
@@ -167,7 +179,7 @@ function qualityReport() {
   const replies = responseSummary(group, tz);
   const chatReady = meta.chat === "wazzup";
   const cards = [
-    metric("Среднее время ответа", chatReady ? (replies.mean == null ? "—" : fmt(replies.mean) + " мин") : "нет источника", chatReady ? (replies.count ? fmt(replies.count) + " " + plural(replies.count, "ответ", "ответа", "ответов") + " · 10–23" : "нет ответов") : "Wazzup не прочитан", () => chatReady ? list("Ответы Wazzup", replies.deals, "Серии сообщений Wazzup, в которых был ответ. С 23:00 до 10:00 МСК минуты не идут.") : missingSource("Среднее время ответа", QUALITY_SOURCES.response.reason)),
+    metric("Среднее время ответа", chatReady ? (replies.mean == null ? "—" : fmt(replies.mean) + " мин") : "нет источника", chatReady ? (replies.count ? fmt(replies.count) + " " + plural(replies.count, "ответ", "ответа", "ответов") + " · 10–23" : "нет ответов") : "Wazzup не прочитан", () => chatReady ? list("Ответы Wazzup", replies.deals, "Серии сообщений Wazzup, в которых был ответ. С 23:00 до 10:00 МСК минуты не идут.", replyClock) : missingSource("Среднее время ответа", QUALITY_SOURCES.response.reason)),
     metric("Просроченные задачи", fmt(tasks.length), "задач", () => list("Просроченные задачи", tasks.map((row) => row.deal), "Время выполнения взято из updated_at: отдельного поля amo не отдаёт.")),
     metric("Просроченные этапы", fmt(stages.overdue.length), "этапов", () => list("Просроченные этапы", stages.overdue.map((row) => row.deal), "Сегодняшний календарный день ещё не просрочка. Срок без сохранившейся даты сюда не входит.")),
   ];

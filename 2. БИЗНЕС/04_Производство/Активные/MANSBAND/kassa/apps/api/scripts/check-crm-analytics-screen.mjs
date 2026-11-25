@@ -67,6 +67,8 @@ assert.equal(review.html.includes("Пояснения"), true);
 assert.equal(review.html.includes("Пропущенные звонки"), false);
 assert.equal(review.html.includes("responseSummary"), true);
 assert.equal(review.html.includes("Все заявки этого источника."), true);
+assert.equal(review.html.includes("Время ответа"), true);
+assert.equal(review.html.includes("replytime"), true);
 const live = renderCrmAnalytics({ ...snapshot, meta: { ...snapshot.meta, accepted: true } }, files);
 assert.equal(live.mode, "live");
 assert.equal(live.html.includes("Демоданные"), false);

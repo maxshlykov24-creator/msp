@@ -180,7 +180,10 @@ assert.equal(medianHours([], ["Дано обещание", "Доставлен"]
 const noonReply = zonedTimeToUtc(2026, 11, 16, 12, 0, 0, TZ);
 const replies = wazzupReplies([{ at: noonReply, dir: "in" }, { at: noonReply + 60_000, dir: "in" }, { at: noonReply + 5 * 60_000, dir: "out" }, { at: noonReply + 10 * 60_000, dir: "out" }, { at: noonReply + 11 * 60_000, dir: "in" }]);
 assert.deepEqual(replies.minutes, [5]);
+assert.equal(replies.series[0].from, noonReply);
+assert.equal(replies.series[0].to, noonReply + 5 * 60_000);
 assert.equal(replies.pending, 1);
+assert.equal(replies.pendingFrom, noonReply + 11 * 60_000);
 assert.equal(wazzupReplies([{ at: zonedTimeToUtc(2026, 11, 16, 22, 50, 0, TZ), dir: "in" }, { at: zonedTimeToUtc(2026, 11, 17, 10, 20, 0, TZ), dir: "out" }]).minutes[0], 30);
 assert.equal(wazzupReplies([{ at: zonedTimeToUtc(2026, 11, 16, 23, 30, 0, TZ), dir: "in" }, { at: zonedTimeToUtc(2026, 11, 17, 10, 5, 0, TZ), dir: "out" }]).minutes[0], 5);
 assert.equal(wazzupReplies([{ at: zonedTimeToUtc(2026, 11, 16, 9, 0, 0, TZ), dir: "in" }, { at: zonedTimeToUtc(2026, 11, 16, 10, 5, 0, TZ), dir: "out" }]).minutes[0], 5);
