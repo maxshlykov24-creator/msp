@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import type { PhotoReviewComment, PhotoReviewData } from "@kassa/shared";
+import { settlePhotoReview, type PhotoReviewComment, type PhotoReviewData } from "@kassa/shared";
 import { eq, like } from "drizzle-orm";
 import { z } from "zod";
 import manifest from "../data/catalogPhotoReview.json" with { type: "json" };
@@ -7,7 +7,7 @@ import { db } from "../db/index.js";
 import { appSettings } from "../db/schema.js";
 import { getUserById } from "../services/auth.js";
 
-const review: Omit<PhotoReviewData, "comments"> = manifest;
+const review: Omit<PhotoReviewData, "comments"> = settlePhotoReview(manifest);
 const commentPrefix = "catalog-photo-review:comment:";
 const targets = new Set([
   ...review.cases.map(row => `case:${row.id}`),

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import type { PhotoReviewComment, PhotoReviewData, PhotoReviewImage } from "@kassa/shared";
+import { settlePhotoReview, type PhotoReviewComment, type PhotoReviewData, type PhotoReviewImage } from "@kassa/shared";
 import { ArrowLeft, Camera, MessageSquare, Search } from "lucide-react";
 import { api } from "../api/client";
 import { Modal } from "../components/ui";
@@ -90,7 +90,7 @@ export default function PhotoReview() {
   useEffect(() => {
     let current = true;
     api.get<PhotoReviewData>(endpoint)
-      .then(result => { if (current) setData(result); })
+      .then(result => { if (current) setData(settlePhotoReview(result)); })
       .catch(err => { if (current) setError(err instanceof Error ? err.message : "Не удалось загрузить список"); });
     return () => { current = false; };
   }, [request]);

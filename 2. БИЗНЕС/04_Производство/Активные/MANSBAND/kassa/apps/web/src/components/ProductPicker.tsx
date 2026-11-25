@@ -754,7 +754,10 @@ export function ProductPicker({
     const watch = watchRef.current;
     if (!watch || !revealApi || readOnly) return;
     if (scannerOpen || moveOpen || stockModal) return;
-    if (open && watch.needs) return;
+    if (open && watch.needs) {
+      (window as unknown as { __why?: string[] }).__why = [...((window as unknown as { __why?: string[] }).__why ?? []), "wait-open"];
+      return;
+    }
     const searchingNext = (searchInputRef.current?.value ?? "").trim().length > 0;
     if (!watch.needs && searchingNext) {
       watchRef.current = null;
@@ -789,7 +792,11 @@ export function ProductPicker({
         break;
       }
     }
-    if (!row) return;
+    if (!row) {
+      (window as unknown as { __why?: string[] }).__why = [...((window as unknown as { __why?: string[] }).__why ?? []), "no-row"];
+      return;
+    }
+    (window as unknown as { __why?: string[] }).__why = [...((window as unknown as { __why?: string[] }).__why ?? []), "reveal " + watch.productId];
     revealApi.reveal({
       keep: row,
       companion: root.querySelector<HTMLElement>('[data-reveal-companion="search"]'),
