@@ -754,8 +754,8 @@ export function ProductPicker({
     const watch = watchRef.current;
     if (!watch || !revealApi || readOnly) return;
     if (scannerOpen || moveOpen || stockModal) return;
-    if (open && watch.needs) return;
     const searchingNext = (searchInputRef.current?.value ?? "").trim().length > 0;
+    if (open && watch.needs && searchingNext) return;
     if (!watch.needs && searchingNext) {
       watchRef.current = null;
       return;
