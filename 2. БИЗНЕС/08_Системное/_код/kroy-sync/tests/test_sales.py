@@ -102,6 +102,15 @@ def test_normalized_event_identity_survives_product_reorder():
     assert sorted(first,key=lambda e:e['id'])==sorted(second,key=lambda e:e['id'])
 
 
+def test_latest_window_selects_without_loading_events(setup):
+    from app.sales import latest_window
+    engine,u,cmd=setup
+    end=str(datetime.now(MSK).date()-timedelta(days=1));start=str(datetime.now(MSK).date()-timedelta(days=2))
+    store_window(engine,dict(platform='wb',start=start,end=end,at=now().isoformat(),complete=True,verified=True,covered_items=['s'],events=[dict(id='sale',item_id='s',date=end,kind='sale',quantity=4)],catalog_matches={'s':[{'product_id':'1'}]},source_hashes=['x']))
+    found=latest_window(engine,'wb',start,end)
+    assert found['covered_items']==['s'] and found['end']==end and 'events' not in found and 'catalog_matches' not in found
+
+
 def test_full_sync_proves_unlisted_zero_and_combines_platforms(setup,tmp_path):
     import json
     from app.sales import sync

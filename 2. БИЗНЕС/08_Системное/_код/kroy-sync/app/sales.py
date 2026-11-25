@@ -176,10 +176,27 @@ def mappings(engine):
     return codes,{k:list(v) for k,v in skus.items()},covered
 
 
+def _window_headers(engine):
+    """Window selection must not materialize every historical sale row."""
+    from sqlalchemy import text
+    if engine.dialect.name=='postgresql':
+        query=text("SELECT (data::jsonb - 'events' - 'catalog_matches' - 'source_hashes' - 'reconciliation')::text FROM entities WHERE kind='sales_window'")
+    else:
+        query=text("SELECT json_remove(data, '$.events', '$.catalog_matches', '$.source_hashes', '$.reconciliation') FROM entities WHERE kind='sales_window'")
+    with engine.connect() as connection:
+        rows=connection.execute(query).all()
+    headers=[]
+    for (raw,) in rows:
+        if not raw:continue
+        meta=json.loads(raw) if isinstance(raw,str) else raw
+        if isinstance(meta,str):meta=json.loads(meta)
+        if isinstance(meta,dict):headers.append(meta)
+    return headers
+
+
 def latest_window(engine,platform,start,end):
-    with transaction(engine) as s:
-        windows=[e.data for e in s.scalars(select(Entity).where(Entity.kind=='sales_window')) if e.data.get('platform')==platform and e.data['start']<=start and e.data['end']>=end and e.data.get('verified') and e.data.get('complete')]
-        return copy.deepcopy(max(windows,key=lambda d:(not bool(d.get('identity_pending')),d['at']),default=None))
+    windows=[d for d in _window_headers(engine) if d.get('platform')==platform and d.get('start')<=start and d.get('end')>=end and d.get('verified') and d.get('complete')]
+    return copy.deepcopy(max(windows,key=lambda d:(not bool(d.get('identity_pending')),d.get('at') or ''),default=None))
 
 
 def sync(engine, env, start=None, end=None):
@@ -189,13 +206,23 @@ def sync(engine, env, start=None, end=None):
     with transaction(engine) as s:
         previous=s.get(Entity,'cutting-sales-status');previous=copy.deepcopy(previous.data.get('platforms',{})) if previous else {}
         certificate=s.get(Entity,'sales-reconciliation:ozon:v2');certificate=copy.deepcopy(certificate.data) if certificate else None
-    for platform in ('wb','ozon'):
+    def publish(partial):
+        with transaction(engine) as s:
+            key='cutting-sales-status';e=s.get(Entity,key)
+            platforms=dict(e.data.get('platforms',{})) if e else {}
+            platforms.update(partial)
+            data=dict(at=now().isoformat(),platforms=platforms)
+            if e:e.data=data;e.version+=1
+            else:s.add(Entity(id=key,kind='sales_status',version=1,data=data))
+    for platform in ('ozon','wb'):
         cached=latest_window(engine,platform,start,end);prior=previous.get(platform,{})
         try:
             retry=prior.get('next_retry_at')
             if platform!='wb' and retry and datetime.fromisoformat(retry)>now():
                 results[platform]={**prior,'state':'ready_cached' if cached and not cached.get('identity_pending') else 'waiting','at':cached['at'] if cached else None};continue
             if platform=='wb':
+                if cached and not cached.get('identity_pending') and cached.get('covered_items') is not None and cached.get('end')>=end:
+                    results[platform]=dict(state='ready_cached',at=cached.get('at'),reason='Оперативные продажи Wildberries; итоговый отчёт не сверён',start=cached.get('start'),end=cached.get('end'));continue
                 from .order_sync import Client,_sync_wb_sales,Paused,FeedFailure
                 from .order_feed import sync_state
                 state=sync_state(engine);account=state.get('wb-identity',{}).get('account')
@@ -236,14 +263,14 @@ def sync(engine, env, start=None, end=None):
             results[platform]=dict(state='ready',at=data['at'],start=start,end=end,events=len(data['events']),covered=len(data['covered_items']),unmatched=data['unmatched'])
         except RateLimited as e:
             results[platform]=dict(state='ready_cached' if cached and not cached.get('identity_pending') else 'waiting',at=cached['at'] if cached else None,reason=str(e),next_retry_at=(now()+timedelta(seconds=e.seconds)).isoformat(),**({'start':cached['start'],'end':cached['end']} if cached else {}))
+        except MemoryError:
+            results[platform]=dict(state='ready_cached' if cached and not cached.get('identity_pending') else 'unavailable',at=cached['at'] if cached else None,reason='Не хватило памяти при сверке. Предыдущие данные сохранены',**({'start':cached['start'],'end':cached['end']} if cached else {}))
         except Exception as e:
             from .service import DomainError
             reason=(e.message if isinstance(e,DomainError) else str(e)) or 'Ошибка проверки выгрузки'
             results[platform]=dict(state='ready_cached' if cached and not cached.get('identity_pending') else 'unavailable',at=cached['at'] if cached else None,reason=reason[:300],**( {'start':cached['start'],'end':cached['end']} if cached else {}))
-    with transaction(engine) as s:
-        key='cutting-sales-status';e=s.get(Entity,key);data=dict(at=now().isoformat(),platforms=results)
-        if e:e.data=data;e.version+=1
-        else:s.add(Entity(id=key,kind='sales_status',version=1,data=data))
+        finally:
+            if platform in results:publish({platform:results[platform]})
     return results
 
 

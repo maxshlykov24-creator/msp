@@ -80,6 +80,7 @@ def calculate(s, raw):
         reports[channel]=report.data
         versions.append([rid,report.version])
     rows = []
+    used_windows = {}
     for iid in ids:
         item = s.get(Item, iid)
         require(item is not None and item.kind == 'garment', 'Неизвестное изделие', 422)
@@ -101,6 +102,7 @@ def calculate(s, raw):
                     w=max(richer, key=lambda c: c.data['at']); kept_previous_sales=True
             sales = returns = 0
             if w:
+                used_windows[w.id]=w.data
                 for event in w.data['events']:
                     if event['item_id'] == iid and p['start'] <= event['date'] <= p['end']:
                         if event['kind'] == 'sale': sales += event['quantity']
@@ -144,9 +146,22 @@ def calculate(s, raw):
     incomplete=sum(1 for row in rows if row['sales_missing'])
     if incomplete: warnings.append(str(incomplete)+' из '+str(len(rows))+' позиций без полной выгрузки продаж. По ним рекомендация не строится и количество к крою не обнуляется. Пропуск не заменён нулём.')
     if p['include_fbo']:
-        fbo_gap=sorted({name for row in rows for name in row['fbo_missing']})
-        if fbo_gap: warnings.append('Нет актуальных остатков ФБО: '+', '.join(names[name] for name in fbo_gap)+'. Они не вычитаются из рекомендации и не заменяются нулём. Перед выдачей укажи основание.')
+        for name in ('wb','ozon'):
+            missing=sum(1 for row in rows if name in row['fbo_missing'])
+            if not missing: continue
+            label=names[name]
+            if missing==len(rows): warnings.append('Нет актуальных остатков ФБО '+label+'. Они не вычитаются из рекомендации и не заменяются нулём. Перед выдачей укажи основание.')
+            else: warnings.append(label+': нет актуального остатка ФБО у '+str(missing)+' из '+str(len(rows))+' позиций. Для них этот остаток не вычитается и не заменён нулём.')
     if any(row['kept_previous_sales'] for row in rows): warnings.append('Свежая пустая выгрузка не заменила предыдущие продажи.')
+    for data in used_windows.values():
+        if data.get('platform')=='ozon':
+            proof=data.get('catalog_proof') or {}
+            if proof.get('all_products_matched') is False:
+                gap=int(proof.get('catalog_products') or 0)-int(proof.get('matched_products') or 0)
+                if gap: warnings.append('Ozon: '+str(gap)+' карточек нет среди наших товаров. Их продажи не входят в расчёт и не заменены нулём. Пока каталог сопоставлен не полностью, отсутствие карточки не считается нулём.')
+            if data.get('unmatched'): warnings.append('Ozon: '+str(data['unmatched'])+' шт. без точного сопоставления не вошли в расчёт.')
+        if data.get('platform')=='wb' and data.get('unmatched'):
+            warnings.append('Wildberries: '+str(data['unmatched'])+' строк выгрузки с '+str(data.get('start'))+' по '+str(data.get('end'))+' без однозначного штрихкода не вошли в расчёт и не заменены нулём.')
     if not p['include_fbo']:
         for row in fingerprint_body['rows']:
             row.pop('fbo', None); row.pop('fbo_total', None); row.pop('fbo_counted', None); row.pop('fbo_missing', None)
