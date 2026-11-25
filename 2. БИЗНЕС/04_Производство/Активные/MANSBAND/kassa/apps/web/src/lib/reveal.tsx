@@ -12,6 +12,8 @@ export type RevealRequest = {
   companionInput?: HTMLElement | null;
   /** Фокус не перебивает завершённое добавление строки в том же кадре. */
   priority?: "focus" | "commit";
+  /** Повтор замера, если список поверх формы закрывается в соседнем кадре. */
+  waits?: number;
 };
 
 type RevealApi = {
@@ -150,10 +152,28 @@ function animate(scroller: HTMLElement, delta: number, runtime: Runtime) {
   requestAnimationFrame(step);
 }
 
-function run(root: HTMLElement, request: RevealRequest, runtime: Runtime) {
-  const trace = (window as unknown as { __reveal?: string[] }).__reveal ?? ((window as unknown as { __reveal: string[] }).__reveal = []);
-  if (!request.keep.isConnected || overlayBlocks(root)) {
-    trace.push(`skip connected=${request.keep.isConnected} overlay=${overlayBlocks(root)} priority=${request.priority ?? "commit"}`);
+function enqueue(runtime: Runtime, request: RevealRequest, getRoot: () => HTMLElement | null) {
+  const prev = runtime.pending;
+  if ((request.priority ?? "commit") !== "commit" && prev?.priority === "commit") return;
+  if (!request.waits) runtime.retried = false;
+  runtime.pending = request;
+  if (runtime.raf) return;
+  runtime.raf = requestAnimationFrame(() => {
+    runtime.raf = 0;
+    const pending = runtime.pending;
+    runtime.pending = null;
+    const root = getRoot();
+    if (!pending || !root) return;
+    run(root, pending, runtime, getRoot);
+  });
+}
+
+function run(root: HTMLElement, request: RevealRequest, runtime: Runtime, getRoot: () => HTMLElement | null) {
+  if (!request.keep.isConnected) return;
+  if (overlayBlocks(root)) {
+    const waits = (request.waits ?? 0) + 1;
+    if (waits > 8) return;
+    enqueue(runtime, { ...request, waits }, getRoot);
     return;
   }
   const keep = boxOf(request.keep);
@@ -168,9 +188,6 @@ function run(root: HTMLElement, request: RevealRequest, runtime: Runtime) {
   });
   runtime.last = request;
   runtime.lastAt = Date.now();
-  trace.push(
-    `run delta=${delta} kept=${companionKept} priority=${request.priority ?? "commit"} scroller=${scrollTarget(root).id || scrollTarget(root).className.slice(0, 24)} keep=${Math.round(keep.top)}-${Math.round(keep.bottom)} zone=${Math.round(visibleZone(root).bottom)}`,
-  );
   const input = request.companionInput;
   if (!companionKept && delta !== 0 && input?.isConnected && document.activeElement === input) input.blur();
   if (delta === 0) return;
@@ -199,21 +216,7 @@ export function RevealScope({
   const schedule = (request: RevealRequest) => {
     const runtimeRef = runtime.current;
     const next = { priority: "commit" as const, ...request };
-    const prev = runtimeRef.pending;
-    if (next.priority !== "commit" && prev?.priority === "commit") return;
-    runtimeRef.retried = false;
-    runtimeRef.pending = next;
-    const trace = (window as unknown as { __reveal?: string[] }).__reveal ?? ((window as unknown as { __reveal: string[] }).__reveal = []);
-    trace.push(`schedule ${next.priority} raf=${runtimeRef.raf ? 1 : 0}`);
-    if (runtimeRef.raf) return;
-    runtimeRef.raf = requestAnimationFrame(() => {
-      runtimeRef.raf = 0;
-      const next = runtimeRef.pending;
-      runtimeRef.pending = null;
-      const current = rootRef.current;
-      if (!next || !current) return;
-      run(current, next, runtimeRef);
-    });
+    enqueue(runtimeRef, next, () => rootRef.current);
   };
   scheduleRef.current = schedule;
 
@@ -299,7 +302,7 @@ export function RevealScope({
       runtimeRef.retried = true;
       runtimeRef.measuring = true;
       try {
-        run(current, last, runtimeRef);
+        run(current, last, runtimeRef, () => rootRef.current);
       } finally {
         runtimeRef.measuring = false;
       }
