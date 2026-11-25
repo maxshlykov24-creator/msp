@@ -72,7 +72,7 @@ function detail(deal) {
   if (deal.result === "Провал") props.push(["Причина провала", deal.reason]);
   if (deal.kassaNumber) props.push(["Заявка кассы", String(deal.kassaNumber)]);
   const history = (deal.history ?? []).map((event) => `<li>${esc(event.stage)}<small>${stamp(event.at)}</small></li>`).join("");
-  const tasks = (deal.tasks ?? []).map((task) => `<div class="dlgrow"><span>${esc(task.name)}</span><strong>Срок ${stamp(task.due)}<br><small class="tiny">${task.done ? "Обновлена " + stamp(task.done) + ". Отдельного времени выполнения amo не отдаёт." : "Ещё открыта"}</small></strong></div>`).join("");
+  const tasks = (deal.tasks ?? []).map((task) => `<div class="dlgrow"><span class="taskname">${esc(task.name)}</span><strong>Срок ${stamp(task.due)}<br><small class="tiny">${task.done ? "Обновлена " + stamp(task.done) + ". Отдельного времени выполнения amo не отдаёт." : "Ещё открыта"}</small></strong></div>`).join("");
   show("Заявка " + deal.id, deal.result ?? "В работе", `<p><a class="link" href="https://mansband.amocrm.ru/leads/detail/${deal.id}" target="_blank" rel="noreferrer">Открыть в amoCRM</a>${deal.kassaNumber ? ` · <a class="link" href="https://mansband-kassa.ru/#board/all/all/${deal.kassaNumber}" target="_blank" rel="noreferrer">Заявка кассы ${deal.kassaNumber}</a>` : ""}</p>` + props.map(([key, value]) => `<div class="dlgrow"><span>${esc(key)}</span><strong>${esc(value)}</strong></div>`).join("") + `<h3 class="sectiontitle">История этапов</h3>${history ? `<ol class="timeline">${history}</ol>` : empty(deal.historyComplete ? "Смен этапа нет." : "История этапа неполная, исход по ней не достраивается.")}` + (tasks ? `<h3>Задачи</h3>${tasks}` : ""));
 }
 function methodology() {
@@ -120,7 +120,7 @@ document.addEventListener("change", (event) => {
 });
 function metric(name, value, sub, fn, tone = "") { return `<button class="metric" ${reg(fn)}><span>${name}</span><strong class="${tone}">${value}</strong><small>${sub}</small></button>`; }
 const panel = (title, text, body) => `<section class="panel"><h2>${title}</h2>${text ? `<p class="note aside">${text}</p>` : ""}${body}</section>`;
-function barRow(label, count, total, fn, sub = "") { return `<button class="stage" ${reg(fn)}><span>${esc(label)}${sub ? `<small>${esc(sub)}</small>` : ""}</span><span class="track"><i style="width:${total ? 100 * count / total : 0}%"></i></span><span class="alignr"><b>${count}</b><small>${percent(count, total)}</small></span></button>`; }
+function barRow(label, count, total, fn, sub = "", rowClass = "") { return `<button class="stage${rowClass ? " " + rowClass : ""}" ${reg(fn)}><span>${esc(label)}${sub ? `<small>${esc(sub)}</small>` : ""}</span><span class="track"><i style="width:${total ? 100 * count / total : 0}%"></i></span><span class="alignr"><b>${count}</b><small>${percent(count, total)}</small></span></button>`; }
 function missingSource(title, reason) { show(title, "Нет источника", `<p class="note">${esc(reason)}</p>`); }
 function generalReport() {
   if (!ready()) return uncovered();
@@ -178,11 +178,11 @@ function qualityReport() {
   const digest = meta.digest?.complete
     ? `<p class="note">Сейчас просрочено: задачи ${fmt(meta.digest.tasks)}, этапы ${fmt(meta.digest.stages)}.</p><p class="note aside">Это другое число и с периодом не складывается. Без обязательной даты: ${fmt(meta.digest.missing)}. Задач с недоступной карточкой: ${fmt(meta.digest.unavailable)}.${chatReady ? ` Неотвеченных серий Wazzup: ${fmt(replies.pending)}.` : ""}</p>`
     : `<p class="note">Сейчас просрочено в этот срез не вошло.</p><p class="note aside">Список открытых задач собран не полностью.</p>`;
-  return `<p class="hintline aside">По дате завершения. Просрочка периода включает уже выполненные задачи. Срок, который не сохранился, в просрочку не ставится: таких пребываний ${fmt(stages.missing.length)}. Ответ считается от первого входящего Wazzup в серии до следующего исходящего, по сообщениям за 90 дней до начала недели. С 23:00 до 10:00 МСК счёт стоит и продолжается в 10:00. Звонки не входят.</p><div class="metrics">${cards.join("")}</div><div class="double">${groupPanel("Какие задачи просрочили?", byName, tasks.length)}${groupPanel("На каких этапах задержались?", byStage, stages.overdue.length)}</div>${digest}`;
+  return `<p class="hintline aside">По дате завершения. Просрочка периода включает уже выполненные задачи. Срок, который не сохранился, в просрочку не ставится: таких пребываний ${fmt(stages.missing.length)}. Ответ считается от первого входящего Wazzup в серии до следующего исходящего, по сообщениям за 90 дней до начала недели. С 23:00 до 10:00 МСК счёт стоит и продолжается в 10:00. Звонки не входят.</p><div class="metrics">${cards.join("")}</div><div class="double">${groupPanel("Какие задачи просрочили?", byName, tasks.length, "taskname")}${groupPanel("На каких этапах задержались?", byStage, stages.overdue.length)}</div>${digest}`;
 }
-function groupPanel(title, map, total) {
+function groupPanel(title, map, total, rowClass = "") {
   const entries = [...map.entries()].sort((a, b) => b[1].length - a[1].length);
-  return panel(title, "Открой строку, чтобы увидеть заявки.", entries.length ? `<div class="stack">${entries.map(([label, group]) => barRow(label, group.length, total, () => list(label, group, "Заявки этой строки."))).join("")}</div>` : empty("Таких записей нет."));
+  return panel(title, "Открой строку, чтобы увидеть заявки.", entries.length ? `<div class="stack">${entries.map(([label, group]) => barRow(label, group.length, total, () => list(label, group, "Заявки этой строки."), "", rowClass)).join("")}</div>` : empty("Таких записей нет."));
 }
 function funnelReport(logistics) {
   if (!periodCovered("results", bounds(), meta.coverage)) return uncovered();

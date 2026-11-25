@@ -309,6 +309,10 @@ async function collectWazzup(ids, fromMs, toMs) {
   }
   return { byLead, complete: false };
 }
+function taskTitle(text) {
+  const title = String(text ?? "").replace(/\d{5,}/g, "••••").replace(/\r\n/g, "\n").trim();
+  return title || "Задача";
+}
 function wazzupMessages(rows) {
   const messages = [];
   for (const event of rows) {
@@ -324,34 +328,42 @@ function wazzupMessages(rows) {
 async function storeCard(id, allowDisable) {
   const savedLead = checkpoint.leads[id];
   const needsEvents = eventsAvailable && !savedLead?.eventsComplete;
-  const needsTasks = tasksAvailable && !savedLead?.tasksComplete;
+  const needsTasks = tasksAvailable && (!savedLead?.tasksComplete || savedLead.taskText !== "full");
   if (savedLead && !needsEvents && !needsTasks) return "ready";
   let events = savedLead?.events ?? [];
   let eventsComplete = savedLead?.eventsComplete === true;
   let tasks = savedLead?.tasks ?? [];
   let tasksComplete = savedLead?.tasksComplete === true;
+  let taskText = savedLead?.taskText === "full" ? "full" : "";
   if (!savedLead || needsEvents || needsTasks) {
-    const eventPage = eventsAvailable ? await entityPages("/events", "events", id) : { rows: [], complete: false, ignored: false };
-    const openTasks = tasksAvailable ? await entityPages("/tasks", "tasks", id, 0) : { rows: [], complete: false, ignored: false };
-    const doneTasks = tasksAvailable ? await entityPages("/tasks", "tasks", id, 1) : { rows: [], complete: false, ignored: false };
-    if (eventPage.ignored || openTasks.ignored || doneTasks.ignored) {
+    const eventPage = needsEvents || !savedLead
+      ? (eventsAvailable ? await entityPages("/events", "events", id) : { rows: [], complete: false, ignored: false })
+      : null;
+    const openTasks = needsTasks ? (tasksAvailable ? await entityPages("/tasks", "tasks", id, 0) : { rows: [], complete: false, ignored: false }) : null;
+    const doneTasks = needsTasks ? (tasksAvailable ? await entityPages("/tasks", "tasks", id, 1) : { rows: [], complete: false, ignored: false }) : null;
+    if (eventPage?.ignored || openTasks?.ignored || doneTasks?.ignored) {
       if (allowDisable) {
-        eventsAvailable = eventPage.ignored ? false : eventsAvailable;
-        tasksAvailable = openTasks.ignored || doneTasks.ignored ? false : tasksAvailable;
+        eventsAvailable = eventPage?.ignored ? false : eventsAvailable;
+        tasksAvailable = openTasks?.ignored || doneTasks?.ignored ? false : tasksAvailable;
       }
-      console.log(JSON.stringify({ filterIgnored: true, events: eventPage.ignored, tasks: openTasks.ignored || doneTasks.ignored, allowDisable }));
+      console.log(JSON.stringify({ filterIgnored: true, events: Boolean(eventPage?.ignored), tasks: Boolean(openTasks?.ignored || doneTasks?.ignored), allowDisable }));
       return "ignored";
     }
-    events = eventPage.rows.map((event) => ({ id: event.id, created_at: event.created_at, value_before: event.value_before, value_after: event.value_after }));
-    tasks = [...openTasks.rows, ...doneTasks.rows].map((task) => ({
-      id: task.id, text: String(task.text ?? "Задача").replace(/\d{5,}/g, "••••").slice(0, 80), complete_till: task.complete_till, is_completed: task.is_completed,
-      updated_at: task.updated_at, responsible_user_id: task.responsible_user_id, entity_id: task.entity_id,
-    }));
-    eventsComplete = eventPage.complete;
-    tasksComplete = openTasks.complete && doneTasks.complete;
+    if (eventPage) {
+      events = eventPage.rows.map((event) => ({ id: event.id, created_at: event.created_at, value_before: event.value_before, value_after: event.value_after }));
+      eventsComplete = eventPage.complete;
+    }
+    if (openTasks && doneTasks) {
+      tasks = [...openTasks.rows, ...doneTasks.rows].map((task) => ({
+        id: task.id, text: taskTitle(task.text), complete_till: task.complete_till, is_completed: task.is_completed,
+        updated_at: task.updated_at, responsible_user_id: task.responsible_user_id, entity_id: task.entity_id,
+      }));
+      tasksComplete = openTasks.complete && doneTasks.complete;
+      taskText = tasksComplete ? "full" : "";
+    }
   }
   checkpoint.leads[id] = {
-    events, tasks, eventsComplete, tasksComplete,
+    events, tasks, eventsComplete, tasksComplete, taskText,
     messages: savedLead?.messages ?? [],
     messagesComplete: savedLead?.messagesComplete === true,
   };
@@ -533,7 +545,7 @@ if (digestTasks.complete) {
       if (task.entity_type !== "leads") continue;
       const list = taskByLead.get(Number(task.entity_id)) ?? [];
       list.push({
-        id: task.id, name: String(task.text ?? "Задача").replace(/\d{5,}/g, "••••").slice(0, 80),
+        id: task.id, name: taskTitle(task.text),
         due: Number(task.complete_till) * 1000, done: task.is_completed ? Number(task.updated_at) * 1000 : null,
         responsibleId: task.responsible_user_id, leadMissing: false,
       });
