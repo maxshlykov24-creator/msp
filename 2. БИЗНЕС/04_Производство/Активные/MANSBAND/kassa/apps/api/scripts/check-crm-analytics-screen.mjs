@@ -75,6 +75,8 @@ assert.equal(review.html.includes("reason-trigger"), true);
 assert.equal(review.html.includes("restrictDeals"), true);
 assert.equal(review.html.includes("replyAudit"), true);
 assert.equal(review.html.includes("К списку"), true);
+assert.equal(review.html.includes("Назад"), true);
+assert.equal(review.html.includes("dialogBack"), true);
 assert.equal(review.html.includes("не требует ответа"), true);
 assert.equal(review.html.includes("В выборке"), false);
 assert.equal(review.html.includes("Снимите галочку"), false);

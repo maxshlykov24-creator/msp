@@ -40,19 +40,40 @@ let dialogActions = new Map();
 let serial = 0;
 const state = { kind: "week", date: meta.week.from + 3600000, mode: "results", source: "*", touch: "*", lane: "off", explain: false, outcomes: new Set(["success", "fail", "open"]), reasons: new Set(), reasonMenu: false, reasonQuery: "", reasonFocus: false, reasonCaret: 0 };
 function reg(fn, dialog = false) { const key = String(++serial); (dialog ? dialogActions : actions).set(key, fn); return `data-act="${key}"`; }
-function nav(next) { if (!Object.hasOwn(titles, next)) return; if (drawer.open) drawer.close(); if (!embedded && location.hash !== "#" + next) { location.hash = next; return; } page = next; render(); window.scrollTo(0, 0); }
-addEventListener("hashchange", () => { page = Object.hasOwn(titles, location.hash.slice(1)) ? location.hash.slice(1) : "home"; if (drawer.open) drawer.close(); render(); window.scrollTo(0, 0); });
+function nav(next) { if (!Object.hasOwn(titles, next)) return; if (drawer.open) closeDrawer(); state.reasonMenu = false; state.reasonQuery = ""; if (!embedded && location.hash !== "#" + next) { location.hash = next; return; } page = next; render(); window.scrollTo(0, 0); }
+addEventListener("hashchange", () => { page = Object.hasOwn(titles, location.hash.slice(1)) ? location.hash.slice(1) : "home"; if (drawer.open) closeDrawer(); render(); window.scrollTo(0, 0); });
 document.addEventListener("click", (event) => { const el = event.target.closest("[data-page],[data-act]"); if (!el) return; if (el.dataset.page) nav(el.dataset.page); else (dialogActions.get(el.dataset.act) ?? actions.get(el.dataset.act))?.(); });
 document.addEventListener("click", (event) => { if (!state.reasonMenu || event.target.closest(".reasonbox")) return; state.reasonMenu = false; state.reasonQuery = ""; if (!event.target.closest("[data-act],[data-page],input,button,a,label")) render(); }, true);
 document.addEventListener("input", (event) => { const input = event.target; if (!input.classList?.contains("reason-search")) return; state.reasonQuery = input.value; state.reasonCaret = input.selectionStart ?? input.value.length; state.reasonMenu = true; state.reasonFocus = true; render(); });
 addEventListener("scroll", () => { if (state.reasonMenu) placeReasonMenu(); }, true);
 addEventListener("resize", () => { if (state.reasonMenu) placeReasonMenu(); });
-drawer.addEventListener("click", (event) => { if (event.target === drawer) drawer.close(); });
-drawer.addEventListener("keydown", (event) => { if (event.key === "Escape") drawer.close(); });
-document.addEventListener("keydown", (event) => { if (event.key !== "Escape") return; if (state.reasonMenu && !drawer.open) { state.reasonMenu = false; state.reasonQuery = ""; render(); return; } if (drawer.open) drawer.close(); }, true);
-document.querySelector("#close").onclick = () => drawer.close();
-drawer.addEventListener("close", () => { dialogActions.clear(); document.body.style.overflow = ""; });
-function show(title, note, html, scroll = 0) { document.querySelector("#dlgtitle").textContent = title; document.querySelector("#dlgmeta").textContent = note; document.querySelector("#dlgbody").innerHTML = html; if (!drawer.open) { drawer.showModal(); document.body.style.overflow = "hidden"; } drawer.querySelector(".sheet").scrollTop = scroll; }
+let dialogBack = null;
+function closeDrawer() { dialogBack = null; drawer.close(); }
+drawer.addEventListener("click", (event) => { if (event.target === drawer) closeDrawer(); });
+drawer.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  event.preventDefault();
+  if (dialogBack) dialogBack();
+  else closeDrawer();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  if (state.reasonMenu && !drawer.open) { state.reasonMenu = false; state.reasonQuery = ""; render(); return; }
+  if (!drawer.open) return;
+  event.preventDefault();
+  if (dialogBack) dialogBack();
+  else closeDrawer();
+}, true);
+document.querySelector("#close").onclick = () => closeDrawer();
+drawer.addEventListener("close", () => { dialogActions.clear(); dialogBack = null; document.body.style.overflow = ""; });
+function show(title, note, html, scroll = 0, back = null) {
+  dialogBack = typeof back === "function" ? back : null;
+  document.querySelector("#dlgtitle").textContent = title;
+  document.querySelector("#dlgmeta").textContent = note;
+  document.querySelector("#dlgbody").innerHTML = html;
+  if (!drawer.open) { drawer.showModal(); document.body.style.overflow = "hidden"; }
+  drawer.querySelector(".sheet").scrollTop = scroll;
+}
 const empty = (text) => `<div class="empty"><strong>Нет записей</strong>${text}</div>`;
 const bounds = () => periodBounds(state.kind, state.date, builtAt, tz, meta.weekStartsOn);
 const modeOf = () => state.mode === "created" ? "sources" : "results";
@@ -89,18 +110,19 @@ function openReplyList(title, audit, onlySlow = false) {
   const byId = new Map(audit.rows.map((row) => [row.deal.id, row]));
   list(title, records, "", (deal) => replyListMeta(byId.get(deal.id), audit.cutoff));
 }
-function list(title, records, explain, timeOf) {
+function list(title, records, explain, timeOf, returnTo) {
   const openList = (limit = 40, scroll = 0) => {
     dialogActions.clear();
-    const back = () => openList(limit, drawer.querySelector(".sheet").scrollTop);
+    const listBack = () => openList(limit, drawer.querySelector(".sheet").scrollTop);
+    const navBack = typeof returnTo === "function" ? `<p class="actions"><button class="back" ${reg(returnTo, true)}>Назад</button></p>` : "";
     const items = records.slice(0, limit).map((deal) => {
       const time = timeOf ? timeOf(deal) : null;
       const timed = Boolean(time);
       const slow = timed && time.slow;
       const timeHtml = timed ? `<b class="replytime${slow ? " slow" : ""}">${time.html}</b>` : "";
-      return `<button class="item${timed ? " timed" : ""}${slow ? " slowreply" : ""}" ${reg(() => detail(deal, back), true)}><span><strong>${deal.id}</strong> · ${esc(deal.stage || deal.result || "Без этапа")}<small>${esc(dateFmt(deal.created) + " · " + (CHANNEL[deal.lane] ?? "") + " · " + deal.source)}</small></span>${timeHtml}</button>`;
+      return `<button class="item${timed ? " timed" : ""}${slow ? " slowreply" : ""}" ${reg(() => detail(deal, listBack), true)}><span><strong>${deal.id}</strong> · ${esc(deal.stage || deal.result || "Без этапа")}<small>${esc(dateFmt(deal.created) + " · " + (CHANNEL[deal.lane] ?? "") + " · " + deal.source)}</small></span>${timeHtml}</button>`;
     }).join("");
-    show(title, `${fmt(records.length)} записей`, (explain ? `<p class="note">${esc(explain)}</p>` : "") + (items ? `<div class="stack">${items}</div>` : empty("По выбранным условиям ничего не найдено.")) + (limit < records.length ? `<p class="actions"><button class="pill" ${reg(() => openList(limit + 60, 0), true)}>Показать ещё</button></p>` : ""), scroll);
+    show(title, `${fmt(records.length)} записей`, navBack + (explain ? `<p class="note">${esc(explain)}</p>` : "") + (items ? `<div class="stack">${items}</div>` : empty("По выбранным условиям ничего не найдено.")) + (limit < records.length ? `<p class="actions"><button class="pill" ${reg(() => openList(limit + 60, scroll), true)}>Показать ещё</button></p>` : ""), scroll, returnTo ?? null);
   };
   openList();
 }
@@ -117,7 +139,7 @@ function detail(deal, back) {
   const tasks = (deal.tasks ?? []).map((task) => `<div class="dlgrow"><span class="taskname">${esc(task.name)}</span><strong>Срок ${stamp(task.due)}<br><small class="tiny">${task.done ? "Обновлена " + stamp(task.done) : "Ещё открыта"}</small></strong></div>`).join("");
   const audit = replyAudit([deal], tz);
   const backButton = typeof back === "function" ? `<p class="actions"><button class="back" ${reg(() => back(), true)}>К списку</button></p>` : "";
-  show("Заявка " + deal.id, deal.result ?? "В работе", backButton + `<p><a class="link" href="https://mansband.amocrm.ru/leads/detail/${deal.id}" target="_blank" rel="noreferrer">Открыть в amoCRM</a>${deal.kassaNumber ? ` · <a class="link" href="https://mansband-kassa.ru/#board/all/all/${deal.kassaNumber}" target="_blank" rel="noreferrer">Заявка кассы ${deal.kassaNumber}</a>` : ""}</p>` + props.map(([key, value]) => `<div class="dlgrow"><span>${esc(key)}</span><strong>${esc(value)}</strong></div>`).join("") + replyRows(deal, audit.cutoff) + `<h3 class="sectiontitle">История этапов</h3>${history ? `<ol class="timeline">${history}</ol>` : empty(deal.historyComplete ? "Смен этапа нет." : "История этапа неполная.")}` + (tasks ? `<h3>Задачи</h3>${tasks}` : ""));
+  show("Заявка " + deal.id, deal.result ?? "В работе", backButton + `<p><a class="link" href="https://mansband.amocrm.ru/leads/detail/${deal.id}" target="_blank" rel="noreferrer">Открыть в amoCRM</a>${deal.kassaNumber ? ` · <a class="link" href="https://mansband-kassa.ru/#board/all/all/${deal.kassaNumber}" target="_blank" rel="noreferrer">Заявка кассы ${deal.kassaNumber}</a>` : ""}</p>` + props.map(([key, value]) => `<div class="dlgrow"><span>${esc(key)}</span><strong>${esc(value)}</strong></div>`).join("") + replyRows(deal, audit.cutoff) + `<h3 class="sectiontitle">История этапов</h3>${history ? `<ol class="timeline">${history}</ol>` : empty(deal.historyComplete ? "Смен этапа нет." : "История этапа неполная.")}` + (tasks ? `<h3>Задачи</h3>${tasks}` : ""), 0, typeof back === "function" ? back : null);
 }
 function methodology() {
   show("Как читать статистику", "Правила расчёта", `<div class="stack"><section><h3>Результаты</h3><p class="note">Качество, общая статистика, эффективность и логистика берут сделки, закрытые в выбранный период. Успех и провал в сумме дают все закрытые. Возврат и обмен уже закрытый успех не уменьшают.</p></section><section><h3>Источники</h3><p class="note">Сделки группируются по дате создания. Успех и провал берутся из событий этапа на конец периода. Если история обрывается, заявка остаётся в общем числе и не попадает ни в успех, ни в провал.</p></section><section><h3>Целевые и квалы</h3><p class="note">Целевая: дата взятия в работу не позже границы или успех уже наступил. Квал: дата квалификации или успех. Провал «Спам» квалом не считается. Чекбокс «Целевой» число не меняет. Квал без даты взятия в работу в целевые не дописывается.</p></section><section><h3>Сроки</h3><p class="note">В просрочку периода входят только сроки, которые сохранились на карточке или в задаче. Срок задачи раньше 10:00 считается с 10:00. Срок с 23:00 считается со следующих 10:00. «Сейчас просрочено» считается отдельно и с закрытым периодом не складывается. Ответ Wazzup идёт с 10:00 до 23:00.</p></section></div>`);
@@ -224,6 +246,27 @@ function metric(name, value, sub, fn, tone = "") { return `<button class="metric
 const panel = (title, text, body) => `<section class="panel"><h2>${title}</h2>${text ? `<p class="note aside">${text}</p>` : ""}${body}</section>`;
 function barRow(label, count, total, fn, sub = "", rowClass = "") { return `<button class="stage${rowClass ? " " + rowClass : ""}" ${reg(fn)}><span>${esc(label)}${sub ? `<small>${esc(sub)}</small>` : ""}</span><span class="track"><i style="width:${total ? 100 * count / total : 0}%"></i></span><span class="alignr"><b>${count}</b><small>${percent(count, total)}</small></span></button>`; }
 function missingSource(title, reason) { show(title, "Нет источника", `<p class="note">${esc(reason)}</p>`); }
+const SOURCE_ORDER = [["all", "Все заявки"], ["target", "Целевые"], ["qual", "Квалы"], ["success", "Успех"], ["fail", "Провал"]];
+function sourceTableData() {
+  const period = bounds();
+  const mode = "sources";
+  const sourcePool = cohort(deals, mode, period, { touch: state.touch });
+  const sources = [...new Set(sourcePool.map((deal) => deal.source))].sort((a, b) => a.localeCompare(b, "ru"));
+  const narrowed = cohort(deals, mode, period, { touch: state.touch, source: state.source === "*" ? "*" : state.source });
+  const { picked } = pickedDeals(narrowed, mode, period);
+  const groups = general(picked, mode, period, { ready: true });
+  const ranked = (state.source === "*" ? sources : [state.source]).map((source) => [source, general(groups.all, "sources", period, { source })]).sort((a, b) => b[1].all.length - a[1].all.length);
+  return { ranked, order: SOURCE_ORDER };
+}
+function sourceTableHtml() {
+  const { ranked, order } = sourceTableData();
+  const returnTo = () => openSourceTableDialog();
+  return `<div class="tablewrap source-table"><table><thead><tr><th>Источник</th>${order.map(([, label]) => `<th>${label}</th>`).join("")}</tr></thead><tbody>${ranked.map(([source, group]) => `<tr><td><button class="sourcename" ${reg(() => list(source, group.all, "", null, returnTo))}>${esc(source)}</button></td>${order.map(([key, label]) => `<td><button ${reg(() => list(source + " · " + label, group[key], "", null, returnTo))}><span class="source-label">${label}</span>${group[key].length}</button></td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+}
+function openSourceTableDialog() {
+  dialogActions.clear();
+  show("Что дал каждый источник?", "Таблица по источникам", sourceTableHtml());
+}
 function generalReport() {
   if (!ready()) return uncovered();
   const period = bounds();
@@ -235,7 +278,7 @@ function generalReport() {
   const { picked, addedOpen } = pickedDeals(narrowed, mode, period);
   if (state.outcomes.size === 0) return `<div class="filterbar">${segment("mode", [["results", "Результаты"], ["created", "Источники"]])}${select("touch", "Касание", [["*", "Все заявки"], ["yes", "С касанием"], ["no", "Без касания"]])}</div>${outcomeBar(narrowed, mode, period)}${empty("Отметьте хотя бы один исход: успех, провал или в работе.")}`;
   const groups = general(picked, mode, period, { ready: true });
-  const order = [["all", "Все заявки"], ["target", "Целевые"], ["qual", "Квалы"], ["success", "Успех"], ["fail", "Провал"]];
+  const order = SOURCE_ORDER;
   const den = { target: groups.all.length, qual: groups.target.length, success: groups.all.length, fail: groups.all.length };
   const suffix = { target: "от всех", qual: "от целевых", success: "от всех", fail: "от всех" };
   let html = `<div class="filterbar">${segment("mode", [["results", "Результаты"], ["created", "Источники"]])}${select("touch", "Касание", [["*", "Все заявки"], ["yes", "С касанием"], ["no", "Без касания"]])}${state.mode === "created" ? select("source", "Источник", [["*", "Все источники"], ...sources.map((source) => [source, source])]) : ""}</div>${outcomeBar(narrowed, mode, period)}`;
@@ -243,8 +286,7 @@ function generalReport() {
   html += `<div class="metrics">${order.map(([key, label], index) => metric(label, fmt(groups[key].length), key === "all" ? allCaption : percent(groups[key].length, den[key]) + " " + suffix[key], () => list(label, groups[key], ""), index === 3 ? "accent" : index === 4 ? "bad" : "")).join("")}</div>`;
   if (state.mode === "created") {
     const outside = qualOutsideTarget(groups, "sources", period);
-    const ranked = (state.source === "*" ? sources : [state.source]).map((source) => [source, general(groups.all, "sources", period, { source })]).sort((a, b) => b[1].all.length - a[1].all.length);
-    html += panel("Что дал каждый источник?", "", `<div class="tablewrap source-table"><table><thead><tr><th>Источник</th>${order.map(([, label]) => `<th>${label}</th>`).join("")}</tr></thead><tbody>${ranked.map(([source, group]) => `<tr><td><button class="sourcename" ${reg(() => list(source, group.all, ""))}>${esc(source)}</button></td>${order.map(([key, label]) => `<td><button ${reg(() => list(source + " · " + label, group[key], ""))}><span class="source-label">${label}</span>${group[key].length}</button></td>`).join("")}</tr>`).join("")}</tbody></table></div>`);
+    html += panel("Что дал каждый источник?", "", sourceTableHtml());
     const tails = [];
     if (groups.unknown.length) tails.push(`исход неизвестен ${fmt(groups.unknown.length)}`);
     if (outside.length) tails.push(`квалы без даты ${fmt(outside.length)}`);
@@ -334,14 +376,16 @@ function stageDetail(item, goal) {
     byReason.set(reason, (byReason.get(reason) ?? 0) + 1);
   }
   const why = [...byReason.entries()].sort((a, b) => b[1] - a[1]).map(([name, count]) => `<li>${esc(name)} · ${count}</li>`).join("");
-  show(item.stage, "Цель · " + goal, `<div class="stack">${[["Побывали на этапе", item.visited], ["Дошли до цели", item.hit], ["Не дошли до цели", missed]].map(([label, group]) => `<button class="item" ${reg(() => list(label, group, ""), true)}><span>${label}</span><strong>${group.length}</strong></button>`).join("")}</div>${why ? `<h3 class="sectiontitle">Почему не дошли</h3><ul class="reasonlist">${why}</ul>` : ""}`);
+  const returnTo = () => stageDetail(item, goal);
+  show(item.stage, "Цель · " + goal, `<div class="stack">${[["Побывали на этапе", item.visited], ["Дошли до цели", item.hit], ["Не дошли до цели", missed]].map(([label, group]) => `<button class="item" ${reg(() => list(label, group, "", null, returnTo), true)}><span>${label}</span><strong>${group.length}</strong></button>`).join("")}</div>${why ? `<h3 class="sectiontitle">Почему не дошли</h3><ul class="reasonlist">${why}</ul>` : ""}`);
 }
 function queuePoint(point, limit = 40) {
   const records = point.ids.map((id) => byId.get(id)).filter(Boolean).sort((a, b) => a.created - b.created);
   dialogActions.clear();
+  const listBack = () => queuePoint(point, limit);
   const items = records.slice(0, limit).map((deal) => {
     const then = stageAt(deal, point.at);
-    return `<button class="item" ${reg(() => detail(deal), true)}><span><strong>${deal.id}</strong> · ${esc(then || "этап на эту дату не восстановлен")}<small>${esc(dateFmt(deal.created) + " · открыта на конец дня")}</small></span></button>`;
+    return `<button class="item" ${reg(() => detail(deal, listBack), true)}><span><strong>${deal.id}</strong> · ${esc(then || "этап на эту дату не восстановлен")}<small>${esc(dateFmt(deal.created) + " · открыта на конец дня")}</small></span></button>`;
   }).join("");
   show("В работе · " + dateFmt(point.at), `${fmt(records.length)} заявок`, (items || empty("На конец этого дня открытых заявок нет.")) + (limit < records.length ? `<p class="actions"><button class="pill" ${reg(() => queuePoint(point, limit + 60), true)}>Показать ещё</button></p>` : ""));
 }
