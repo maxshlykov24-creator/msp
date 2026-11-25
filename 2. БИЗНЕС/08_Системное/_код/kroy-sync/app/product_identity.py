@@ -156,10 +156,16 @@ def planned_barcode_adoptions(s):
             continue
         have = {str(code) for code in item.barcodes or []}
         missing = [code for code in codes if code not in have]
-        needs_link = current is None or current.get('state') == 'missing'
-        if not missing and not needs_link:
+        # A card whose barcode is already stored does not need another link.
+        if not missing:
             continue
-        found.append(dict(item_id=item_id, product_id=str(variant['product_id']), offer_id=str(variant.get('offer_id') or ''), barcodes=missing, needs_link=needs_link))
+        if current and current.get('state') == 'unique':
+            linked = {str(card.get('product_id')) for card in current.get('candidates') or []}
+            if str(variant['product_id']) not in linked:
+                continue
+        elif current and current.get('state') != 'missing':
+            continue
+        found.append(dict(item_id=item_id, product_id=str(variant['product_id']), offer_id=str(variant.get('offer_id') or ''), barcodes=missing, needs_link=current is None or current.get('state') == 'missing'))
     grouped = defaultdict(list)
     for row in found:
         grouped[row['item_id']].append(row)

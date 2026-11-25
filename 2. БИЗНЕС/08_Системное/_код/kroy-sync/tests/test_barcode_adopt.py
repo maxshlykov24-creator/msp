@@ -1,4 +1,3 @@
-from uuid import uuid4
 import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -41,6 +40,29 @@ def test_barcode_on_the_linked_size_is_stored_and_ozon_is_linked(setup):
         assert adopt_barcodes_from_linked_sizes(s) == []
     with Session(engine) as s:
         assert s.get(Item, 's').barcodes == ['001', '555']
+
+
+def test_already_stored_barcode_is_not_linked_again(setup):
+    engine, _, _ = setup
+    remember_ozon(engine, [card(90, 'ФТБ-СКМС-ЧЕРН-S', '001')])
+    with transaction(engine) as s:
+        s.add(wb(codes=('001',)))
+        assert planned_barcode_adoptions(s) == []
+
+
+def test_second_barcode_is_stored_without_a_new_link(setup):
+    engine, _, _ = setup
+    remember_ozon(engine, [dict(id=90, offer_id='ФТБ-СКМС-ЧЕРН-S', name='x', barcodes=['001', '555'], sources=[{'sku': 900}], is_archived=False)])
+    with transaction(engine) as s:
+        s.add(wb(codes=('001', '555')))
+        s.add(Entity(id='mapping:ozon:s', kind='mapping', version=3, data=dict(
+            item_id='s', platform='ozon', state='unique', candidates=[dict(product_id='90', skus=['900'], barcodes=['001'])],
+            manual_card=dict(product_id='90', skus=['900'], barcodes=['001']))))
+        applied = adopt_barcodes_from_linked_sizes(s)
+        assert applied[0]['barcodes'] == ['555'] and applied[0]['needs_link'] is False
+    with Session(engine) as s:
+        assert s.get(Item, 's').barcodes == ['001', '555']
+        assert s.get(Entity, 'mapping:ozon:s').version == 3
 
 
 def test_barcode_owned_by_another_garment_is_not_taken(setup):
