@@ -751,15 +751,10 @@ export function ProductPicker({
   }
 
   useLayoutEffect(() => {
-    const bag = ((window as unknown as { __why?: string[] }).__why ??= []);
     const watch = watchRef.current;
-    bag.push(`api=${Boolean(revealApi)} watch=${Boolean(watch)} ro=${readOnly} open=${open} n=${items.length}`);
     if (!watch || !revealApi || readOnly) return;
     if (scannerOpen || moveOpen || stockModal) return;
-    if (open && watch.needs) {
-      (window as unknown as { __why?: string[] }).__why = [...((window as unknown as { __why?: string[] }).__why ?? []), "wait-open"];
-      return;
-    }
+    if (open && watch.needs) return;
     const searchingNext = (searchInputRef.current?.value ?? "").trim().length > 0;
     if (!watch.needs && searchingNext) {
       watchRef.current = null;
@@ -794,11 +789,7 @@ export function ProductPicker({
         break;
       }
     }
-    if (!row) {
-      (window as unknown as { __why?: string[] }).__why = [...((window as unknown as { __why?: string[] }).__why ?? []), "no-row"];
-      return;
-    }
-    (window as unknown as { __why?: string[] }).__why = [...((window as unknown as { __why?: string[] }).__why ?? []), "reveal " + watch.productId];
+    if (!row) return;
     revealApi.reveal({
       keep: row,
       companion: root.querySelector<HTMLElement>('[data-reveal-companion="search"]'),

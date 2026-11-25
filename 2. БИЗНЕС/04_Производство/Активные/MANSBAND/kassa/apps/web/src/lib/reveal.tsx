@@ -36,6 +36,7 @@ type Runtime = {
   lastAt: number;
   measuring: boolean;
   retried: boolean;
+  lastCommitAt: number;
 };
 
 function boxOf(el: HTMLElement | null | undefined): { top: number; bottom: number } | null {
@@ -139,7 +140,7 @@ function animate(scroller: HTMLElement, delta: number, runtime: Runtime) {
   const start = readTop(scroller);
   if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
     writeTop(scroller, start + delta);
-    return gen;
+    return;
   }
   const started = performance.now();
   const step = (now: number) => {
@@ -150,7 +151,6 @@ function animate(scroller: HTMLElement, delta: number, runtime: Runtime) {
     if (progress < 1) requestAnimationFrame(step);
   };
   requestAnimationFrame(step);
-  return gen;
 }
 
 function enqueue(runtime: Runtime, request: RevealRequest, getRoot: () => HTMLElement | null) {
@@ -181,7 +181,7 @@ function run(root: HTMLElement, request: RevealRequest, runtime: Runtime, getRoo
   if (!keep) return;
   const show = boxOf(request.show);
   const companion = boxOf(request.companion);
-  const { delta, companionKept } = revealDelta({
+  const { delta } = revealDelta({
     zone: visibleZone(root),
     keep,
     show,
@@ -192,6 +192,7 @@ function run(root: HTMLElement, request: RevealRequest, runtime: Runtime, getRoo
   const input = request.companionInput;
   if (delta !== 0 && input?.isConnected && document.activeElement === input) input.blur();
   if (delta === 0) return;
+  if ((request.priority ?? "commit") === "commit") runtime.lastCommitAt = Date.now();
   animate(scrollTarget(root), delta, runtime);
 }
 
@@ -211,6 +212,7 @@ export function RevealScope({
     lastAt: 0,
     measuring: false,
     retried: false,
+    lastCommitAt: 0,
   });
   const scheduleRef = useRef<(request: RevealRequest) => void>(() => {});
 
@@ -259,7 +261,7 @@ export function RevealScope({
       const target = event.target;
       if (!(target instanceof HTMLElement) || !root.contains(target)) return;
       const field = focusField(target);
-      if (!field) return;
+      if (!field || Date.now() - runtimeRef.lastCommitAt < 500) return;
       scheduleRef.current({ keep: field, priority: "focus" });
     };
 
