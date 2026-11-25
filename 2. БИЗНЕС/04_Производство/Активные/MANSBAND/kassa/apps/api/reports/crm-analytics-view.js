@@ -57,19 +57,22 @@ function rows() { return ready() ? cohort(deals, modeOf(), bounds(), { touch: st
 function replyListMeta(row, cutoff) {
   if (!row) return null;
   const { stat, max, pending } = row;
-  const slow = pending || (max != null && max >= cutoff);
-  if (pending && max == null) return { html: `<span class="replytag">без ответа</span>`, slow: true };
-  const count = stat.series.length;
-  const tail = count > 1 ? `<small class="replycount">${count} ${plural(count, "ответ", "ответа", "ответов")}</small>` : "";
-  return { html: `<span class="replytag">макс. ${esc(fmt(max))} мин</span>${tail}`, slow };
+  const long = max != null && max >= cutoff;
+  const parts = [];
+  if (pending) parts.push(`<span class="replytag warn">без ответа</span>`);
+  if (max != null) {
+    const count = stat.series.length;
+    const tail = count > 1 ? `<small class="replycount">${count} ${plural(count, "ответ", "ответа", "ответов")}</small>` : "";
+    parts.push(`<span class="replytag${long ? " warn" : ""}">${count > 1 ? "макс. " : ""}${esc(fmt(max))} мин</span>${tail}`);
+  }
+  return { html: parts.join(""), slow: long };
 }
 const closeLabel = { reply: "ответ", no_reply: "не требует ответа", closed: "беседа закрыта" };
 function replyRows(deal, cutoff = 60) {
   const stat = wazzupReplies(deal.messages, tz);
   if (!stat.series.length && !stat.pending) return "";
-  const max = stat.series.length ? Math.max(...stat.series.map((item) => item.minutes)) : null;
   const rows = stat.series.map((item) => {
-    const mark = max != null && item.minutes === max && (stat.series.length > 1 || item.minutes >= cutoff);
+    const mark = item.minutes >= cutoff;
     const action = closeLabel[item.close] ?? "ответ";
     return `<div class="dlgrow${mark ? " highlight" : ""}"><span>Вопрос ${esc(stamp(item.from))}<br>${esc(action)} ${esc(stamp(item.to))}</span><strong>${esc(fmt(item.minutes))} мин${mark ? " · долгий" : ""}</strong></div>`;
   }).join("");

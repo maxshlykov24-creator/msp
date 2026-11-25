@@ -702,7 +702,7 @@ export function replyAudit(deals, timeZone = "Europe/Moscow") {
     rows.push({ deal, stat, max, at, pending: stat.pending > 0 });
   }
   const cutoff = slowReplyCutoff(rows.map((row) => row.max).filter((value) => value != null));
-  const rank = (row) => (row.pending ? Number.POSITIVE_INFINITY : row.max ?? -1);
+  const rank = (row) => (row.max == null && row.pending ? Number.POSITIVE_INFINITY : row.max ?? -1);
   rows.sort((a, b) => rank(b) - rank(a) || (b.at ?? 0) - (a.at ?? 0) || a.deal.id - b.deal.id);
   const slow = rows.filter((row) => row.pending || (row.max != null && row.max >= cutoff));
   return { cutoff, rows, slow: slow.map((row) => row.deal), all: rows.map((row) => row.deal) };

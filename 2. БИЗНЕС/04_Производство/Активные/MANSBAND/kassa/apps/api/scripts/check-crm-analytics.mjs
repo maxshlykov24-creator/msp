@@ -242,6 +242,13 @@ assert.equal(audit.cutoff, 69);
 assert.deepEqual(audit.slow.map((deal) => deal.id), [3, 2]);
 assert.equal(audit.all[0].id, 3);
 assert.equal(audit.all[1].id, 2);
+const mixed = replyAudit([
+  { id: 11, messages: [{ at: noonReply, dir: "in" }, { at: noonReply + 2 * 60_000, dir: "out" }, { at: noonReply + 3 * 60_000, dir: "in" }] },
+  { id: 12, messages: [{ at: noonReply, dir: "in" }, { at: noonReply + 90 * 60_000, dir: "out" }] },
+], TZ);
+assert.deepEqual(mixed.all.map((deal) => deal.id), [12, 11]);
+assert.equal(mixed.rows[1].max < mixed.cutoff, true);
+assert.equal(mixed.rows[1].pending, true);
 const stillOpen = deal({ id: 31, status: 100, created: monday - 86400_000 }, { history: [{ stage: "Новая заявка", at: monday - 86400_000 }], historyComplete: true });
 const closedLater = deal({ id: 32, status: 142, created: monday, closed: bounds.cut + 86400_000 }, { history: [{ stage: "Новая заявка", at: monday }, { stage: "Успех", at: bounds.cut + 86400_000 }], historyComplete: true });
 assert.equal(dealOutcome(won, "results", bounds), "success");
