@@ -47,6 +47,139 @@ function CutNotice({ children, error = false }: {
     children: React.ReactNode;
     error?: boolean;
 }) { return <div className={'cut-notice ' + (error ? 'is-error' : '')} role={error ? 'alert' : undefined}><Icon name="attention" size={18}/><div>{children}</div></div>; }
+const stepGuide = [
+    { label: 'Товары', help: 'Выбери модели, цвета и размеры для задания.' },
+    { label: 'Потребность', help: 'Проверь продажи площадок и доступный запас, затем задай количество к крою.' },
+    { label: 'Раскладки', help: 'Объединяй цвета одной модели с одинаковым распределением размеров.' },
+    { label: 'Проверка и выдача', help: 'Назначь сотрудника и сроки. Дата доступности не снимает заморозку автоматически. Сравни план с потребностью. Допуск по каждому размеру — ±20%.' },
+];
+function useCutChrome() {
+    const ref = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+        document.documentElement.dataset.cutFocus = '1';
+        const node = ref.current;
+        const apply = () => { if (node) document.documentElement.style.setProperty('--cut-chrome', Math.ceil(node.getBoundingClientRect().height) + 'px'); };
+        apply();
+        const observer = new ResizeObserver(apply);
+        if (node) observer.observe(node);
+        window.addEventListener('resize', apply);
+        return () => {
+            observer.disconnect();
+            window.removeEventListener('resize', apply);
+            delete document.documentElement.dataset.cutFocus;
+            document.documentElement.style.removeProperty('--cut-chrome');
+        };
+    }, []);
+    return ref;
+}
+function pairKey(item: Row) { return (item.color || '') + '\0' + (item.size || ''); }
+function hasDuplicatePairs(items: Row[]) {
+    const seen = new Set<string>();
+    for (const item of items) {
+        const key = pairKey(item);
+        if (seen.has(key)) return true;
+        seen.add(key);
+    }
+    return false;
+}
+function demandFigures(row: Row) {
+    const sales = row.net != null ? n(row.net) : row.net_known != null ? n(row.net_known) : '—';
+    const stock = row.stock_assumed_zero ? '—' : n(row.free);
+    const fboKnown = Object.values(row.fbo || {}).some((v: any) => v.known && !v.stale);
+    const fbo = row.fbo_missing?.length ? (fboKnown ? n(row.fbo_counted) : '—') : n(row.fbo_total);
+    return { sales, stock, fbo, future: n(row.future), recommendation: n(row.recommendation) };
+}
+function demandGaps(row: Row, previous: Row | null) {
+    const gaps: string[] = [];
+    if (row.net == null && row.net_known != null) gaps.push('Не все площадки. Это не ноль.');
+    if (row.stock_assumed_zero) gaps.push('Остаток не внесён');
+    if (row.fbo_missing?.length) gaps.push(Object.values(row.fbo || {}).some((v: any) => v.known && !v.stale) ? 'ФБО без ' + row.fbo_missing.map(platformLabel).join(' и ') : 'ФБО: нет данных, это не ноль');
+    if (Object.values(row.fbo || {}).some((v: any) => v.stale && v.known)) gaps.push('ФБО нужно обновить');
+    if (row.recommendation == null) gaps.push(row.net_known != null ? 'Нет полной выгрузки, рекомендация не обнулена' : row.net == null ? 'Нужны данные продаж' : 'Нужны данные ФБО');
+    if (row.recommendation_partial) gaps.push('Без недостающих остатков ФБО');
+    if (previous && previous.rows.find((x: Row) => x.item_id === row.item_id)?.recommendation !== row.recommendation) gaps.push('Было ' + n(previous.rows.find((x: Row) => x.item_id === row.item_id)?.recommendation));
+    return gaps;
+}
+function DemandCell({ item, row, value, previous, targetDate, uncertain, onQty, onUncertain }: {
+    item: Row;
+    row: Row;
+    value: string;
+    previous: Row | null;
+    targetDate: string;
+    uncertain: string[];
+    onQty: (value: string) => void;
+    onUncertain: (id: string, checked: boolean) => void;
+}) {
+    const figures = demandFigures(row);
+    const gaps = demandGaps(row, previous);
+    const platforms = Object.entries(row.platforms || {});
+    const fbo = Object.entries(row.fbo || {});
+    const coverage = row.coverage || [];
+    const hasMore = platforms.length > 0 || fbo.length > 0 || coverage.length > 0;
+    return <div className="cut-demand-cell">
+      <label className="cut-matrix-qty"><span>К крою</span><input aria-label={'К крою ' + item.name} className="cut-qty" type="number" min="0" step="1" value={value} onChange={e => onQty(e.target.value)}/></label>
+      <p className="cut-figure-line"><span>пр. {figures.sales}</span><span>склад {figures.stock}</span><span>ФБО {figures.fbo}</span><span>ож. {figures.future}</span><span>рек. {figures.recommendation}</span></p>
+      {gaps.map(text => <small className="cut-gap" key={text}>{text}</small>)}
+      {hasMore && <details className="cut-cell-more"><summary>Разбивка</summary>
+        {platforms.length > 0 && <div className="cut-breakdown">{platforms.map(([key, v]: [string, any]) => <div key={key} title={v.known ? 'Загружено ' + new Date(v.at).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' }) + ' · ' + (v.source || '') : undefined}><span>{key === 'wb' ? 'ВБ' : 'Ozon'}</span><strong>{v.known ? `${v.sales} − ${v.returns} = ${v.net ?? v.sales - v.returns}` : '—'}</strong>{key==='ozon'&&(v.catalog_matches||[]).map((card:Row)=><small key={card.product_id}><a href={'https://www.ozon.ru/product/'+(card.skus?.[0]||card.product_id)+'/'} target="_blank" rel="noreferrer">{card.archived?'Карточка в архиве':'Карточка Ozon'}</a>{card.offer_id&&<span> · {card.offer_id}</span>}</small>)}{(!v.known || v.listed === false) && <small className={!v.known ? 'cut-warning' : ''}>{v.known ? 'Не найдено в подключённом каталоге' : v.reason || 'Нет сверенных данных'}</small>}</div>)}</div>}
+        {fbo.length > 0 && <div className="cut-cell-note">{fbo.map(([platform, v]: [string, any]) => <p key={platform}>{platform==='wb'?'Wildberries':'Ozon'}: {v.known?n(v.quantity):'Нет сверенных данных'}{v.stale&&v.known?' · нужно обновить':''}</p>)}</div>}
+        {coverage.length > 0 && <div className="cut-breakdown">{coverage.map((c: Row) => <div key={c.id}><strong>{c.title}</strong><span>{n(c.quantity)} · {c.date ? dateText(c.date) : 'Без даты'}{c.included ? ' · учтено' : ''}</span>{c.date>targetDate&&<small>Позже выбранной даты</small>}{c.uncertain && (!c.date||c.date<=targetDate) && <label className="cut-check"><input type="checkbox" checked={uncertain.includes(c.id)} onChange={e => onUncertain(c.id, e.target.checked)}/><span>Учесть после обновления</span></label>}</div>)}</div>}
+      </details>}
+    </div>;
+}
+function ModelDemand({ title, sum, openedByData, children }: {
+    title: string;
+    sum: string;
+    openedByData: boolean;
+    children: React.ReactNode;
+}) {
+    const [open, setOpen] = useState(openedByData);
+    useEffect(() => { if (openedByData) setOpen(true); }, [openedByData]);
+    return <details className="cut-model" open={open} onToggle={event => setOpen(event.currentTarget.open)}><summary><strong>{title}</strong><span className="cut-model-sum">{sum}</span><Icon name="down" size={16}/></summary><div className="cut-model-body">{children}</div></details>;
+}
+function DemandBoard({ rows, items, qty, previous, targetDate, uncertain, onQty, onUncertain }: {
+    rows: Row[];
+    items: Row[];
+    qty: Record<string, string>;
+    previous: Row | null;
+    targetDate: string;
+    uncertain: string[];
+    onQty: (id: string, value: string) => void;
+    onUncertain: (id: string, checked: boolean) => void;
+}) {
+    const byId = (id: string) => items.find(i => i.id === id)!;
+    const ordered = rows.slice().sort((a, b) => compareVariants(byId(a.item_id), byId(b.item_id)));
+    const models = new Map<string, Row[]>();
+    ordered.forEach(row => {
+        const item = byId(row.item_id);
+        const name = item?.model || item?.name || 'Без модели';
+        const list = models.get(name);
+        if (list) list.push(row); else models.set(name, [row]);
+    });
+    return <div className="cut-demand-models">{[...models.entries()].map(([model, list]) => {
+        const modelItems = list.map(row => byId(row.item_id));
+        const entered = list.reduce((sum, row) => sum + (Number(qty[row.item_id]) || 0), 0);
+        const knownRecommendations = list.map(row => row.recommendation).filter((value: any) => value != null);
+        const recommendationSum = knownRecommendations.reduce((sum: number, value: any) => sum + Number(value), 0);
+        const openedByData = list.some(row => String(qty[row.item_id] ?? '').trim() !== '' || Number(row.recommendation) > 0);
+        const cell = (row: Row) => <DemandCell key={row.item_id} item={byId(row.item_id)} row={row} value={qty[row.item_id] || ''} previous={previous} targetDate={targetDate} uncertain={uncertain} onQty={value => onQty(row.item_id, value)} onUncertain={onUncertain}/>;
+        const body = hasDuplicatePairs(modelItems)
+            ? <div className="cut-demand-list">{list.map(row => <div className="cut-demand-list-row" key={row.item_id}><ProductCell item={byId(row.item_id)}/>{cell(row)}</div>)}</div>
+            : <div className="cut-matrix-scroll"><table className="cut-demand-matrix"><thead><tr><th scope="col">Цвет</th>{[...new Set(modelItems.map(item => item.size || ''))].sort(compareSizes).map(size => <th scope="col" key={size || 'none'}>{size || 'Без размера'}</th>)}</tr></thead><tbody>{[...new Set(modelItems.map(item => item.color || ''))].map(color => { const sizes = [...new Set(modelItems.map(item => item.size || ''))].sort(compareSizes); return <tr key={color || 'none'}><th scope="row">{color || 'Цвет не указан'}</th>{sizes.map(size => { const row = list.find(entry => { const item = byId(entry.item_id); return (item.color || '') === color && (item.size || '') === size; }); return <td key={size || 'none'} className={row ? undefined : 'cut-matrix-empty'}>{row && cell(row)}</td>; })}</tr>; })}</tbody></table></div>;
+        return <ModelDemand key={model} title={model} sum={n(entered) + ' к крою' + (knownRecommendations.length ? ' · рек. ' + n(recommendationSum) : '')} openedByData={openedByData}>{body}</ModelDemand>;
+    })}</div>;
+}
+function ReleaseMatrix({ products, values, onChange }: {
+    products: Row[];
+    values: Record<string, string>;
+    onChange: (id: string, value: string) => void;
+}) {
+    if (!products.length) return <p className="cut-hint">В задании нет количеств этой модели.</p>;
+    if (hasDuplicatePairs(products)) return <div className="cut-quantity-grid">{products.map(item => <label key={item.id}><span>{item.color}<span className="cut-size">{item.size}</span></span><input aria-label={(item.color || '') + ' · ' + (item.size || '')} type="number" min="0" step="1" value={values[item.id] || ''} onChange={e => onChange(item.id, e.target.value)}/></label>)}</div>;
+    const colors = [...new Set(products.map(item => item.color || ''))];
+    const sizes = [...new Set(products.map(item => item.size || ''))].sort(compareSizes);
+    return <div className="cut-matrix-scroll"><table className="cut-release-matrix"><thead><tr><th scope="col">Цвет</th>{sizes.map(size => <th scope="col" key={size || 'none'}>{size || 'Без размера'}</th>)}</tr></thead><tbody>{colors.map(color => <tr key={color || 'none'}><th scope="row">{color || 'Цвет не указан'}</th>{sizes.map(size => { const item = products.find(entry => (entry.color || '') === color && (entry.size || '') === size); return <td key={size || 'none'} className={item ? undefined : 'cut-matrix-empty'}>{item && <input aria-label={(item.color || 'Цвет не указан') + ' · ' + (item.size || 'Без размера')} type="number" min="0" step="1" value={values[item.id] || ''} onChange={e => onChange(item.id, e.target.value)}/>}</td>; })}</tr>)}</tbody></table></div>;
+}
 export function Cutting({ api, items, rows, locations, permissions, refresh }: {
     api: Api;
     items: Row[];
