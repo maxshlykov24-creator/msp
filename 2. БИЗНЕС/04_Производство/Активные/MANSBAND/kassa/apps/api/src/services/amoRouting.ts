@@ -13,6 +13,18 @@ export function migrationBlocked(lead: { _embedded?: { tags?: Array<{ name?: str
   return (lead._embedded?.tags ?? []).some(tag => tag.name?.trim() === MIGRATION_TAG);
 }
 export function typedRoutingEnabled(): boolean { return getEnv().AMOCRM_TYPED_PIPELINES_ENABLED === "true"; }
+/** Живые воронки по типам, сверены 17.11.2026. Чтение и вебхук не зависят от флага записи. */
+export const KNOWN_TYPED_PIPELINE_IDS = {
+  offline: 11482373,
+  online: 11482377,
+  rental: 11482381,
+  company: 11482385,
+} as const;
+export function knownTypedPipelineIds(): number[] {
+  const known = Object.values(KNOWN_TYPED_PIPELINE_IDS);
+  if (!typedRoutingEnabled()) return [...known];
+  return [...new Set([...known, ...Object.values(typedPipelines())])];
+}
 export function typedPipelines(): Record<string, number> {
   const parsed: unknown = JSON.parse(getEnv().AMOCRM_TYPED_PIPELINES);
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Некорректная карта воронок");
@@ -22,7 +34,7 @@ export function typedPipelines(): Record<string, number> {
 export function allowedAmoPipeline(id: number | undefined): boolean {
   const env = getEnv();
   return id === env.AMOCRM_PIPELINE_SALES || id === env.AMOCRM_PIPELINE_COMPLAINTS ||
-    (typedRoutingEnabled() && Object.values(typedPipelines()).includes(Number(id)));
+    knownTypedPipelineIds().includes(Number(id));
 }
 export function typeLabel(deal: Pick<Deal, "kind" | "funnel">): string {
   if (deal.kind === "deferred" || deal.kind === "promise") {

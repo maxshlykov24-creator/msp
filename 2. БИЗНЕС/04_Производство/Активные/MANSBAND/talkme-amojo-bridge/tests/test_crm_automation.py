@@ -52,6 +52,22 @@ def test_history_excludes_migration_and_refuses_another_lead():
         project_stage_history(lead(),catalog(),events)
 
 
+def test_explicit_type_change_moves_between_known_funnels():
+    cat = a.Catalog([{"id": p, "_embedded": {"statuses": [{"id": s, "name": "Взято в работу", "type": 0}]}}
+                     for p, s in ((a.OFFLINE, 21), (a.ONLINE, 41), (a.CAMPAIGN, 51), (a.SALES, 11))])
+    item = lead(pipeline_id=a.OFFLINE, status_id=21, custom_fields_values=[
+        {"field_id": a.TYPE_FIELD, "values": [{"value": "Продажа онлайн"}]}])
+    moved = a.route_candidate(item, cat, type_change=True)
+    assert (moved.state, moved.pipeline_id, moved.status_id) == ("candidate", a.ONLINE, 41)
+    assert a.route_candidate(item, cat).reason == "existing_pipeline_requires_review"
+    assert a.route_candidate(lead(pipeline_id=a.CAMPAIGN, status_id=51), cat, type_change=True).state == "excluded"
+    assert a.route_candidate(lead(isTest=True), catalog(), type_change=True).state == "candidate"
+    empty = lead(custom_fields_values=[])
+    binding = {"lead_id": 55, "kind": "sale", "funnel": "offline"}
+    assert a.route_with_bindings(empty, catalog(), [binding], type_change=True).reason == "missing_or_ambiguous_type"
+    assert a.route_with_bindings(empty, catalog(), [binding]).state == "candidate"
+
+
 def test_route_preserves_stage_and_refuses_guess():
     r = a.route_candidate(lead(), catalog())
     assert (r.state, r.pipeline_id, r.status_id) == ("candidate", a.OFFLINE, 21)

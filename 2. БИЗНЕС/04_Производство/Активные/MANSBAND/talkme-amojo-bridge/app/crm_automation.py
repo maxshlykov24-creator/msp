@@ -102,10 +102,20 @@ class RouteDecision:
     status_id: int | None = None
 
 
-def route_candidate(lead: dict, catalog: Catalog, *, linked_kind: str | None = None) -> RouteDecision:
-    """A candidate is not an authorization to PATCH: bindings must be reconciled."""
-    if lead.get("pipeline_id") not in PIPELINES or lead.get("is_deleted") or is_test(lead):
+MOVABLE_PIPELINES = frozenset({SALES, OFFLINE, ONLINE, RENTAL, COMPANY, COMPLAINTS})
+
+
+def route_candidate(lead: dict, catalog: Catalog, *, linked_kind: str | None = None,
+                    type_change: bool = False) -> RouteDecision:
+    """A candidate is not an authorization to PATCH: bindings must be reconciled.
+
+    type_change is an explicit fill or edit of Тип заявки. It may leave Продажи,
+    a typed funnel, or Жалобы when the same stage exists. It does not replay history.
+    """
+    if lead.get("pipeline_id") not in PIPELINES or lead.get("is_deleted") or (is_test(lead) and not type_change):
         return RouteDecision("excluded", "outside_scope_or_test")
+    if type_change and lead.get("pipeline_id") == CAMPAIGN:
+        return RouteDecision("excluded", "campaign")
     if lead.get("status_id") in (142, 143):
         return RouteDecision("excluded", "closed")
     types = field_values(lead, TYPE_FIELD)
@@ -116,10 +126,10 @@ def route_candidate(lead: dict, catalog: Catalog, *, linked_kind: str | None = N
         return RouteDecision("manual", "kassa_type_conflict")
     if lead.get("pipeline_id") == target:
         return RouteDecision("stay", "already_routed", target, lead.get("status_id"))
-    if lead.get("pipeline_id") != SALES:
+    if lead.get("pipeline_id") not in MOVABLE_PIPELINES or (not type_change and lead.get("pipeline_id") != SALES):
         return RouteDecision("manual", "existing_pipeline_requires_review")
     name = catalog.stage(lead)
-    target_status = catalog.by_name.get((target, name))
+    target_status = catalog.by_name.get((target, name)) if name else None
     if not target_status:
         return RouteDecision("manual", "no_equivalent_stage")
     return RouteDecision("candidate", "binding_check_required", target, target_status)
@@ -140,7 +150,8 @@ def type_from_binding(binding: dict) -> str | None:
     return None
 
 
-def route_with_bindings(lead: dict, catalog: Catalog, bindings: list[dict]) -> RouteDecision:
+def route_with_bindings(lead: dict, catalog: Catalog, bindings: list[dict], *,
+                        type_change: bool = False) -> RouteDecision:
     matched = [b for b in bindings if b.get("lead_id") == lead.get("id")]
     if matched and all(b.get("isTest") is True for b in matched):
         return RouteDecision("excluded", "test_kassa_binding")
@@ -149,7 +160,7 @@ def route_with_bindings(lead: dict, catalog: Catalog, bindings: list[dict]) -> R
     if migration_blocked(lead):
         return RouteDecision("manual", "migration_guard")
     if not matched:
-        return route_candidate(lead, catalog)
+        return route_candidate(lead, catalog, type_change=type_change)
     if matched[0].get("isTest"):
         return RouteDecision("excluded", "test_kassa_binding")
     if matched[0].get("edit_pending"):
@@ -158,11 +169,14 @@ def route_with_bindings(lead: dict, catalog: Catalog, bindings: list[dict]) -> R
     if label is None:
         return RouteDecision("manual", "unknown_kassa_base_type")
     if not field_values(lead, TYPE_FIELD):
+        if type_change:
+            # A cleared field must not be refilled from the cash desk and then moved.
+            return route_candidate(lead, catalog, type_change=True)
         # Preview only. Filling this field in production is a separately journaled
         # operation guarded together with the move, never an implicit side effect.
         fields = [f for f in lead.get("custom_fields_values") or [] if f.get("field_id") != TYPE_FIELD]
         lead = {**lead, "custom_fields_values": fields + [{"field_id": TYPE_FIELD, "values": [{"value": label}]}]}
-    return route_candidate(lead, catalog, linked_kind=label)
+    return route_candidate(lead, catalog, linked_kind=label, type_change=type_change)
 
 
 def first_response_due(created: datetime) -> datetime:

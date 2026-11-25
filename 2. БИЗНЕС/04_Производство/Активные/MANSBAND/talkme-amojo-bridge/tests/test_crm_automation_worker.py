@@ -623,3 +623,102 @@ def test_online_placeholder_never_creates_a_meeting_deadline(db):
     c.lead["custom_fields_values"][0]["values"] = [{"value": int(actual.timestamp())}]
     w.process_event(db, c, stage_event, cat, {"visit_followup"})
     assert stage_event.state == "planned" and db.scalar(select(a.TaskExecution)) is not None
+
+
+class RouteClient:
+    def __init__(self, lead, events):
+        self.lead = lead
+        self.events = events
+        self.patches = []
+        self.notes = []
+        self.event_calls = 0
+        self.bindings = []
+        self.fail_kassa = False
+        self.settings = type("S", (), {"service_key": type("K", (), {"get_secret_value": staticmethod(lambda: "test")})()})()
+
+    def get(self, path, **_params):
+        if path == "/api/v4/events":
+            self.event_calls += 1
+            return {"_embedded": {"events": self.events}}
+        if path.startswith("/api/v4/leads/"):
+            return self.lead
+        raise AssertionError(path)
+
+    def patch(self, path, body):
+        self.patches.append((path, body))
+        self.lead["pipeline_id"] = body["pipeline_id"]
+        self.lead["status_id"] = body["status_id"]
+        return {}
+
+    def post(self, path, body):
+        self.notes.append((path, body))
+        return {}
+
+    def kassa_state(self, lead_id):
+        if self.fail_kassa:
+            raise RuntimeError("down")
+        return {"version": 1, "lead_id": lead_id, "bindings": self.bindings}
+
+
+def route_catalog():
+    return a.Catalog([
+        {"id": a.SALES, "_embedded": {"statuses": [
+            {"id": 11, "name": "Взято в работу", "type": 0},
+            {"id": 12, "name": "Нет соответствия", "type": 0}]}},
+        {"id": a.OFFLINE, "_embedded": {"statuses": [{"id": 21, "name": "Взято в работу", "type": 0}]}}])
+
+
+def typed_lead(**extra):
+    lead = {"id": 55, "pipeline_id": a.SALES, "status_id": 11, "updated_at": 10,
+            "custom_fields_values": [{"field_id": a.TYPE_FIELD, "values": [{"value": "Продажа офлайн"}]}]}
+    lead.update(extra)
+    return lead
+
+
+def type_event(at=1050, key="type-1"):
+    return {"id": key, "entity_id": 55, "entity_type": "lead", "type": "custom_field_value_changed",
+            "created_at": at, "value_before": [],
+            "value_after": [{"custom_field_value": {"field_id": a.TYPE_FIELD, "text": "Продажа офлайн"}}]}
+
+
+def test_type_field_arms_cursor_then_moves_and_does_not_repeat(db):
+    lead = typed_lead()
+    c = RouteClient(lead, [type_event()])
+    assert w.route_type_changes(db, c, route_catalog(), 1000) == 0
+    assert c.event_calls == 0 and db.get(w.Cursor, w.TYPE_CURSOR).through == 1000
+    c.fail_kassa = True
+    assert w.route_type_changes(db, c, route_catalog(), 1100) == 0
+    assert db.get(w.Cursor, w.TYPE_CURSOR).through == 1000 and not c.patches
+    c.fail_kassa = False
+    assert w.route_type_changes(db, c, route_catalog(), 1100) == 1
+    assert lead["pipeline_id"] == a.OFFLINE and lead["status_id"] == 21
+    assert db.get(w.TypeRoute, "type-1").state == "applied"
+    assert w.route_type_changes(db, c, route_catalog(), 1200) == 1
+    assert len(c.patches) == 1
+
+
+def test_type_field_keeps_pipeline_when_stage_or_binding_disagrees(db):
+    missing = typed_lead(status_id=12)
+    c = RouteClient(missing, [type_event()])
+    w.route_type_changes(db, c, route_catalog(), 1000)
+    w.route_type_changes(db, c, route_catalog(), 1100)
+    assert not c.patches and missing["pipeline_id"] == a.SALES
+    assert db.get(w.TypeRoute, "type-1").reason == "no_equivalent_stage"
+    assert "нет такого же этапа" in c.notes[0][1][0]["params"]["text"]
+    conflict = typed_lead()
+    c2 = RouteClient(conflict, [type_event(key="type-2")])
+    c2.bindings = [{"lead_id": 55, "kind": "rental", "funnel": "offline"}]
+    assert w.route_type_changes(db, c2, route_catalog(), 1200) == 1
+    assert not c2.patches and db.get(w.TypeRoute, "type-2").reason == "kassa_type_conflict"
+
+
+def test_our_type_move_does_not_plan_a_stage_task(db):
+    db.add(w.TypeRoute(id="e", lead_id=55, state="applied", before_pipeline=a.SALES, before_status=11,
+                       target_pipeline=a.OFFLINE, target_status=21, applied_at=1000))
+    moved = w.Event(id="move", lead_id=55, at=1010, before={"pipeline_id": a.SALES, "id": 11},
+                    after={"pipeline_id": a.OFFLINE, "id": 21})
+    db.add(moved)
+    db.commit()
+    c = Client([])
+    w.process_event(db, c, moved, route_catalog(), frozenset({"qualify"}))
+    assert moved.state == "migration" and not c.posts

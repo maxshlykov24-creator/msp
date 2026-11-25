@@ -13,7 +13,7 @@ from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import SecretStr
-from sqlalchemy import Integer, String, JSON, DateTime, select, text
+from sqlalchemy import Boolean, Integer, String, JSON, DateTime, select, text, update
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app import crm_automation as a
@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     promise_users: dict[str, int] = {}
     sources_enabled: bool = False
     messages_enabled: bool = False
+    routing_enabled: bool = True
     kassa_url: str = "https://mansband-kassa.ru"
     service_key: SecretStr = SecretStr("")
 
@@ -94,6 +95,24 @@ class CourierHandoff(Base):
     reason: Mapped[str] = mapped_column(String(100), default="")
 
 
+class TypeRoute(Base):
+    """One decision per Тип заявки event. History before the cursor is not replayed."""
+    __tablename__ = "crm_automation_type_route"
+    id: Mapped[str] = mapped_column(String(160), primary_key=True)
+    lead_id: Mapped[int] = mapped_column(Integer, index=True)
+    state: Mapped[str] = mapped_column(String(30), default="held", index=True)
+    reason: Mapped[str] = mapped_column(String(160), default="")
+    before_pipeline: Mapped[int] = mapped_column(Integer, default=0)
+    before_status: Mapped[int] = mapped_column(Integer, default=0)
+    target_pipeline: Mapped[int] = mapped_column(Integer, default=0)
+    target_status: Mapped[int] = mapped_column(Integer, default=0)
+    type_value: Mapped[str] = mapped_column(String(80), default="")
+    before_updated_at: Mapped[int] = mapped_column(Integer, default=0)
+    applied_at: Mapped[int] = mapped_column(Integer, default=0)
+    noted: Mapped[bool] = mapped_column(Boolean, default=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
 class FieldWatch(Base):
     __tablename__ = "crm_automation_field_watch"
     lead_id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -102,7 +121,7 @@ class FieldWatch(Base):
 
 
 TABLES = [*a.TABLES, Event.__table__, Cursor.__table__, EventRetry.__table__, CourierHandoff.__table__,
-          f.FieldExecution.__table__, FieldWatch.__table__, *messages.TABLES]
+          TypeRoute.__table__, f.FieldExecution.__table__, FieldWatch.__table__, *messages.TABLES]
 
 
 class Client:
@@ -235,7 +254,7 @@ def process_event(db, c, event: Event, catalog: a.Catalog, enabled_rules: frozen
         event.state, event.reason = "superseded", "stage_event_at_creation"
     elif later:
         event.state, event.reason = "blocked", "ambiguous_same_second_events"
-    elif migration_event(db, event):
+    elif migration_event(db, event) or type_route_event(db, event):
         event.state, event.reason = "migration", "no_business_replay"
     else:
         lead = c.get(f"/api/v4/leads/{event.lead_id}")
@@ -335,6 +354,12 @@ def tick(settings: Settings):
                         handoff_completed_couriers(db, c, catalog, ids)
                     if settings.visit_task_live_from > 0:
                         visit_tasks(db, c, datetime.now(timezone.utc), settings.visit_task_live_from)
+                    if settings.routing_enabled:
+                        try:
+                            route_type_changes(db, c, catalog, through)
+                        except Exception as exc:
+                            db.rollback()
+                            log.error("Type routing: %s", type(exc).__name__)
                     if settings.messages_enabled:
                         for direction in ('incoming','outgoing'):
                             messages.collect_chats(db,raw,settings.activated_at,through,direction)
@@ -893,6 +918,209 @@ def dispatch(db, c, catalog, ids, *, cutover_at, pipelines=None):
                     db.commit()
                     continue
             a.execute_task(db, job, c, enabled_rules=ids, current=current, preview=False)
+
+
+TYPE_CURSOR = "type-route-v1"
+ROUTE_NOTES = {
+    "no_equivalent_stage": "Тип заявки не перенёс сделку: в целевой воронке нет такого же этапа. Воронка не изменена.",
+    "kassa_type_conflict": "Тип заявки не совпадает с заявкой в кассе. Воронка не изменена.",
+    "multiple_kassa_bindings": "У сделки несколько заявок в кассе. Воронка не изменена.",
+    "unknown_kassa_base_type": "Вид заявки в кассе не распознан. Воронка не изменена.",
+    "unknown_type": "Значение поля Тип заявки не распознано. Воронка не изменена.",
+    "existing_pipeline_requires_review": "Сделка уже не в общей воронке Продажи. Автоматический перенос не выполнен.",
+}
+
+
+def type_event_touches(event) -> bool:
+    for side in ("value_before", "value_after"):
+        for row in event.get(side) or []:
+            value = row.get("custom_field_value") if isinstance(row, dict) else None
+            if isinstance(value, dict) and value.get("field_id") == a.TYPE_FIELD:
+                return True
+    return False
+
+
+def type_route_event(db, event) -> bool:
+    """Our own funnel move must not look like a new stage entry."""
+    if event.before.get("kind") == "lead_added":
+        return False
+    try:
+        before_pipe, before_status = event.before["pipeline_id"], event.before["id"]
+        after_pipe, after_status = event.after["pipeline_id"], event.after["id"]
+    except (KeyError, TypeError):
+        return False
+    rows = list(db.scalars(select(TypeRoute).where(
+        TypeRoute.lead_id == event.lead_id, TypeRoute.state == "applied",
+        TypeRoute.before_pipeline == before_pipe, TypeRoute.before_status == before_status,
+        TypeRoute.target_pipeline == after_pipe, TypeRoute.target_status == after_status)))
+    return any(row.applied_at and abs(int(event.at) - int(row.applied_at)) <= 3600 for row in rows)
+
+
+def _stage_match(lead, pipeline, status) -> bool:
+    return lead.get("pipeline_id") == pipeline and lead.get("status_id") == status
+
+
+def _remember(db, event_id, lead_id, **fields) -> TypeRoute:
+    job = db.get(TypeRoute, event_id)
+    if job is None:
+        job = TypeRoute(id=event_id, lead_id=lead_id)
+        db.add(job)
+    for key, value in fields.items():
+        setattr(job, key, value)
+    job.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(job)
+    return job
+
+
+def _note_route(db, c, job: TypeRoute) -> None:
+    text_note = ROUTE_NOTES.get(job.reason)
+    if job.state != "manual" or job.noted or not text_note:
+        return
+    c.post(f"/api/v4/leads/{job.lead_id}/notes", [{
+        "note_type": "common", "params": {"text": text_note}}])
+    job.noted = True
+    job.updated_at = datetime.now(timezone.utc)
+    db.commit()
+
+
+def apply_type_event(db, c, catalog, event) -> str:
+    """Return retry when this event must keep the cursor, otherwise done."""
+    event_id = str(event.get("id") or "")
+    lead_id = int(event.get("entity_id") or 0)
+    if not event_id or lead_id <= 0:
+        raise ValueError("invalid_type_event")
+    job = db.get(TypeRoute, event_id)
+    if job and job.state in ("applied", "manual", "skipped"):
+        _note_route(db, c, job)
+        return "done"
+    lead = c.get(f"/api/v4/leads/{lead_id}")
+    if lead.get("id") != lead_id:
+        _remember(db, event_id, lead_id, state="skipped", reason="crm_lead_unavailable")
+        return "done"
+    if job and job.state in ("inflight", "uncertain"):
+        if _stage_match(lead, job.target_pipeline, job.target_status):
+            job.state, job.reason = "applied", "readback_verified"
+            job.applied_at = int(datetime.now(timezone.utc).timestamp())
+            job.updated_at = datetime.now(timezone.utc)
+            db.commit()
+            return "done"
+        same_place = (job.before_updated_at and lead.get("updated_at") == job.before_updated_at
+                      and _stage_match(lead, job.before_pipeline, job.before_status))
+        if not same_place:
+            job.state, job.reason = "uncertain", "route_not_confirmed"
+            job.updated_at = datetime.now(timezone.utc)
+            db.commit()
+            return "done"
+        job.state = "planned"
+        job.updated_at = datetime.now(timezone.utc)
+        db.commit()
+    try:
+        snapshot = c.kassa_state(lead_id)
+    except Exception:
+        return "retry"
+    bindings = snapshot.get("bindings") if isinstance(snapshot, dict) else None
+    if not isinstance(bindings, list):
+        return "retry"
+    values = a.field_values(lead, a.TYPE_FIELD)
+    if len(values) != 1 or values[0] not in a.TYPE_ROUTES:
+        state = "skipped" if not values else "manual"
+        reason = "missing_type" if not values else "unknown_type"
+        job = _remember(
+            db, event_id, lead_id, state=state, reason=reason,
+            type_value="" if len(values) != 1 else str(values[0])[:80],
+            before_pipeline=int(lead.get("pipeline_id") or 0),
+            before_status=int(lead.get("status_id") or 0))
+        _note_route(db, c, job)
+        return "done"
+    decision = a.route_with_bindings(lead, catalog, bindings, type_change=True)
+    common = {"type_value": str(values[0])[:80],
+              "before_pipeline": int(lead.get("pipeline_id") or 0),
+              "before_status": int(lead.get("status_id") or 0),
+              "target_pipeline": int(decision.pipeline_id or 0),
+              "target_status": int(decision.status_id or 0)}
+    if decision.state in ("stay", "excluded"):
+        _remember(db, event_id, lead_id, state="skipped", reason=decision.reason, **common)
+        return "done"
+    if decision.state != "candidate":
+        if decision.reason in ("kassa_edit_pending", "migration_guard"):
+            return "retry"
+        job = _remember(db, event_id, lead_id, state="manual", reason=decision.reason, **common)
+        _note_route(db, c, job)
+        return "done"
+    if not decision.pipeline_id or not decision.status_id:
+        job = _remember(db, event_id, lead_id, state="manual", reason="no_equivalent_stage", **common)
+        _note_route(db, c, job)
+        return "done"
+    job = _remember(
+        db, event_id, lead_id, state="planned", reason=decision.reason,
+        before_updated_at=int(lead.get("updated_at") or 0), **common)
+    claimed = db.execute(update(TypeRoute).where(
+        TypeRoute.id == event_id, TypeRoute.state == "planned"
+    ).values(state="inflight", updated_at=datetime.now(timezone.utc)))
+    db.commit()
+    if claimed.rowcount != 1:
+        return "done"
+    db.refresh(job)
+    try:
+        c.patch(f"/api/v4/leads/{lead_id}", {
+            "pipeline_id": int(decision.pipeline_id), "status_id": int(decision.status_id)})
+        actual = c.get(f"/api/v4/leads/{lead_id}")
+        if _stage_match(actual, decision.pipeline_id, decision.status_id):
+            job.state, job.reason = "applied", "readback_verified"
+            job.applied_at = int(datetime.now(timezone.utc).timestamp())
+        else:
+            job.state, job.reason = "uncertain", "route_not_confirmed"
+    except Exception:
+        job.state, job.reason = "uncertain", "route_patch_unknown"
+    job.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    return "done"
+
+
+def fetch_type_events(c, start: int, until: int) -> list:
+    rows = []
+    for page in range(1, 101):
+        data = c.get("/api/v4/events", page=page, limit=100, **{
+            "filter[entity]": "lead", "filter[type]": "custom_field_value_changed",
+            "filter[created_at][from]": start, "filter[created_at][to]": until})
+        batch = data.get("_embedded", {}).get("events", [])
+        for item in batch:
+            if item.get("entity_type") != "lead" or item.get("type") != "custom_field_value_changed":
+                raise ValueError("unexpected_type_event")
+            at = int(item["created_at"])
+            if not start <= at <= until:
+                raise ValueError("type_event_outside_interval")
+            if type_event_touches(item):
+                rows.append(item)
+        if not data.get("_links", {}).get("next") and len(batch) < 100:
+            return rows
+    raise ValueError("type_event_scan_incomplete")
+
+
+def route_type_changes(db, c, catalog, until: int) -> int:
+    if until <= 0:
+        raise ValueError("type_route_clock_required")
+    cursor = db.get(Cursor, TYPE_CURSOR)
+    if cursor is None:
+        db.add(Cursor(id=TYPE_CURSOR, through=until, activated_at=until))
+        db.commit()
+        return 0
+    if not c.settings.service_key.get_secret_value():
+        raise ValueError("kassa_binding_service_required")
+    start = max(cursor.activated_at, cursor.through - 300)
+    if until < start:
+        raise ValueError("clock_before_type_cursor")
+    rows = fetch_type_events(c, start, until)
+    pending = False
+    for item in sorted(rows, key=lambda row: (int(row["created_at"]), str(row["id"]))):
+        if apply_type_event(db, c, catalog, item) == "retry":
+            pending = True
+    if pending:
+        return 0
+    cursor.through = until
+    db.commit()
+    return len(rows)
 
 
 async def worker(settings: Settings):

@@ -282,14 +282,32 @@ async function entityPages(pathname, key, leadId, completed) {
   return { rows: result.rows.filter((row) => Number(row.entity_id) === Number(leadId)), complete: result.complete && foreign.length === 0, ignored: foreign.length > 0 };
 }
 
-async function chatPages(leadId) {
-  const result = await pages("/events", "events", {
-    "filter[entity]": "lead",
-    "filter[entity_id]": leadId,
-    "filter[type][]": ["incoming_chat_message", "outgoing_chat_message"],
-  }, 20);
-  const foreign = result.rows.filter((row) => Number(row.entity_id) !== Number(leadId));
-  return { rows: result.rows.filter((row) => Number(row.entity_id) === Number(leadId)), complete: result.complete && foreign.length === 0, ignored: foreign.length > 0 };
+const CHAT_LOOKBACK_DAYS = 90;
+const CHAT_PAGE_CAP = 180;
+async function collectWazzup(ids, fromMs, toMs) {
+  const wanted = new Set(ids.map((id) => Number(id)));
+  const byLead = new Map();
+  for (let page = 1; page <= CHAT_PAGE_CAP; page += 1) {
+    const data = await amo("/events", {
+      "filter[type][]": ["incoming_chat_message", "outgoing_chat_message"],
+      "filter[created_at][from]": Math.floor(fromMs / 1000),
+      "filter[created_at][to]": Math.floor(toMs / 1000),
+      limit: 250,
+      page,
+    });
+    const batch = data?._embedded?.events ?? [];
+    for (const event of batch) {
+      if (event.entity_type && event.entity_type !== "lead") continue;
+      const id = Number(event.entity_id);
+      if (!wanted.has(id)) continue;
+      const list = byLead.get(id) ?? [];
+      list.push(event);
+      byLead.set(id, list);
+    }
+    if (page % 25 === 0) console.log(JSON.stringify({ chatPages: page, matched: byLead.size }));
+    if (!data?._links?.next || batch.length === 0) return { byLead, complete: true };
+  }
+  return { byLead, complete: false };
 }
 function wazzupMessages(rows) {
   const messages = [];
@@ -303,18 +321,15 @@ function wazzupMessages(rows) {
   }
   return messages;
 }
-async function storeCard(id, allowDisable, withMessages) {
+async function storeCard(id, allowDisable) {
   const savedLead = checkpoint.leads[id];
   const needsEvents = eventsAvailable && !savedLead?.eventsComplete;
   const needsTasks = tasksAvailable && !savedLead?.tasksComplete;
-  const needsMessages = withMessages && !savedLead?.messagesComplete;
-  if (savedLead && !needsEvents && !needsTasks && !needsMessages) return "ready";
+  if (savedLead && !needsEvents && !needsTasks) return "ready";
   let events = savedLead?.events ?? [];
   let eventsComplete = savedLead?.eventsComplete === true;
   let tasks = savedLead?.tasks ?? [];
   let tasksComplete = savedLead?.tasksComplete === true;
-  let messages = savedLead?.messages ?? [];
-  let messagesComplete = savedLead?.messagesComplete === true;
   if (!savedLead || needsEvents || needsTasks) {
     const eventPage = eventsAvailable ? await entityPages("/events", "events", id) : { rows: [], complete: false, ignored: false };
     const openTasks = tasksAvailable ? await entityPages("/tasks", "tasks", id, 0) : { rows: [], complete: false, ignored: false };
@@ -335,30 +350,17 @@ async function storeCard(id, allowDisable, withMessages) {
     eventsComplete = eventPage.complete;
     tasksComplete = openTasks.complete && doneTasks.complete;
   }
-  if (needsMessages) {
-    try {
-      const chat = await chatPages(id);
-      if (chat.ignored || !chat.complete) {
-        messages = [];
-        messagesComplete = false;
-        console.log(JSON.stringify({ chat: chat.ignored ? "ignored" : "partial", id }));
-      } else {
-        messages = wazzupMessages(chat.rows);
-        messagesComplete = true;
-      }
-    } catch (error) {
-      messages = [];
-      messagesComplete = false;
-      console.log(JSON.stringify({ chat: "error", id, message: error.message }));
-    }
-  }
-  checkpoint.leads[id] = { events, tasks, eventsComplete, tasksComplete, messages, messagesComplete };
+  checkpoint.leads[id] = {
+    events, tasks, eventsComplete, tasksComplete,
+    messages: savedLead?.messages ?? [],
+    messagesComplete: savedLead?.messagesComplete === true,
+  };
   return "read";
 }
-async function readCards(ids, allowDisable, withMessages) {
+async function readCards(ids, allowDisable) {
   let done = 0;
   for (const id of ids) {
-    const status = await storeCard(id, allowDisable, withMessages);
+    const status = await storeCard(id, allowDisable);
     if (status === "ignored") {
       writePrivate(checkpointPath, checkpoint);
       return false;
@@ -371,7 +373,7 @@ async function readCards(ids, allowDisable, withMessages) {
   return true;
 }
 const weekIds = [...byId.keys()];
-await readCards(weekIds, true, true);
+await readCards(weekIds, true);
 const unread = weekIds.filter((id) => {
   const saved = checkpoint.leads[id];
   if (!saved) return eventsAvailable || tasksAvailable;
@@ -381,6 +383,32 @@ if (unread.length) {
   writePrivate(reviewPath, { partial: true, reason: "Карточки прочитаны не до конца, срез не опубликован", count: unread.length, at: new Date().toISOString() });
   throw new Error(`incomplete cards ${unread.length}`);
 }
+const chatFrom = week.from - CHAT_LOOKBACK_DAYS * 24 * 60 * 60 * 1000;
+for (const id of weekIds) {
+  const saved = checkpoint.leads[id];
+  if (!saved) continue;
+  saved.messages = [];
+  saved.messagesComplete = false;
+}
+try {
+  const journal = await collectWazzup(weekIds, chatFrom, now + 1000);
+  if (journal.complete) {
+    let leadsWithMessages = 0;
+    for (const id of weekIds) {
+      const saved = checkpoint.leads[id];
+      if (!saved) continue;
+      saved.messages = wazzupMessages(journal.byLead.get(Number(id)) ?? []);
+      saved.messagesComplete = true;
+      if (saved.messages.length) leadsWithMessages += 1;
+    }
+    console.log(JSON.stringify({ chat: "wazzup", leadsWithMessages }));
+  } else {
+    console.log(JSON.stringify({ chat: "partial" }));
+  }
+} catch (error) {
+  console.log(JSON.stringify({ chat: "error", message: error.message }));
+}
+writePrivate(checkpointPath, checkpoint);
 const archiveFrom = queueArchiveStart(now, timeZone);
 const archiveFetch = await leadsBetween("closed_at", archiveFrom, now + 1000);
 const openFetch = await openLeads();
@@ -395,7 +423,7 @@ if (openFetch.complete) for (const lead of openFetch.rows) takeLead(lead);
 let extraCards = true;
 if (extraIds.length) {
   try {
-    extraCards = await readCards(extraIds, false, false);
+    extraCards = await readCards(extraIds, false);
   } catch (error) {
     extraCards = false;
     console.log(JSON.stringify({ extraCards: "stopped", message: error.message }));

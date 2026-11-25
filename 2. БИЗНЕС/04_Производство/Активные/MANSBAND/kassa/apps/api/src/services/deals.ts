@@ -24,7 +24,7 @@ import { broadcast } from "../ws/hub.js";
 import { withOperationLock } from "../lib/idempotency.js";
 import { getEnv } from "../env.js";
 import { prepareAmoEdit } from "./amoEditQueue.js";
-import { readTypedLead, typedExecutionKind, typedRoutingEnabled, typedPipelines } from "./amoRouting.js";
+import { KNOWN_TYPED_PIPELINE_IDS, knownTypedPipelineIds, readTypedLead, typedExecutionKind } from "./amoRouting.js";
 import { mergeInboundAmoStage } from "./amoStatusPolicy.js";
 import * as financeQueue from "./queue.js";
 import { readAmoEditableFields, buildEditedLeadFields, buildLeadCustomFields, scheduleKassaLinkBackfill } from "./amoMapping.js";
@@ -969,6 +969,10 @@ function funnelAndKind(pipelineId: number, store: Store): { funnel: FunnelType; 
   if (pipelineId === AMO_PIPELINE_COMPLAINTS) {
     return { funnel: funnelFromStore(store), kind: "defect" };
   }
+  if (pipelineId === KNOWN_TYPED_PIPELINE_IDS.rental) return { funnel: "offline", kind: "rental" };
+  if (pipelineId === KNOWN_TYPED_PIPELINE_IDS.company) return { funnel: "offline", kind: "company" };
+  if (pipelineId === KNOWN_TYPED_PIPELINE_IDS.online) return { funnel: "online", kind: "sale" };
+  if (pipelineId === KNOWN_TYPED_PIPELINE_IDS.offline) return { funnel: "offline", kind: "sale" };
   return { funnel: funnelFromStore(store), kind: "sale" };
 }
 
@@ -1193,8 +1197,7 @@ async function mapLeads(leads: amo.AmoLead[], statuses: StatusRow[]): Promise<De
 }
 
 function boardPipelineIds(): number[] {
-  return [...new Set([AMO_PIPELINE_SALES, AMO_PIPELINE_COMPLAINTS,
-    ...(typedRoutingEnabled() ? Object.values(typedPipelines()) : [])])];
+  return [...new Set([AMO_PIPELINE_SALES, AMO_PIPELINE_COMPLAINTS, ...knownTypedPipelineIds()])];
 }
 
 async function fetchAmoOpen(): Promise<Deal[]> {
@@ -1203,7 +1206,12 @@ async function fetchAmoOpen(): Promise<Deal[]> {
   // snapshot, otherwise moved orders disappear from the cashier's screen.
   const groups = await Promise.all(boardPipelineIds().map(async pipeline => {
     const ids = openStatusIds(pipeline, statuses, pipeline === AMO_PIPELINE_SALES);
-    if (!ids.length) throw new Error(`Нет этапов в справочнике воронки ${pipeline}`);
+    if (!ids.length) {
+      if (pipeline === AMO_PIPELINE_SALES || pipeline === AMO_PIPELINE_COMPLAINTS) {
+        throw new Error(`Нет этапов в справочнике воронки ${pipeline}`);
+      }
+      return [];
+    }
     return amo.listOpenLeadsInPipeline(pipeline, ids);
   }));
   const leads = groups.flat();
@@ -1213,11 +1221,15 @@ async function fetchAmoOpen(): Promise<Deal[]> {
 
 async function fetchAmoClosed(): Promise<Deal[]> {
   const statuses = await statusRows();
-  const groups = await Promise.all(boardPipelineIds().map(pipeline =>
-    amo.listLeadsInPipelineStatuses(pipeline, closedStatusIds(pipeline, statuses), {
+  const groups = await Promise.all(boardPipelineIds().map(pipeline => {
+    const ids = closedStatusIds(pipeline, statuses);
+    if (!ids.length && pipeline !== AMO_PIPELINE_SALES && pipeline !== AMO_PIPELINE_COMPLAINTS) {
+      return Promise.resolve([]);
+    }
+    return amo.listLeadsInPipelineStatuses(pipeline, ids, {
       createdFrom: CLOSED_SINCE_UNIX,
-    })
-  ));
+    });
+  }));
   return mapLeads(groups.flat(), statuses);
 }
 
