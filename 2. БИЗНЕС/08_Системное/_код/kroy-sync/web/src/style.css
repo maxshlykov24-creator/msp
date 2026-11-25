@@ -241,3 +241,13 @@ button.help-trigger:hover,button.help-trigger:focus-visible,button.help-trigger[
 .help-popup ul{margin:0;padding-left:16px}.help-popup li+li{margin-top:5px}
 .panel.workshop-summary{padding:18px 20px;margin-bottom:0}.workshop-summary h2{margin:0;font-size:18px}.workshop-summary dl{display:flex;flex-wrap:wrap;gap:10px 24px;margin:14px 0;padding-bottom:12px;border-bottom:1px solid var(--border)}.workshop-summary dt{font-size:11px;color:var(--muted)}.workshop-summary dd{margin:3px 0 0;font-size:14px;font-variant-numeric:tabular-nums}
 @media print{.help-trigger,.help-popup{display:none!important}}
+.mapping-board{display:grid;gap:14px}
+.mapping-board .catalog-search-row{align-items:stretch;flex-wrap:wrap}
+.mapping-board .search-field{min-width:min(100%,280px)}
+.mapping-board .search-field input{border:0;min-height:44px;padding:10px 0;background:transparent}
+.mapping-board .search-field>button{background:transparent;color:var(--muted);min-height:0;padding:4px}
+.mapping-filter{width:230px;flex:0 0 230px}
+.mapping-filter .select-trigger{height:100%;min-height:46px}
+.mapping-meta{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:28px;color:var(--muted);font-size:12px}
+.mapping-meta .text-button{background:transparent;color:var(--accent);min-height:32px;padding:4px 0}
+@media(max-width:700px){.mapping-board .search-field{flex-basis:100%}.mapping-filter{width:auto;flex:1 1 150px;min-width:0}}
