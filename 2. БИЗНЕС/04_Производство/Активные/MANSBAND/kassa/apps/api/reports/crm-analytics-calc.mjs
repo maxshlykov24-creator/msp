@@ -368,6 +368,42 @@ export function outcomeAt(deal, at) {
   return "В работе";
 }
 
+/** Исход сделки относительно конца периода. В режиме результатов закрытые в периоде берутся по полю результата, как карточки успеха и провала. */
+export function dealOutcome(deal, mode, bounds) {
+  if (mode === "results") {
+    if (deal.closed != null && deal.closed >= bounds.from && deal.closed < bounds.cut && deal.result === "Успех") return "success";
+    if (deal.closed != null && deal.closed >= bounds.from && deal.closed < bounds.cut && deal.result === "Провал") return "fail";
+    if (deal.created < bounds.cut && (deal.closed == null || deal.closed >= bounds.cut)) return "open";
+    return "unknown";
+  }
+  const outcome = outcomeAt(deal, bounds.cut);
+  if (outcome === "Успех") return "success";
+  if (outcome === "Провал") return "fail";
+  if (outcome === "В работе") return "open";
+  return "unknown";
+}
+
+/** Пустой набор причин значит «все». Все три исхода и пустые причины возвращают исходные строки без добавления открытых. */
+export function restrictDeals(rows, openRows, mode, bounds, filters = {}) {
+  const selected = filters.outcomes instanceof Set ? filters.outcomes : new Set(filters.outcomes ?? ["success", "fail", "open"]);
+  const reasonSet = filters.reasons instanceof Set ? filters.reasons : new Set(filters.reasons ?? []);
+  if (selected.size === 0) return [];
+  const allOn = selected.has("success") && selected.has("fail") && selected.has("open");
+  if (allOn && reasonSet.size === 0) return rows;
+  const pool = rows.slice();
+  if (!allOn && selected.has("open")) {
+    const ids = new Set(pool.map((deal) => deal.id));
+    for (const deal of openRows ?? []) if (!ids.has(deal.id)) pool.push(deal);
+  }
+  return pool.filter((deal) => {
+    const outcome = dealOutcome(deal, mode, bounds);
+    if (outcome === "unknown") return allOn;
+    if (!selected.has(outcome)) return false;
+    if (outcome === "fail" && reasonSet.size > 0 && !reasonSet.has(deal.reason || "Причина не указана")) return false;
+    return true;
+  });
+}
+
 export function cohort(deals, mode, bounds, filters = {}) {
   return deals.filter((deal) => {
     if (deal.test || !REPORT_PIPELINES.includes(deal.pipelineId)) return false;
@@ -379,8 +415,8 @@ export function cohort(deals, mode, bounds, filters = {}) {
   });
 }
 
-export function general(deals, mode, bounds, filters) {
-  const rows = cohort(deals, mode, bounds, filters);
+export function general(deals, mode, bounds, filters = {}) {
+  const rows = filters.ready ? deals : cohort(deals, mode, bounds, filters);
   const groups = {
     all: rows,
     target: rows.filter((deal) => isTarget(deal, bounds.cut, mode) && outcomeAt(deal, bounds.cut) !== "unknown"),

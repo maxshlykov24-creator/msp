@@ -38,7 +38,7 @@ let page = Object.hasOwn(titles, location.hash.slice(1)) ? location.hash.slice(1
 let actions = new Map();
 let dialogActions = new Map();
 let serial = 0;
-const state = { kind: "week", date: meta.week.from + 3600000, mode: "results", source: "*", touch: "*", lane: "off", explain: false };
+const state = { kind: "week", date: meta.week.from + 3600000, mode: "results", source: "*", touch: "*", lane: "off", explain: false, outcomes: new Set(["success", "fail", "open"]), reasons: new Set(), reasonMenu: false };
 function reg(fn, dialog = false) { const key = String(++serial); (dialog ? dialogActions : actions).set(key, fn); return `data-act="${key}"`; }
 function nav(next) { if (!Object.hasOwn(titles, next)) return; if (drawer.open) drawer.close(); if (!embedded && location.hash !== "#" + next) { location.hash = next; return; } page = next; render(); window.scrollTo(0, 0); }
 addEventListener("hashchange", () => { page = Object.hasOwn(titles, location.hash.slice(1)) ? location.hash.slice(1) : "home"; if (drawer.open) drawer.close(); render(); window.scrollTo(0, 0); });
@@ -147,11 +147,40 @@ function toolbar() {
   return `<div class="toolbar">${segment("kind", [["day", "День"], ["week", "Неделя"], ["month", "Месяц"], ["year", "Год"]])}<div class="cal"><button class="step" aria-label="Предыдущий период" ${reg(() => shift(-1))}>${ic("left")}</button><input class="date" type="date" id="anchor" aria-label="Дата внутри периода" value="${dayKey(state.date)}"><button class="step" aria-label="Следующий период" ${reg(() => shift(1))}>${ic("right")}</button></div><span class="periodlabel">${dateFmt(period.from)} — ${dateFmt(period.cut - 1)}${cut ? " · период обрезан временем среза" : ""}${state.kind === "week" && !meta.weekStartConfirmed ? " · неделя с понедельника, день недели amo не прочитан" : ""}</span></div>`;
 }
 function select(key, label, options) { return `<label class="filter">${label}<select data-select="${key}">${options.map(([value, name]) => `<option value="${esc(value)}" ${state[key] === value ? "selected" : ""}>${esc(name)}</option>`).join("")}</select></label>`; }
+document.addEventListener("toggle", (event) => { if (event.target.classList?.contains("reasonbox")) state.reasonMenu = event.target.open; }, true);
 document.addEventListener("change", (event) => {
   if (event.target.id === "explain") { state.explain = event.target.checked; render(); }
   else if (event.target.id === "anchor") { const [y, m, d] = event.target.value.split("-").map(Number); if (y) state.date = zonedTimeToUtc(y, m, d, 12, 0, 0, tz); render(); }
-  else if (event.target.dataset.select) { state[event.target.dataset.select] = event.target.value; render(); }
+  else if (event.target.dataset.outcome) {
+    const key = event.target.dataset.outcome;
+    if (event.target.checked) state.outcomes.add(key); else state.outcomes.delete(key);
+    render();
+  } else if (event.target.dataset.reason) {
+    const name = event.target.dataset.reason;
+    if (event.target.checked) state.reasons.add(name); else state.reasons.delete(name);
+    state.reasonMenu = true;
+    render();
+  } else if (event.target.dataset.select) { state[event.target.dataset.select] = event.target.value; render(); }
 });
+function failReasonNames(rows, mode, period) {
+  const names = new Set();
+  for (const deal of rows) if (dealOutcome(deal, mode, period) === "fail") names.add(deal.reason || "Причина не указана");
+  return [...names].sort((a, b) => a.localeCompare(b, "ru"));
+}
+function outcomeBar(rows, mode, period) {
+  const names = failReasonNames(rows, mode, period);
+  for (const name of [...state.reasons]) if (!names.includes(name)) state.reasons.delete(name);
+  const checks = [["success", "Успех"], ["fail", "Провал"], ["open", "В работе"]].map(([key, label]) => `<label><input type="checkbox" data-outcome="${key}" ${state.outcomes.has(key) ? "checked" : ""}>${label}</label>`).join("");
+  const summary = state.reasons.size === 0 ? "все" : [...state.reasons].join(", ");
+  const menu = names.length ? names.map((name) => `<label><input type="checkbox" data-reason="${esc(name)}" ${state.reasons.has(name) ? "checked" : ""}>${esc(name)}</label>`).join("") + (state.reasons.size ? `<button type="button" class="link" ${reg(() => { state.reasons.clear(); state.reasonMenu = true; render(); })}>Сбросить</button>` : "") : `<p class="note">Провалов в этом периоде нет.</p>`;
+  return `<div class="filterbar"><fieldset class="checks"><legend>Исход</legend>${checks}</fieldset><details class="reasonbox" ${state.reasonMenu ? "open" : ""}><summary>Причина провала · ${esc(summary)}</summary><div class="menu">${menu}</div></details></div>`;
+}
+function pickedDeals(rows, mode, period) {
+  const openRows = mode === "results" ? queueAt(deals, Math.max(period.from, period.cut - 1)) : [];
+  const picked = restrictDeals(rows, openRows, mode, period, { outcomes: state.outcomes, reasons: state.reasons });
+  const addedOpen = picked.some((deal) => !rows.includes(deal));
+  return { picked, addedOpen };
+}
 function metric(name, value, sub, fn, tone = "") { return `<button class="metric" ${reg(fn)}><span>${name}</span><strong class="${tone}">${value}</strong><small>${sub}</small></button>`; }
 const panel = (title, text, body) => `<section class="panel"><h2>${title}</h2>${text ? `<p class="note aside">${text}</p>` : ""}${body}</section>`;
 function barRow(label, count, total, fn, sub = "", rowClass = "") { return `<button class="stage${rowClass ? " " + rowClass : ""}" ${reg(fn)}><span>${esc(label)}${sub ? `<small>${esc(sub)}</small>` : ""}</span><span class="track"><i style="width:${total ? 100 * count / total : 0}%"></i></span><span class="alignr"><b>${count}</b><small>${percent(count, total)}</small></span></button>`; }
@@ -159,12 +188,19 @@ function missingSource(title, reason) { show(title, "Нет источника",
 function generalReport() {
   if (!ready()) return uncovered();
   const period = bounds();
-  const groups = general(deals, modeOf(), period, { touch: state.touch, source: state.mode === "created" ? state.source : "*" });
+  const mode = modeOf();
+  const sourcePool = cohort(deals, mode, period, { touch: state.touch });
+  const sources = [...new Set(sourcePool.map((deal) => deal.source))].sort((a, b) => a.localeCompare(b, "ru"));
+  if (state.source !== "*" && !sources.includes(state.source)) state.source = "*";
+  const narrowed = cohort(deals, mode, period, { touch: state.touch, source: state.mode === "created" ? state.source : "*" });
+  const { picked, addedOpen } = pickedDeals(narrowed, mode, period);
+  if (state.outcomes.size === 0) return `<div class="filterbar">${segment("mode", [["results", "Результаты"], ["created", "Источники"]])}${select("touch", "Касание", [["*", "Все заявки"], ["yes", "С касанием"], ["no", "Без касания"]])}</div>${outcomeBar(narrowed, mode, period)}${empty("Отметьте хотя бы один исход: успех, провал или в работе.")}`;
+  const groups = general(picked, mode, period, { ready: true });
   const order = [["all", "Все заявки"], ["target", "Целевые"], ["qual", "Квалы"], ["success", "Успех"], ["fail", "Провал"]];
   const den = { target: groups.all.length, qual: groups.target.length, success: groups.all.length, fail: groups.all.length };
   const suffix = { target: "от всех", qual: "от целевых", success: "от всех", fail: "от всех" };
-  const sources = [...new Set(groups.all.map((deal) => deal.source))].sort((a, b) => a.localeCompare(b, "ru"));
-  let html = `<div class="filterbar">${segment("mode", [["results", "Результаты"], ["created", "Источники"]])}${select("touch", "Касание", [["*", "Все заявки"], ["yes", "С касанием"], ["no", "Без касания"]])}${state.mode === "created" ? select("source", "Источник", [["*", "Все источники"], ...sources.map((source) => [source, source])]) : ""}</div>`;
+  let html = `<div class="filterbar">${segment("mode", [["results", "Результаты"], ["created", "Источники"]])}${select("touch", "Касание", [["*", "Все заявки"], ["yes", "С касанием"], ["no", "Без касания"]])}${state.mode === "created" ? select("source", "Источник", [["*", "Все источники"], ...sources.map((source) => [source, source])]) : ""}</div>${outcomeBar(narrowed, mode, period)}`;
+  if (addedOpen) html += `<p class="note">В работе здесь — заявки, которые на конец периода ещё не закрыты.</p>`;
   html += `<p class="hintline aside">${state.mode === "created" ? "По дате создания. Исход на конец периода берётся из событий этапа." : "По дате завершения. Успех и провал в сумме равны всем закрытым сделкам."}</p>`;
   html += `<div class="metrics">${order.map(([key, label], index) => metric(label, fmt(groups[key].length), key === "all" ? (state.mode === "created" ? "создано за период" : "завершено за период") : percent(groups[key].length, den[key]) + " " + suffix[key], () => list(label, groups[key], "Состав показателя."), index === 3 ? "accent" : index === 4 ? "bad" : "")).join("")}</div>`;
   if (state.mode === "created") {
@@ -175,7 +211,7 @@ function generalReport() {
   } else {
     const reasons = [...new Set(groups.fail.map((deal) => deal.reason))].map((reason) => [reason, groups.fail.filter((deal) => deal.reason === reason)]).sort((a, b) => b[1].length - a[1].length);
     html += panel("Почему сделки закрыли в провал?", "Доля от всех провалов. Сдвоенные карточки не склеиваются.", reasons.length ? `<div class="stack">${reasons.map(([reason, group]) => barRow(reason, group.length, groups.fail.length, () => list(reason, group, "Причина закрытия."))).join("")}</div>` : empty("Провалов за период нет."));
-    if (groups.success.length + groups.fail.length !== groups.all.length) html += `<p class="hintline">Ошибка расчёта: успех и провал не дают сумму закрытых сделок.</p>`;
+    if (!addedOpen && state.outcomes.size === 3 && state.reasons.size === 0 && groups.success.length + groups.fail.length !== groups.all.length) html += `<p class="hintline">Ошибка расчёта: успех и провал не дают сумму закрытых сделок.</p>`;
   }
   return html + qualityLine(groups.all) + `<details class="aside"><summary>Как определяются целевые, квалы и касание?</summary><p>Успех автоматически считается и целевым, и квалом. Провал сам по себе целевым не становится. Без касания: заявки раньше не было, и консультант создал её сразу в успехе или провале. Если следа недостаточно, касание не определено и в оба фильтра не входит.</p></details>`;
 }
@@ -195,7 +231,11 @@ function qualityLine(group) {
 }
 function qualityReport() {
   if (!periodCovered("results", bounds(), meta.coverage)) return uncovered();
-  const group = cohort(deals, "results", bounds(), {});
+  const period = bounds();
+  const closed = cohort(deals, "results", period, {});
+  if (state.outcomes.size === 0) return outcomeBar(closed, "results", period) + empty("Отметьте хотя бы один исход: успех, провал или в работе.");
+  const { picked, addedOpen } = pickedDeals(closed, "results", period);
+  const group = picked;
   const tasks = overdueTasks(group);
   const stages = overdueStages(group, builtAt);
   const replies = responseSummary(group, tz);
@@ -214,7 +254,7 @@ function qualityReport() {
   const digest = meta.digest?.complete
     ? `<p class="note">Сейчас просрочено: задачи ${fmt(meta.digest.tasks)}, этапы ${fmt(meta.digest.stages)}.</p><p class="note aside">Это другое число и с периодом не складывается. Без обязательной даты: ${fmt(meta.digest.missing)}. Задач с недоступной карточкой: ${fmt(meta.digest.unavailable)}.${chatReady ? ` Неотвеченных серий Wazzup: ${fmt(replies.pending)}.` : ""}</p>`
     : `<p class="note">Сейчас просрочено в этот срез не вошло.</p><p class="note aside">Список открытых задач собран не полностью.</p>`;
-  return `<p class="hintline aside">По дате завершения. Просрочка периода включает уже выполненные задачи. Срок, который не сохранился, в просрочку не ставится: таких пребываний ${fmt(stages.missing.length)}. Ответ считается от первого входящего Wazzup в серии до следующего исходящего, по сообщениям за 90 дней до начала недели. С 23:00 до 10:00 МСК счёт стоит и продолжается в 10:00. Звонки не входят.</p><div class="metrics">${cards.join("")}</div><div class="double">${groupPanel("Какие задачи просрочили?", byName, tasks.length, "taskname")}${groupPanel("На каких этапах задержались?", byStage, stages.overdue.length)}</div>${digest}`;
+  return `${outcomeBar(closed, "results", period)}${addedOpen ? `<p class="note">В работе здесь — заявки, которые на конец периода ещё не закрыты.</p>` : ""}<p class="hintline aside">По дате завершения. Просрочка периода включает уже выполненные задачи. Срок, который не сохранился, в просрочку не ставится: таких пребываний ${fmt(stages.missing.length)}. Ответ считается от первого входящего Wazzup в серии до следующего исходящего, по сообщениям за 90 дней до начала недели. С 23:00 до 10:00 МСК счёт стоит и продолжается в 10:00. Звонки не входят.</p><div class="metrics">${cards.join("")}</div><div class="double">${groupPanel("Какие задачи просрочили?", byName, tasks.length, "taskname")}${groupPanel("На каких этапах задержались?", byStage, stages.overdue.length)}</div>${digest}`;
 }
 function groupPanel(title, map, total, rowClass = "") {
   const entries = [...map.entries()].sort((a, b) => b[1].length - a[1].length);
@@ -222,15 +262,20 @@ function groupPanel(title, map, total, rowClass = "") {
 }
 function funnelReport(logistics) {
   if (!periodCovered("results", bounds(), meta.coverage)) return uncovered();
+  const period = bounds();
+  const closed = cohort(deals, "results", period, {});
+  const filtered = logistics ? closed : (state.outcomes.size === 0 ? [] : pickedDeals(closed, "results", period).picked);
+  const addedOpen = !logistics && filtered.some((deal) => !closed.includes(deal));
+  if (!logistics && state.outcomes.size === 0) return outcomeBar(closed, "results", period) + empty("Отметьте хотя бы один исход: успех, провал или в работе.");
   const stages = chain(logistics ? "logistics" : "effect", state.lane, new Set(meta.liveStages));
-  const group = cohort(deals, "results", bounds(), {}).filter((deal) => deal.lane === state.lane);
+  const group = filtered.filter((deal) => deal.lane === state.lane);
   const report = funnel(group, stages);
-  const aside = cohort(deals, "results", bounds(), {}).filter((deal) => deal.lane !== state.lane);
+  const aside = filtered.filter((deal) => deal.lane !== state.lane);
   const rowsHtml = report.analysis.map((item) => `<button class="stage" ${reg(() => stageDetail(item, report.goal))}><span><strong>${esc(item.stage)}</strong><small>Побывали · ${item.visited.length}</small></span><span class="track"><i style="width:${item.visited.length ? 100 * item.hit.length / item.visited.length : 0}%"></i></span><span class="alignr"><b>${item.hit.length}</b> до цели<small>${percent(item.hit.length, item.visited.length)} от этапа</small></span></button>`).join("");
   const rest = `<div class="stack">${barRow("Не были ни на одном этапе цепочки", report.remainder.length, group.length, () => list("Вне цепочки", report.remainder, "Закрытые сделки этого канала без этапов выбранной цепочки."))}${barRow("История этапа неполная", report.incomplete.length, group.length, () => list("История неполная", report.incomplete, "Эти заявки не входят в числитель и знаменатель этапов."))}</div>`;
   const speed = logistics && stages.length ? medianHours(group, stages) : null;
   const speedPanel = speed ? panel("Сколько времени занимает путь?", `От этапа «${stages[0]}» до «${stages.at(-1)}». В медиану входят только сделки, где оба события есть и идут в этом порядке.`, `<button class="item" ${reg(() => list("Полный путь", speed.ids.map((id) => byId.get(id)).filter(Boolean), "Заявки, по которым посчитана медиана."))}><span>Медианное время<small>${fmt(speed.ids.length)} заявок с полным путём</small></span><strong>${speed.hours == null ? "—" : fmt(speed.hours) + " ч"}</strong></button>`) : "";
-  return `<div class="filterbar">${segment("lane", [["off", "Офлайн"], ["on", "Онлайн"]])}<span class="periodlabel">По дате завершения</span></div>` +
+  return `${logistics ? "" : outcomeBar(closed, "results", period)}${addedOpen ? `<p class="note">В работе здесь — заявки, которые на конец периода ещё не закрыты.</p>` : ""}<div class="filterbar">${segment("lane", [["off", "Офлайн"], ["on", "Онлайн"]])}<span class="periodlabel">По дате завершения</span></div>` +
     panel("Цель · " + (report.goal || "в живой воронке не найдена"), "Повторный вход заявку не удваивает. Цель считается, только если она наступила в этот заход или позже. Имя этапа берётся из amo.", stages.length ? `<div class="stack">${rowsHtml}</div>` : empty("В живой воронке нет этапов этой цепочки.")) +
     speedPanel +
     panel("Чтобы сумма сходилась с закрытыми", "Сделки вне цепочки и сделки с неполной историей показаны отдельно.", rest) +

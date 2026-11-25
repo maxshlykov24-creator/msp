@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import {
   DICTIONARY, QUALITY_SOURCES, SALES, OFFLINE, ONLINE, TEST_TAG, acceptance,
   catalogProblems, chain, classifyTouch, checkboxDisagreements, cohort, digestOverdue,
-  funnel, general, isKassaWeekSuccess, kassaCases, kassaNumberFromLink, kassaStatus, liveStageNames, medianHours, normalizeLead, outcomeAt, overdueStages, reopenGate, replyAudit, responseSummary, slowReplyCutoff, wazzupReplies,
+  dealOutcome, funnel, general, isKassaWeekSuccess, kassaCases, kassaNumberFromLink, kassaStatus, liveStageNames, medianHours, normalizeLead, outcomeAt, overdueStages, reopenGate, replyAudit, responseSummary, restrictDeals, slowReplyCutoff, wazzupReplies,
   overdueTasks, periodBounds, periodCovered, qualOutsideTarget, queueArchiveStart, queueAt, queueHistory, stageAt, zonedParts, zonedTimeToUtc,
 } from "../reports/crm-analytics-calc.mjs";
 
@@ -201,6 +201,18 @@ assert.equal(audit.cutoff, 69);
 assert.deepEqual(audit.slow.map((deal) => deal.id), [3, 2]);
 assert.equal(audit.all[0].id, 3);
 assert.equal(audit.all[1].id, 2);
+const stillOpen = deal({ id: 31, status: 100, created: monday - 86400_000 }, { history: [{ stage: "Новая заявка", at: monday - 86400_000 }], historyComplete: true });
+const closedLater = deal({ id: 32, status: 142, created: monday, closed: bounds.cut + 86400_000 }, { history: [{ stage: "Новая заявка", at: monday }, { stage: "Успех", at: bounds.cut + 86400_000 }], historyComplete: true });
+assert.equal(dealOutcome(won, "results", bounds), "success");
+assert.equal(dealOutcome(lost, "results", bounds), "fail");
+assert.equal(dealOutcome(stillOpen, "results", bounds), "open");
+assert.equal(dealOutcome(closedLater, "results", bounds), "open");
+const closedRows = [won, lost, spam];
+assert.deepEqual(restrictDeals(closedRows, [stillOpen, closedLater], "results", bounds, {}).map((deal) => deal.id), [1, 2, 4]);
+assert.deepEqual(restrictDeals(closedRows, [stillOpen, closedLater], "results", bounds, { outcomes: ["fail", "open"] }).map((deal) => deal.id), [2, 4, 31, 32]);
+assert.deepEqual(restrictDeals(closedRows, [stillOpen], "results", bounds, { outcomes: ["success", "fail", "open"], reasons: ["Спам"] }).map((deal) => deal.id), [1, 4]);
+assert.deepEqual(restrictDeals(closedRows, [stillOpen], "results", bounds, { outcomes: [] }).map((deal) => deal.id), []);
+assert.equal(general(restrictDeals(closedRows, [], "results", bounds, { reasons: ["Спам"] }), "results", bounds, { ready: true }).fail.length, 1);
 const paced = deal({ id: 25, status: 142, closed: monday + 5 * 3600000 }, {
   historyComplete: true,
   history: [{ stage: "Дано обещание", at: monday }, { stage: "Доставлен", at: monday + 5 * 3600000 }],

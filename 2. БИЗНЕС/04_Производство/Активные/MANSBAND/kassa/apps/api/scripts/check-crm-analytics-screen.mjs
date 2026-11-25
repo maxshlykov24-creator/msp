@@ -70,6 +70,8 @@ assert.equal(review.html.includes("Все заявки этого источни
 assert.equal(review.html.includes("Время ответа"), true);
 assert.equal(review.html.includes("replytime"), true);
 assert.equal(review.html.includes("Долгие ответы"), true);
+assert.equal(review.html.includes("Причина провала"), true);
+assert.equal(review.html.includes("restrictDeals"), true);
 assert.equal(review.html.includes("replyAudit"), true);
 const live = renderCrmAnalytics({ ...snapshot, meta: { ...snapshot.meta, accepted: true } }, files);
 assert.equal(live.mode, "live");
