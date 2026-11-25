@@ -35,7 +35,7 @@
 .cut-chrome-hint{margin:0;padding:10px 2px 0}
 .cut-steps{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));flex:1 1 auto;min-width:0;gap:0;padding:0;margin:0}
 .cut-steps>button{position:relative;display:flex;align-items:flex-end;justify-content:flex-start;background:transparent;border:0;border-radius:0;color:var(--muted);min-height:52px;padding:0 22px;font-size:14px;font-weight:550;letter-spacing:-.15px;white-space:nowrap;box-shadow:none}
-.cut-steps>button>span{padding:16px 0 13px;border-bottom:2px solid transparent;line-height:1.3}
+.cutting .cut-steps>button>span{display:inline;padding:16px 0 13px;border-bottom:2px solid transparent;line-height:1.3}
 .cut-steps>button+button:before{content:'';position:absolute;left:0;top:16px;bottom:16px;width:1px;background:var(--border)}
 .cut-steps>button.is-current{color:var(--accent);background:transparent}
 .cut-steps>button.is-current>span{border-bottom-color:var(--accent)}
