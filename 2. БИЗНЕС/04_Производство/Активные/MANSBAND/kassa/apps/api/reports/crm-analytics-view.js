@@ -38,14 +38,18 @@ let page = Object.hasOwn(titles, location.hash.slice(1)) ? location.hash.slice(1
 let actions = new Map();
 let dialogActions = new Map();
 let serial = 0;
-const state = { kind: "week", date: meta.week.from + 3600000, mode: "results", source: "*", touch: "*", lane: "off", explain: false, outcomes: new Set(["success", "fail", "open"]), reasons: new Set(), reasonMenu: false };
+const state = { kind: "week", date: meta.week.from + 3600000, mode: "results", source: "*", touch: "*", lane: "off", explain: false, outcomes: new Set(["success", "fail", "open"]), reasons: new Set(), reasonMenu: false, reasonQuery: "", reasonFocus: false, reasonCaret: 0 };
 function reg(fn, dialog = false) { const key = String(++serial); (dialog ? dialogActions : actions).set(key, fn); return `data-act="${key}"`; }
 function nav(next) { if (!Object.hasOwn(titles, next)) return; if (drawer.open) drawer.close(); if (!embedded && location.hash !== "#" + next) { location.hash = next; return; } page = next; render(); window.scrollTo(0, 0); }
 addEventListener("hashchange", () => { page = Object.hasOwn(titles, location.hash.slice(1)) ? location.hash.slice(1) : "home"; if (drawer.open) drawer.close(); render(); window.scrollTo(0, 0); });
 document.addEventListener("click", (event) => { const el = event.target.closest("[data-page],[data-act]"); if (!el) return; if (el.dataset.page) nav(el.dataset.page); else (dialogActions.get(el.dataset.act) ?? actions.get(el.dataset.act))?.(); });
+document.addEventListener("click", (event) => { if (!state.reasonMenu || event.target.closest(".reasonbox")) return; state.reasonMenu = false; state.reasonQuery = ""; if (!event.target.closest("[data-act],[data-page],input,button,a,label")) render(); }, true);
+document.addEventListener("input", (event) => { const input = event.target; if (!input.classList?.contains("reason-search")) return; state.reasonQuery = input.value; state.reasonCaret = input.selectionStart ?? input.value.length; state.reasonMenu = true; state.reasonFocus = true; render(); });
+addEventListener("scroll", () => { if (state.reasonMenu) placeReasonMenu(); }, true);
+addEventListener("resize", () => { if (state.reasonMenu) placeReasonMenu(); });
 drawer.addEventListener("click", (event) => { if (event.target === drawer) drawer.close(); });
 drawer.addEventListener("keydown", (event) => { if (event.key === "Escape") drawer.close(); });
-document.addEventListener("keydown", (event) => { if (event.key === "Escape" && drawer.open) drawer.close(); }, true);
+document.addEventListener("keydown", (event) => { if (event.key !== "Escape") return; if (state.reasonMenu && !drawer.open) { state.reasonMenu = false; state.reasonQuery = ""; render(); return; } if (drawer.open) drawer.close(); }, true);
 document.querySelector("#close").onclick = () => drawer.close();
 drawer.addEventListener("close", () => { dialogActions.clear(); document.body.style.overflow = ""; });
 function show(title, note, html, scroll = 0) { document.querySelector("#dlgtitle").textContent = title; document.querySelector("#dlgmeta").textContent = note; document.querySelector("#dlgbody").innerHTML = html; if (!drawer.open) { drawer.showModal(); document.body.style.overflow = "hidden"; } drawer.querySelector(".sheet").scrollTop = scroll; }
@@ -151,18 +155,12 @@ function toolbar() {
   return `<div class="toolbar">${segment("kind", [["day", "День"], ["week", "Неделя"], ["month", "Месяц"], ["year", "Год"]])}<div class="cal"><button class="step" aria-label="Предыдущий период" ${reg(() => shift(-1))}>${ic("left")}</button><input class="date" type="date" id="anchor" aria-label="Дата внутри периода" value="${dayKey(state.date)}"><button class="step" aria-label="Следующий период" ${reg(() => shift(1))}>${ic("right")}</button></div><span class="periodlabel">${dateFmt(period.from)} – ${dateFmt(period.cut - 1)}${cut ? " · период обрезан временем среза" : ""}${state.kind === "week" && !meta.weekStartConfirmed ? " · неделя с понедельника, день недели amo не прочитан" : ""}</span></div>`;
 }
 function select(key, label, options) { return `<label class="filter">${label}<select data-select="${key}">${options.map(([value, name]) => `<option value="${esc(value)}" ${state[key] === value ? "selected" : ""}>${esc(name)}</option>`).join("")}</select></label>`; }
-document.addEventListener("toggle", (event) => { if (event.target.classList?.contains("reasonbox")) state.reasonMenu = event.target.open; }, true);
 document.addEventListener("change", (event) => {
   if (event.target.id === "explain") { state.explain = event.target.checked; render(); }
   else if (event.target.id === "anchor") { const [y, m, d] = event.target.value.split("-").map(Number); if (y) state.date = zonedTimeToUtc(y, m, d, 12, 0, 0, tz); render(); }
   else if (event.target.dataset.outcome) {
     const key = event.target.dataset.outcome;
     if (event.target.checked) state.outcomes.add(key); else state.outcomes.delete(key);
-    render();
-  } else if (event.target.dataset.reason) {
-    const name = event.target.dataset.reason;
-    if (event.target.checked) state.reasons.add(name); else state.reasons.delete(name);
-    state.reasonMenu = true;
     render();
   } else if (event.target.dataset.select) { state[event.target.dataset.select] = event.target.value; render(); }
 });
@@ -171,15 +169,50 @@ function failReasonNames(rows, mode, period) {
   for (const deal of rows) if (dealOutcome(deal, mode, period) === "fail") counts.set(failReason(deal), (counts.get(failReason(deal)) ?? 0) + 1);
   return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "ru"));
 }
+function placeReasonMenu() {
+  const trigger = document.querySelector(".reason-trigger");
+  const menu = document.querySelector(".reason-menu");
+  if (!trigger || !menu) return;
+  const rect = trigger.getBoundingClientRect();
+  const width = Math.min(Math.max(rect.width, 300), window.innerWidth - 16);
+  let left = rect.left;
+  if (left + width > window.innerWidth - 8) left = window.innerWidth - width - 8;
+  if (left < 8) left = 8;
+  const gap = 8;
+  const below = window.innerHeight - rect.bottom - gap;
+  const above = rect.top - gap;
+  const up = below < 260 && above > below;
+  const maxH = Math.min(420, Math.max(160, up ? above : below));
+  menu.style.left = `${left}px`;
+  menu.style.width = `${width}px`;
+  menu.style.maxHeight = `${maxH}px`;
+  if (up) { menu.style.top = "auto"; menu.style.bottom = `${window.innerHeight - rect.top + gap}px`; }
+  else { menu.style.bottom = "auto"; menu.style.top = `${rect.bottom + gap}px`; }
+}
+function toggleReason(name) {
+  if (state.reasons.has(name)) state.reasons.delete(name); else state.reasons.add(name);
+  state.reasonMenu = true;
+  render();
+}
 function outcomeBar(rows, mode, period) {
   const names = failReasonNames(rows, mode, period);
   const known = new Set(names.map(([name]) => name));
   for (const name of [...state.reasons]) if (!known.has(name)) state.reasons.delete(name);
   const checks = [["success", "Успех"], ["fail", "Провал"], ["open", "В работе"]].map(([key, label]) => `<label><input type="checkbox" data-outcome="${key}" ${state.outcomes.has(key) ? "checked" : ""}>${label}</label>`).join("");
-  const summary = state.reasons.size === 0 ? "все" : [...state.reasons].join(", ");
-  const failNote = state.outcomes.has("fail") ? "" : `<p class="note">Причина применится, когда отмечен провал.</p>`;
-  const menu = names.length ? names.map(([name, count]) => `<label><input type="checkbox" data-reason="${esc(name)}" ${state.reasons.has(name) ? "checked" : ""}>${esc(name)} · ${fmt(count)}</label>`).join("") + failNote + (state.reasons.size ? `<button type="button" class="link" ${reg(() => { state.reasons.clear(); state.reasonMenu = true; render(); })}>Сбросить</button>` : "") : `<p class="note">Провалов в этом периоде нет.</p>`;
-  return `<div class="filterbar"><fieldset class="checks"><legend>Исход</legend>${checks}</fieldset><details class="reasonbox" ${state.reasonMenu ? "open" : ""}><summary>Причина провала · ${esc(summary)}</summary><div class="menu">${menu}</div></details></div>`;
+  const picked = [...state.reasons];
+  const summary = picked.length === 0 ? "Все" : picked.join(", ");
+  const query = state.reasonQuery.trim().toLowerCase();
+  const visible = query ? names.filter(([name]) => name.toLowerCase().includes(query)) : names;
+  const search = names.length > 8 ? `<input class="reason-search" type="search" placeholder="Найти" aria-label="Найти причину" value="${esc(state.reasonQuery)}">` : "";
+  const items = visible.map(([name, count]) => {
+    const on = state.reasons.has(name);
+    return `<button type="button" class="reason-item${on ? " is-on" : ""}" role="option" aria-selected="${on}" ${reg(() => toggleReason(name))}><span class="reason-check" aria-hidden="true"></span><span class="reason-name">${esc(name)}</span><span class="reason-count">${fmt(count)}</span></button>`;
+  }).join("");
+  const empty = names.length === 0 ? `<p class="reason-empty">Провалов в этом периоде нет.</p>` : (visible.length ? "" : `<p class="reason-empty">Ничего не найдено</p>`);
+  const failNote = state.outcomes.has("fail") ? "" : `<p class="reason-note">Причина применится, когда отмечен провал.</p>`;
+  const reset = state.reasons.size ? `<button type="button" class="reason-reset" ${reg(() => { state.reasons.clear(); state.reasonMenu = true; render(); })}>Сбросить</button>` : "";
+  const menu = state.reasonMenu ? `<div class="reason-menu" role="listbox" aria-multiselectable="true">${search}<div class="reason-list">${items}${empty}</div>${failNote}${reset}</div>` : "";
+  return `<div class="filterbar"><fieldset class="checks"><legend>Исход</legend>${checks}</fieldset><div class="reasonbox${state.reasonMenu ? " is-open" : ""}"><button type="button" class="reason-trigger" aria-haspopup="listbox" aria-expanded="${state.reasonMenu}" ${reg(() => { state.reasonMenu = !state.reasonMenu; if (state.reasonMenu) state.reasonFocus = true; else state.reasonQuery = ""; render(); })}><span class="reason-kicker">Причина провала</span><span class="reason-value${picked.length ? "" : " is-all"}">${esc(summary)}</span><svg class="reason-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>${menu}</div></div>`;
 }
 function pickedDeals(rows, mode, period) {
   const openRows = mode === "results" ? queueAt(deals, Math.max(period.from, period.cut - 1)) : [];
@@ -352,5 +385,11 @@ function render() {
     (inCrm ? `<nav class="subnav" aria-label="Отчёты CRM">${[["quality", "Качество"], ["general", "Общая статистика"], ["effect", "Эффективность"]].map(([key, label]) => `<button data-page="${key}" ${page === key ? 'aria-current="page"' : ""}>${label}</button>`).join("")}</nav>` : "") +
     (report ? toolbar() : "") + content() + `<footer class="footer"><span>${meta.accepted ? "Боевой срез" : "Сверка не закрыта"} · ${stamp(builtAt)}</span><div class="flex"><label class="switch"><input type="checkbox" id="explain" ${state.explain ? "checked" : ""}><span>Пояснения</span></label><button class="link" data-page="review">Границы среза</button><button class="link" ${reg(methodology)}>Как читать статистику</button></div></footer>`;
   document.title = titles[page] + " · MANSBAND";
+  placeReasonMenu();
+  if (state.reasonFocus) {
+    const search = document.querySelector(".reason-search");
+    if (search) { search.focus(); const caret = Math.min(state.reasonCaret ?? search.value.length, search.value.length); search.setSelectionRange(caret, caret); }
+    state.reasonFocus = false;
+  }
 }
 render();
