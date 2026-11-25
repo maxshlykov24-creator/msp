@@ -85,6 +85,7 @@ def calculate(s, raw):
         require(item is not None and item.kind == 'garment', 'Неизвестное изделие', 422)
         b = s.scalar(select(Balance).where(Balance.item_id == iid, Balance.location == p['location']))
         platforms = {}
+        kept_previous_sales = False
         for platform in ('wb', 'ozon'):
             if platform in reports and iid in reports[platform]['totals']:
                 file=reports[platform]
@@ -93,6 +94,11 @@ def calculate(s, raw):
                 continue
             candidates = [w for w in windows if w.data.get('platform') == platform and w.data['start'] <= p['start'] and w.data['end'] >= p['end'] and w.data.get('complete') and w.data.get('verified') and iid in w.data.get('covered_items', [])]
             w = max(candidates, key=lambda w: w.data['at'], default=None)
+            # A newer pull with no events at all must not turn an older verified period into known zeros.
+            if w and not w.data.get('events'):
+                richer=[c for c in candidates if c.data.get('events')]
+                if richer:
+                    w=max(richer, key=lambda c: c.data['at']); kept_previous_sales=True
             sales = returns = 0
             if w:
                 for event in w.data['events']:
@@ -110,23 +116,41 @@ def calculate(s, raw):
                 elif mapping and mapping.get('state') != 'unique': reason = 'Нужно сопоставить товар с площадкой'
                 else: reason = source_status.get(platform, {}).get('reason') or 'Нет полной сверенной выгрузки за выбранный период'
             platforms[platform] = dict(known=bool(w), sales=sales if w else None, returns=returns if w else None, at=w.data['at'] if w else None, net=sales-returns if w else None, reason=reason, source=w.data.get('source') if w else None, listed=iid not in w.data.get('not_listed_items',[]) if w else None, catalog_matches=w.data.get('catalog_matches',{}).get(iid,[]) if w else [])
-        net = sum(v['sales']-v['returns'] for v in platforms.values()) if all(v['known'] for v in platforms.values()) else None
+        known_sales=[v for v in platforms.values() if v['known']]
+        sales_missing=[name for name,v in platforms.items() if not v['known']]
+        net = sum(v['sales']-v['returns'] for v in platforms.values()) if known_sales and not sales_missing else None
+        net_known = sum(v['sales']-v['returns'] for v in known_sales) if known_sales else None
         future = sum((Decimal(c.get('included_quantity', c['quantity'])) for c in coverage[iid] if c['included']), Decimal(0))
         stock_assumed_zero = not (b and b.known)
         free = Decimal(0) if stock_assumed_zero else b.free
         target = int((Decimal(max(0, net))*p['horizon']/((date.fromisoformat(p['end'])-date.fromisoformat(p['start'])).days+1)).to_integral_value(rounding=ROUND_CEILING)) if net is not None else None
         from .fbo_stock import read_stock
         fbo_platforms, fbo_total = read_stock(s, iid)
-        fbo_known = fbo_total is not None and not any(v['stale'] for v in fbo_platforms.values())
-        recommendation = max(0, int(Decimal(target)-free-future-(fbo_total or 0))) if target is not None and (not p['include_fbo'] or fbo_known) else None
-        if not p['include_fbo'] and target is not None: recommendation=max(0,int(Decimal(target)-free-future))
-        rows.append(dict(item_id=iid, fbo=fbo_platforms, fbo_total=fbo_total, fbo_included=p['include_fbo'], stock_assumed_zero=stock_assumed_zero, platforms=platforms, net=net, free=str(free) if free is not None else None, future=str(future), coverage=coverage[iid], target=target, recommendation=recommendation, balance_version=b.version if b else None))
+        fresh_fbo={name:v for name,v in fbo_platforms.items() if v['known'] and not v['stale']}
+        fbo_missing=[name for name in ('wb','ozon') if name not in fresh_fbo]
+        fbo_counted=sum(v['quantity'] for v in fresh_fbo.values())
+        recommendation=None; recommendation_partial=False
+        if target is not None:
+            base=max(0,int(Decimal(target)-free-future))
+            if not p['include_fbo']: recommendation=base
+            elif not fbo_missing: recommendation=max(0,base-int(fbo_total or 0))
+            else:
+                recommendation=max(0,base-int(fbo_counted)); recommendation_partial=True
+        rows.append(dict(item_id=iid, fbo=fbo_platforms, fbo_total=fbo_total, fbo_counted=fbo_counted, fbo_missing=fbo_missing, fbo_included=p['include_fbo'], stock_assumed_zero=stock_assumed_zero, platforms=platforms, net=net, net_known=net_known, sales_missing=sales_missing, kept_previous_sales=kept_previous_sales, free=str(free) if free is not None else None, future=str(future), coverage=coverage[iid], target=target, recommendation=recommendation, recommendation_partial=recommendation_partial, balance_version=b.version if b else None))
     body = dict(parameters=p, rows=rows, versions=sorted(versions))
     fingerprint_body = {**body, 'rows': [{**r, 'fbo': {k:{x:v for x,v in values.items() if x not in ('at','data_at','source')} for k,values in r['fbo'].items()}, 'platforms': {k:{x:v for x,v in values.items() if x not in ('at','reason','source','catalog_matches')} for k,values in r['platforms'].items()}} for r in rows]}
+    names={'wb':'Wildberries','ozon':'Ozon'}
+    warnings=[]
+    sales_gap=sorted({name for row in rows for name in row['sales_missing']})
+    if sales_gap: warnings.append('Нет полной выгрузки за выбранный период: '+', '.join(names[name] for name in sales_gap)+'. В строке показаны только известные продажи. Пропуск не заменён нулём, рекомендация по неполным продажам не строится.')
+    if p['include_fbo']:
+        fbo_gap=sorted({name for row in rows for name in row['fbo_missing']})
+        if fbo_gap: warnings.append('Нет актуальных остатков ФБО: '+', '.join(names[name] for name in fbo_gap)+'. Они не вычитаются из рекомендации и не заменяются нулём.')
+    if any(row['kept_previous_sales'] for row in rows): warnings.append('Свежая пустая выгрузка не заменила предыдущие продажи.')
     if not p['include_fbo']:
         for row in fingerprint_body['rows']:
-            row.pop('fbo', None)
-            row.pop('fbo_total', None)
+            row.pop('fbo', None); row.pop('fbo_total', None); row.pop('fbo_counted', None); row.pop('fbo_missing', None)
+    body['warnings']=warnings
     body['fingerprint'] = hashlib.sha256(json.dumps(fingerprint_body, sort_keys=True).encode()).hexdigest()
     body['calculated_at'] = now().isoformat()
     return body
@@ -157,7 +181,7 @@ def validate_issue(s, p, meta):
     included = {l['item_id'] for l in p['products']}
     require(included <= {r['item_id'] for r in actual['rows']}, 'В расчёте отсутствуют выбранные товары')
     for row in actual['rows']:
-        if row['item_id'] in included and row['recommendation'] is None:
+        if row['item_id'] in included and (row['recommendation'] is None or row.get('recommendation_partial')):
             require(meta.get('manual_reason', '').strip(), 'Для ручного количества без полных данных укажи основание')
 
     # Client-side validation is not a ledger boundary: validate every group server-side.

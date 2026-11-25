@@ -74,7 +74,9 @@ class Client:
         for attempt in range(3):
             set_sync(self.engine,key,last_request=now().isoformat(),last_outcome='started')
             try:
-                with self.request(req,timeout=40) as response:data=json.load(response)
+                with self.request(req,timeout=40) as response:
+                    try:data=json.load(response)
+                    except json.JSONDecodeError:raise FeedFailure('Площадка вернула неразборный ответ при чтении '+path) from None
                 set_sync(self.engine,key,last_success_at=now().isoformat(),last_outcome='success',retry_at=None)
                 return data
             except urllib.error.HTTPError as e:

@@ -52,6 +52,8 @@ def store_window(engine, data):
             item=s.get(Item,iid);require(item is not None and item.kind=='garment','Неизвестный товар',422)
         require(all(e['item_id'] in data['covered_items'] for e in data['events']),'Событие без сопоставления',422)
         key='sales:'+data['platform']+':'+data['start']+':'+data['end'];old=s.get(Entity,key)
+        if old and old.data.get('events') and not data['events']:
+            require(False,'Новая выгрузка продаж пустая. Предыдущие продажи сохранены',422)
         if old:
             # Updated retrieval time is not a change of sales quantities.
             if old.data.get('digest')!=digest:old.version+=1
@@ -63,7 +65,8 @@ def wb_events(raw,start,end,barcodes):
     require(isinstance(raw,list),'Неполная выгрузка ВБ',422)
     events=[];unmatched=0
     for row in raw:
-        dt=datetime.fromisoformat(row['date']);day=str(dt.astimezone(MSK).date() if dt.tzinfo else dt.date())
+        raw_date=row.get('date');require(isinstance(raw_date,str),'Некорректная дата продажи ВБ',422)
+        dt=datetime.fromisoformat(raw_date.replace('Z','+00:00'));day=str(dt.astimezone(MSK).date() if dt.tzinfo else dt.date())
         if not start<=day<=end:continue
         code=str(row['saleID']);require(code.startswith(('S','R')),'Неизвестный тип события ВБ',422)
         ids=barcodes.get(str(row['barcode']),[])
@@ -200,9 +203,9 @@ def sync(engine, env, start=None, end=None):
                 try:_sync_wb_sales(engine,Client(engine,'wb',account,{'Authorization':env['WB_TOKEN']}),account,state.get('wb-sales',{}),now())
                 except Paused as e:
                     cached=latest_window(engine,'wb',start,end)
-                    results[platform]=dict(state='ready_cached' if cached and not cached.get('identity_pending') else 'waiting',at=cached['at'] if cached else None,reason='Оперативные продажи Wildberries; итоговый отчёт не сверён' if cached and not cached.get('identity_pending') else str(e),next_retry_at=e.retry_at,retry_buffered=True);continue
+                    results[platform]=dict(state='ready_cached' if cached and not cached.get('identity_pending') else 'waiting',at=cached['at'] if cached else None,reason='Оперативные продажи Wildberries; итоговый отчёт не сверён' if cached and not cached.get('identity_pending') else str(e),next_retry_at=e.retry_at,retry_buffered=True,**({'start':cached['start'],'end':cached['end']} if cached else {}));continue
                 cached=latest_window(engine,'wb',start,end)
-                results[platform]=dict(state='ready_cached' if cached and not cached.get('identity_pending') else 'waiting',at=cached['at'] if cached else None,reason='Оперативные продажи Wildberries; итоговый отчёт не сверён')
+                results[platform]=dict(state='ready_cached' if cached and not cached.get('identity_pending') else 'waiting',at=cached['at'] if cached else None,reason='Оперативные продажи Wildberries; итоговый отчёт не сверён',**({'start':cached['start'],'end':cached['end']} if cached else {}))
                 continue
             else:
                 require(certificate and certificate.get('verified'),'Классификация Ozon ещё не сверена с отчётом',422)
@@ -232,11 +235,11 @@ def sync(engine, env, start=None, end=None):
             store_window(engine,data)
             results[platform]=dict(state='ready',at=data['at'],start=start,end=end,events=len(data['events']),covered=len(data['covered_items']),unmatched=data['unmatched'])
         except RateLimited as e:
-            results[platform]=dict(state='ready_cached' if cached and not cached.get('identity_pending') else 'waiting',at=cached['at'] if cached else None,reason=str(e),next_retry_at=(now()+timedelta(seconds=e.seconds)).isoformat())
+            results[platform]=dict(state='ready_cached' if cached and not cached.get('identity_pending') else 'waiting',at=cached['at'] if cached else None,reason=str(e),next_retry_at=(now()+timedelta(seconds=e.seconds)).isoformat(),**({'start':cached['start'],'end':cached['end']} if cached else {}))
         except Exception as e:
             from .service import DomainError
-            reason=e.message if isinstance(e,DomainError) else str(e) if isinstance(e,RuntimeError) else 'Ошибка проверки выгрузки'
-            results[platform]=dict(state='ready_cached' if cached else 'unavailable',at=cached['at'] if cached else None,reason=reason)
+            reason=(e.message if isinstance(e,DomainError) else str(e)) or 'Ошибка проверки выгрузки'
+            results[platform]=dict(state='ready_cached' if cached and not cached.get('identity_pending') else 'unavailable',at=cached['at'] if cached else None,reason=reason[:300],**( {'start':cached['start'],'end':cached['end']} if cached else {}))
     with transaction(engine) as s:
         key='cutting-sales-status';e=s.get(Entity,key);data=dict(at=now().isoformat(),platforms=results)
         if e:e.data=data;e.version+=1
