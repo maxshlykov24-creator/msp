@@ -145,7 +145,7 @@ def calculate(s, raw):
     if sales_gap: warnings.append('Нет полной выгрузки за выбранный период: '+', '.join(names[name] for name in sales_gap)+'. В строке показаны только известные продажи. Пропуск не заменён нулём, рекомендация по неполным продажам не строится.')
     if p['include_fbo']:
         fbo_gap=sorted({name for row in rows for name in row['fbo_missing']})
-        if fbo_gap: warnings.append('Нет актуальных остатков ФБО: '+', '.join(names[name] for name in fbo_gap)+'. Они не вычитаются из рекомендации и не заменяются нулём.')
+        if fbo_gap: warnings.append('Нет актуальных остатков ФБО: '+', '.join(names[name] for name in fbo_gap)+'. Они не вычитаются из рекомендации и не заменяются нулём. Перед выдачей укажи основание.')
     if any(row['kept_previous_sales'] for row in rows): warnings.append('Свежая пустая выгрузка не заменила предыдущие продажи.')
     if not p['include_fbo']:
         for row in fingerprint_body['rows']:
