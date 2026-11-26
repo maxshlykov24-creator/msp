@@ -313,24 +313,19 @@ export const AD_SOURCES = [
  * отсюда, а не выводится эвристикой по строке id.
  */
 export const PAYMENT_METHODS: PaymentMethod[] = [
-  { id: "cash_zhenya", label: "Наличные Женя", kind: "cash" },
-  { id: "cash_matvey", label: "Наличные Матвей", kind: "cash" },
-  { id: "cash_sasha", label: "Наличные Саша", kind: "cash" },
+  { id: "cash_katya", label: "Наличные Катя", kind: "cash" },
   { id: "cash_grisha", label: "Наличные Гриша", kind: "cash" },
+  { id: "cash_zhenya", label: "Наличные Женя", kind: "cash" },
   { id: "cash_arsen", label: "Наличные Арсен", kind: "cash" },
   { id: "cash_nina", label: "Наличные Нина", kind: "cash" },
 
   { id: "sber_misha", label: "Сбер Миша", kind: "card" },
-  { id: "sber_mziya", label: "Сбер Мзия", kind: "card" },
   { id: "sber_zhenya", label: "Сбер Женя", kind: "card" },
-  { id: "sber_matvey", label: "Сбер Матвей", kind: "card" },
-  { id: "sber_grisha", label: "Сбер Гриша", kind: "card" },
-  { id: "alfa_edwin", label: "Альфа Эдвин", kind: "card" },
   { id: "alfa_zhenya", label: "Альфа Женя", kind: "card" },
-  { id: "alfa_grisha", label: "Альфа Гриша", kind: "card" },
+  { id: "sber_mziya", label: "Сбер Мзия", kind: "card" },
+  { id: "alfa_edwin", label: "Альфа Эдвин", kind: "card" },
+  { id: "sber_grisha", label: "Сбер Гриша", kind: "card" },
   { id: "vtb_grisha", label: "ВТБ Гриша", kind: "card" },
-  { id: "vtb_zhenya", label: "ВТБ Женя", kind: "card" },
-  { id: "tinkoff_grisha", label: "Тинькофф Гриша", kind: "card" },
 
   { id: "rs_pyatnitskaya", label: "РС Пятницкая", kind: "account" },
   { id: "rs_baumanskaya", label: "РС Бауманская", kind: "account" },
@@ -365,6 +360,12 @@ const LEGACY_PAYMENT_METHOD_IDS: Record<string, string> = {
 /** Сняты с выбора, но остаются в истории старых заявок. */
 const RETIRED_PAYMENT_METHODS: PaymentMethod[] = [
   { id: "cash_stores", label: "Наличные (Бауманская / Пятницкая)", kind: "cash" },
+  { id: "cash_matvey", label: "Наличные Матвей", kind: "cash" },
+  { id: "cash_sasha", label: "Наличные Саша", kind: "cash" },
+  { id: "sber_matvey", label: "Сбер Матвей", kind: "card" },
+  { id: "alfa_grisha", label: "Альфа Гриша", kind: "card" },
+  { id: "vtb_zhenya", label: "ВТБ Женя", kind: "card" },
+  { id: "tinkoff_grisha", label: "Тинькофф Гриша", kind: "card" },
 ];
 
 /**
