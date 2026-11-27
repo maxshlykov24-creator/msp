@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { Button, Field, Select, StageBadge, opts } from "../../components/ui";
 import { HIDDEN_STAGES, PURPOSES, SALE_STAGES } from "../../data/mock";
-import { useStaffDirectory } from "../../auth/staffDirectory";
+import { consultantNames, useStaffDirectory } from "../../auth/staffDirectory";
 import { CHANNEL_GROUPS } from "../../lib/selectGroups";
 import { dateCompact, dateRu, formatPhone, money, moneyPlain } from "../../lib/format";
 import { useStore } from "../../store";
@@ -260,7 +260,7 @@ export function ConsultantFields({
 }) {
   const { activeConsultant } = useStore();
   const staff = useStaffDirectory();
-  const consultants = staff.filter((person) => person.role === "consultant").map((person) => person.name);
+  const consultants = consultantNames(staff);
   const callManagers = staff.filter((person) => person.role === "crm").map((person) => person.name);
 
   return (

@@ -8,6 +8,13 @@ export interface StaffPerson {
   store?: string | null;
 }
 
+export function consultantNames(staff: StaffPerson[]): string[] {
+  return [...new Set(staff
+    .filter(person => person.role === "consultant")
+    .map(person => person.name.trim())
+    .filter(name => name && !/^консультант\s*№?\s*\d+$/iu.test(name)))];
+}
+
 function mockStaff(): StaffPerson[] {
   return CONSULTANTS.map((person) => ({
     name: person.name,

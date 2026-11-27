@@ -26,11 +26,14 @@ const colors: Record<string, string> = {
   розов: "розовый", бордов: "бордовый", фиолетов: "фиолетовый", оливков: "оливковый",
   желт: "желтый", оранжев: "оранжевый",
 };
+const prepositions = new Set(["на", "под", "без", "с", "со", "от", "из", "для", "в", "во"]);
 const inflectedColor = /(^|-)([а-я]+?)(?:ая|яя|ое|ее|ые|ие|ую|юю|ого|его|ых|их)$/;
 
 export interface CatalogSearchTerm {
   text: string;
   invalid?: boolean;
+  /** Граница слова и общий для JS и SQL пробел внутри фразы. */
+  phrase?: string;
   color?: string;
   code?: string;
   compact?: string;
@@ -40,7 +43,22 @@ export function catalogSearchTerms(query: string): CatalogSearchTerm[] {
   const normalized = catalogText(query.trim());
   const words = normalized.split(/[\s,;()\u001f]+/u).filter(Boolean);
   if (normalized && !/[\p{L}\p{N}]/u.test(normalized)) return [{ text: normalized, invalid: true }];
-  return [...new Set(words)].map((text) => {
+  const parts: string[] = [];
+  for (let i = 0; i < words.length; i++) {
+    const word = words[i]!;
+    const next = words[i + 1];
+    if (prepositions.has(word) && next && /^[а-я]{2,}$/.test(next)) {
+      parts.push(`${word} ${next}`);
+      i++;
+    } else {
+      parts.push(word);
+    }
+  }
+  return [...new Set(parts)].map((text) => {
+    if (text.includes(" ")) {
+      const [first, last] = text.split(" ");
+      return { text, phrase: `(^|[^а-яa-z0-9])${first}[ \t]+${last}` };
+    }
     const color = text.replace(inflectedColor, (word, prefix: string, root: string) =>
       colors[root] ? prefix + colors[root] : word);
     const term: CatalogSearchTerm = { text };
@@ -70,8 +88,9 @@ export function matchesCatalogTerms(
   // A field separator prevents a compact match spanning two unrelated identifiers.
   const codes = foldCodeLetters(catalogText(identifiers.join("\u001f")));
   const compact = stripCodeSeparators(codes);
-  return terms.every((term) =>
-    text.includes(term.text) || (term.color && text.includes(term.color)) ||
+  return terms.every((term) => term.phrase
+    ? new RegExp(term.phrase).test(text)
+    : text.includes(term.text) || (term.color && text.includes(term.color)) ||
     (term.code && codes.includes(term.code)) || (term.compact && compact.includes(term.compact))
   );
 }

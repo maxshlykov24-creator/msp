@@ -55,6 +55,24 @@ test("catalogue search finds inner code fragments and unordered attributes on th
   assert.equal(matchesCatalogTerms(catalogSearchTerms("44"), ["Брюки"], ["444"]), true);
 });
 
+test("partial title phrases keep the preposition and show the source garment in suit results", () => {
+  const name = "Пиджак двубортный на застёжке";
+  const terms = catalogSearchTerms("  синий  На   засте  ");
+  assert.equal(matchesCatalogTerms(terms, [name, "синий"]), true);
+  assert.equal(matchesCatalogTerms(terms, ["Монки с двумя застёжками", "тёмно-синий"]), false);
+  assert.equal(matchesCatalogTerms(terms, ["Застёжка длинная", "синий"]), false);
+  assert.equal(matchesCatalogTerms(terms, ["Ремень", "синий"], ["на-засте"]), false);
+
+  const lines = [
+    line("jacket", "48", 1, { name, color: "синий" }),
+    line("trousers", "48", 1, { name: "Брюки", color: "синий" }),
+    line("jacket", "50", 1, { variation: "OTHER", name: "Застёжка длинная", color: "синий" }),
+  ];
+  const models = computeCompleteness(lines, { q: "на засте синий", tolerance: 0 }).models;
+  assert.equal(models.length, 1);
+  assert.deepEqual(models[0].matchedKinds, [name]);
+});
+
 test("catalogue quantities follow the selected warehouse while known sizes remain searchable", () => {
   const lines = [
     line("jacket", "48", 2, { warehouse: "Центральный склад" }),

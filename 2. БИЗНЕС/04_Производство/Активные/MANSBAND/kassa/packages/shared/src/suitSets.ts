@@ -217,13 +217,18 @@ export function buildSuitModel(
   const jacketSample = jackets[0] ?? sample;
   const title = suitTitle({ hasVest, line: sample.line, color: jacketSample.color,
     pattern: jacketSample.pattern, fit: jacketSample.fit });
+  let matchedKinds: string[] = [];
   if (search.length) {
     const modelFields = [title, sample.height];
     const remaining = search.filter(term => !matchesCatalogTerms([term], modelFields, [sample.variation]));
     // Название изделия, размер и штрихкод должны относиться к одной позиции модели.
-    if (remaining.length && !lines.some(l => matchesCatalogTerms(remaining,
-      [l.name, l.category, SUIT_PART_LABEL[l.part], l.size, l.height, `${l.size}/${l.height}`, l.color, l.pattern, l.fit],
-      [l.variation, l.article, l.code, l.barcode]))) return null;
+    if (remaining.length) {
+      const matched = lines.filter(l => matchesCatalogTerms(remaining,
+        [l.name, l.category, SUIT_PART_LABEL[l.part], l.size, l.height, `${l.size}/${l.height}`, l.color, l.pattern, l.fit],
+        [l.variation, l.article, l.code, l.barcode]));
+      if (!matched.length) return null;
+      matchedKinds = [...new Set(matched.map(l => l.name?.split(" (")[0]?.trim() || SUIT_PART_LABEL[l.part]))];
+    }
   }
   const colors = new Set(lines.map((l) => (l.color ?? "").trim()).filter(Boolean));
   const patterns = new Set(lines.map((l) => (l.pattern ?? "").trim()).filter(Boolean));
@@ -318,6 +323,7 @@ export function buildSuitModel(
     modelId: suitModelKey(sample),
     variation: sample.variation,
     title,
+    ...(matchedKinds.length ? { matchedKinds } : {}),
     ...(keepZeroSizes ? { jacketFront: catalogJacketFront(jackets) } : {}),
     color: jacketSample.color,
     pattern: jacketSample.pattern,

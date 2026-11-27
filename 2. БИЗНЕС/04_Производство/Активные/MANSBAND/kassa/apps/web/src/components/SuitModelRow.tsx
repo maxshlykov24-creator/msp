@@ -73,6 +73,9 @@ export function SuitModelRow({
         </button>
         <button type="button" onClick={onToggle} aria-expanded={open} className="flex-1 min-w-0 text-left self-center">
           <div className="text-white font-semibold truncate">{model.title}</div>
+          {model.matchedKinds?.length ? (
+            <div className="mt-0.5 text-[12px] text-mute-soft">{model.matchedKinds.join(" · ")}</div>
+          ) : null}
           {model.jacketFront && (
             <span className="lg:hidden block text-[12px] text-mute-soft">{model.jacketFront}</span>
           )}

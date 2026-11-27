@@ -2,7 +2,7 @@ import { DatePicker } from "../components/DatePicker";
 import { useEffect, useMemo, useState } from "react";
 import { isDealOverdue, isDealRelevantToUser, type Task } from "@kassa/shared";
 import { useAuth } from "../auth/AuthContext";
-import { useStaffDirectory } from "../auth/staffDirectory";
+import { consultantNames, useStaffDirectory } from "../auth/staffDirectory";
 import { api, USE_MOCK } from "../api/client";
 import { ArrowRight, Search, Filter, X, ChevronDown, ChevronUp } from "lucide-react";
 import { useStore } from "../store";
@@ -10,7 +10,6 @@ import { money, shortDate, timeOf } from "../lib/format";
 import { Badge, Button, Modal, StageBadge, Select, opts } from "../components/ui";
 import { FUNNEL_LABEL, KIND_LABEL } from "../lib/labels";
 import {
-  CONSULTANTS,
   HIDDEN_STAGES,
   SALE_STAGES,
   STORES,
@@ -75,7 +74,6 @@ const STATUS_FILTERS = [
 ] as const;
 
 const STORE_OPTIONS = STORES.filter((s) => s !== "Онлайн-магазин");
-const CONSULTANT_OPTIONS = CONSULTANTS.filter((c) => c.role === "consultant").map((c) => c.name);
 
 function isSuccess(d: Deal): boolean {
   return d.stage === "Успех";
@@ -118,10 +116,7 @@ export function DealsBoard({
   const { deals, dealsLoading } = useStore();
   const { user } = useAuth();
   const staff = useStaffDirectory();
-  const consultantOptions = useMemo(() => {
-    const live = staff.filter((person) => person.role === "consultant").map((person) => person.name);
-    return [...new Set([...CONSULTANT_OPTIONS, ...live])];
-  }, [staff]);
+  const consultantOptions = consultantNames(staff);
   const moscowDay = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Moscow" }).format(new Date());
   const [today, setToday] = useState(moscowDay);
   const [attentionTasks, setAttentionTasks] = useState<Task[]>([]);
@@ -411,13 +406,15 @@ export function DealsBoard({
                 options={opts(["all", "Все этапы"], ...stageOptions)}
               />
             </div>
-            <div className="min-w-[120px]">
-              <div className="field-label">Создана с</div>
-              <DatePicker aria-label="Создана с" className="input py-2 text-sm" value={dateFrom} onChange={setDateFrom} />
-            </div>
-            <div className="min-w-[120px]">
-              <div className="field-label">по</div>
-              <DatePicker aria-label="Создана по" className="input py-2 text-sm" value={dateTo} onChange={setDateTo} />
+            <div className="grid min-w-0 w-full grid-cols-2 gap-2 sm:w-auto">
+              <label className="min-w-0">
+                <span className="field-label block">Создана с</span>
+                <DatePicker aria-label="Создана с" value={dateFrom} onChange={setDateFrom} />
+              </label>
+              <label className="min-w-0">
+                <span className="field-label block">Создана по</span>
+                <DatePicker aria-label="Создана по" value={dateTo} onChange={setDateTo} />
+              </label>
             </div>
           </div>
         )}
@@ -433,12 +430,12 @@ export function DealsBoard({
               <col style={{ width: "7.25rem" }} />
               <col className="w-[8%]" />
               <col />
+              <col className="w-[14%]" />
               <col className="w-[8%]" />
               <col className="w-[10%]" />
               <col className="w-[11%]" />
               <col className="w-[10%]" />
               <col className="w-[9%]" />
-              <col className="w-[14%]" />
               <col style={{ width: "1.75rem" }} />
             </colgroup>
             <thead className="text-[11px] uppercase tracking-wider text-mute border-b border-ink-700">
@@ -446,12 +443,12 @@ export function DealsBoard({
                 <th className="px-2 py-2.5 whitespace-nowrap">№</th>
                 <th className="px-2 py-2.5 whitespace-nowrap">Дата</th>
                 <th className="px-2 py-2.5">Клиент</th>
+                <th className="px-2 py-2.5 whitespace-nowrap">Этап</th>
                 <th className="px-2 py-2.5 whitespace-nowrap">Тип</th>
                 <th className="px-2 py-2.5 whitespace-nowrap">Вид</th>
                 <th className="px-2 py-2.5 whitespace-nowrap">Магазин</th>
                 <th className="px-2 py-2.5 whitespace-nowrap">Консультант</th>
                 <th className="px-2 py-2.5 whitespace-nowrap text-right">К оплате</th>
-                <th className="px-2 py-2.5 whitespace-nowrap">Этап</th>
                 <th className="px-1 py-2.5"></th>
               </tr>
             </thead>
@@ -476,6 +473,9 @@ export function DealsBoard({
                     <div className="text-[11px] text-mute truncate mt-0.5">{d.clientPhone || "—"}</div>
                   </td>
                   <td className="px-2 py-2.5 align-middle min-w-0">
+                    <StageBadge stage={d.stage} className="inline-block align-middle" />
+                  </td>
+                  <td className="px-2 py-2.5 align-middle min-w-0">
                     <Badge tone="gray">{FUNNEL_LABEL[d.funnel]}</Badge>
                   </td>
                   <td className="px-2 py-2.5 align-middle min-w-0">
@@ -492,9 +492,6 @@ export function DealsBoard({
                   </td>
                   <td className="px-2 py-2.5 align-middle font-semibold text-white whitespace-nowrap text-right tabular-nums">
                     {d.total ? money(d.total) : "—"}
-                  </td>
-                  <td className="px-2 py-2.5 align-middle min-w-0">
-                    <StageBadge stage={d.stage} className="inline-block align-middle" />
                   </td>
                   <td className="px-1 py-2.5 align-middle text-mute">
                     <ArrowRight size={14} />

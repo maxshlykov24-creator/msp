@@ -86,7 +86,7 @@ const EXPANDED_COLUMNS: { id: string; slots: LocSlot[] }[] = [
 
 interface ParsedProduct {
   product: Product;
-  section: HallSectionId;
+  section: HallSectionId | null;
   groupId: string;
   /** Подпись вида для дерева и чипов. */
   subSection: string;
@@ -258,17 +258,17 @@ function isSizeToken(value: string): boolean {
   return false;
 }
 
-function parseProduct(product: Product): ParsedProduct | null {
+function parseProduct(product: Product): ParsedProduct {
   const hall = classifyHall({ name: product.name, category: product.category });
-  if (!hall || hall.section === "suits") return null;
-  const group = hallSectionOfGroup(hall.section, hall.group);
+  const group = hall?.section === "suits" ? "Позиции" : hall
+    ? hallSectionOfGroup(hall.section, hall.group) : "Прочие товары";
   const m = product.name.match(/^(.*?)\s*\((.*)\)\s*$/);
   const baseName = productKindName(product.name) || product.name.trim() || "Без названия";
   if (!m) {
     return {
       product,
-      section: hall.section,
-      groupId: hall.group,
+      section: hall?.section ?? null,
+      groupId: hall?.group ?? "other",
       subSection: group,
       baseName,
       color: "",
@@ -292,8 +292,8 @@ function parseProduct(product: Product): ParsedProduct | null {
   const pattern = leftovers.filter((part) => part !== variation).join(", ");
   return {
     product,
-    section: hall.section,
-    groupId: hall.group,
+    section: hall?.section ?? null,
+    groupId: hall?.group ?? "other",
     subSection: group,
     baseName,
     color,
@@ -306,6 +306,10 @@ function parseProduct(product: Product): ParsedProduct | null {
 
 function hallSectionOfGroup(section: HallSectionId, groupId: string): string {
   return hallGroupsOf(section).find((g) => g.id === groupId)?.label ?? "Прочее";
+}
+
+function itemSection(row: ParsedProduct, section: HallSectionId | ""): string {
+  return section || !row.section ? row.subSection : `${hallSectionLabel(row.section)} · ${row.subSection}`;
 }
 
 function stockSum(product: Product): number {
@@ -332,6 +336,7 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
   const [suitFamily, setSuitFamily] = useState<"" | SuitFamily>("");
   const [frontFilter, setFrontFilter] = useState("");
   const [suitTab, setSuitTab] = useState<SuitViewTab>("completeness");
+  const [suitStatsOpen, setSuitStatsOpen] = useState(false);
   const [openSuit, setOpenSuit] = useState<string | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const isSuitSection = section === "suits";
@@ -416,15 +421,12 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
       if (replace) {
         // При текстовом поиске открываем группы, где есть совпадения.
         if (q.trim() && (res.items.length || res.suits.length)) {
-          const keys = res.items
-            .map(parseProduct)
-            .filter((row): row is ParsedProduct => row != null)
-            .map((row) =>
-              section ? row.subSection : `${hallSectionLabel(row.section)} · ${row.subSection}`
-            );
+          const rows = res.items.map(parseProduct);
+          const keys = rows.map((row) => itemSection(row, section));
           for (const model of res.suits) keys.push(suitFamilyOf(model));
           setOpenSections(new Set(keys));
-          setOpenBases(new Set());
+          const bases = new Set(rows.map((row) => `${itemSection(row, section)}::${row.baseName}`));
+          setOpenBases(bases.size === 1 ? bases : new Set());
         } else if (subCategory && section && section !== "suits") {
           const label = hallGroupsOf(section).find((g) => g.id === subCategory)?.label;
           setOpenSections(label ? new Set([label]) : new Set());
@@ -486,8 +488,7 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
 
   const parsed = useMemo(
     () =>
-      products.map(parseProduct).filter((row): row is ParsedProduct => {
-        if (row == null) return false;
+      products.map(parseProduct).filter((row) => {
         if (section && section !== "suits" && row.section !== section) return false;
         if (subCategory && row.groupId !== subCategory) return false;
         return true;
@@ -545,9 +546,7 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
     type SectionGroup = { section: string; bases: BaseGroup[]; variantCount: number; stock: number };
     const byGroup = new Map<string, Map<string, ParsedProduct[]>>();
     for (const row of parsed) {
-      const groupKey = section
-        ? row.subSection
-        : `${hallSectionLabel(row.section)} · ${row.subSection}`;
+      const groupKey = itemSection(row, section);
       const secMap = byGroup.get(groupKey) ?? new Map<string, ParsedProduct[]>();
       secMap.set(row.baseName, [...(secMap.get(row.baseName) ?? []), row]);
       byGroup.set(groupKey, secMap);
@@ -609,6 +608,7 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
     setSubCategory("");
     setSuitFamily("");
     setSuitTab("completeness");
+    setSuitStatsOpen(false);
     setOpenSuit(null);
     resetExtraFilters();
     setOpenSections(new Set());
@@ -993,7 +993,17 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
 
       {showSuitFamilies && (
         <div className="space-y-3 mb-4">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <button
+            type="button"
+            aria-expanded={suitStatsOpen}
+            aria-controls="suit-stock-summary"
+            onClick={() => setSuitStatsOpen(open => !open)}
+            className="flex w-full items-center justify-between gap-2 rounded-lg border border-ink-700 px-3 py-2 text-sm text-mute-soft md:hidden"
+          >
+            Показатели комплектности
+            {suitStatsOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+          </button>
+          <div id="suit-stock-summary" className={`${suitStatsOpen ? "grid" : "hidden"} grid-cols-2 gap-2 md:grid md:gap-3 lg:grid-cols-4`}>
             <div className="card px-4 py-3">
               <div className="text-[11px] uppercase tracking-wider text-mute">Цельных</div>
               <div className="text-xl font-bold text-emerald-300">
@@ -1048,45 +1058,6 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
                     {list.length === 0 && (
                       <div className="text-sm text-mute px-1 py-2">В этом виде моделей нет.</div>
                     )}
-                  </div>
-                )}
-              </section>
-            );
-          })}
-        </div>
-      )}
-
-      {!isSuitSection && showSuits && (
-        <div className="space-y-2 mb-4">
-          <div className="text-[13px] font-semibold text-white flex items-center gap-2">
-            Костюмы
-            <span className="chip bg-ink-700 text-mute">{visibleSuits.length}</span>
-          </div>
-          {SUIT_FAMILIES.filter((fam) => suitsByFamily[fam].length > 0).map((fam) => {
-            const showJacketFront = suitsByFamily[fam].some((model) => model.jacketFront);
-            return (
-              <section key={fam} className="card p-0 overflow-hidden">
-                <button
-                  type="button"
-                  className="w-full px-4 py-3 flex items-center gap-2 text-left hover:bg-ink-800/50"
-                  onClick={() => toggleSection(fam)}
-                >
-                  {openSections.has(fam) ? <ChevronDown size={17} /> : <ChevronRight size={17} />}
-                  <span className="text-white font-semibold flex-1">{SUIT_FAMILY_LABEL[fam]}</span>
-                  <span className="chip bg-ink-700 text-mute">{suitsByFamily[fam].length}</span>
-                </button>
-                {openSections.has(fam) && (
-                  <div className="border-t border-ink-700 p-3 space-y-2 bg-ink-950/20">
-                    {suitsByFamily[fam].map((model) => (
-                      <SuitModelRow
-                        key={model.modelId}
-                        model={model}
-                        showJacketFront={showJacketFront}
-                        open={openSuit === model.modelId}
-                        onToggle={() => setOpenSuit(openSuit === model.modelId ? null : model.modelId)}
-                        warehouse={warehouseFilter}
-                      />
-                    ))}
                   </div>
                 )}
               </section>
@@ -1323,6 +1294,45 @@ export function ProductCheck({ initialSection = "" }: { initialSection?: string 
             </button>
           )}
         </div>
+      )}
+
+      {showSuits && (
+        <details key={q.trim()} open={!tree.length || undefined} className="space-y-2 mt-4">
+          <summary className="cursor-pointer rounded-lg border border-ink-700 px-3 py-2.5 text-sm font-semibold text-white">
+            {tree.length ? "Костюмы по поиску" : "Костюмы"}
+            <span className="chip ml-2 bg-ink-700 text-mute">{visibleSuits.length}</span>
+          </summary>
+          {SUIT_FAMILIES.filter((fam) => suitsByFamily[fam].length > 0).map((fam) => {
+            const showJacketFront = suitsByFamily[fam].some((model) => model.jacketFront);
+            return (
+              <section key={fam} className="card p-0 overflow-hidden">
+                <button
+                  type="button"
+                  className="w-full px-4 py-3 flex items-center gap-2 text-left hover:bg-ink-800/50"
+                  onClick={() => toggleSection(fam)}
+                >
+                  {openSections.has(fam) ? <ChevronDown size={17} /> : <ChevronRight size={17} />}
+                  <span className="text-white font-semibold flex-1">{SUIT_FAMILY_LABEL[fam]}</span>
+                  <span className="chip bg-ink-700 text-mute">{suitsByFamily[fam].length}</span>
+                </button>
+                {openSections.has(fam) && (
+                  <div className="border-t border-ink-700 p-3 space-y-2 bg-ink-950/20">
+                    {suitsByFamily[fam].map((model) => (
+                      <SuitModelRow
+                        key={model.modelId}
+                        model={model}
+                        showJacketFront={showJacketFront}
+                        open={openSuit === model.modelId}
+                        onToggle={() => setOpenSuit(openSuit === model.modelId ? null : model.modelId)}
+                        warehouse={warehouseFilter}
+                      />
+                    ))}
+                  </div>
+                )}
+              </section>
+            );
+          })}
+        </details>
       )}
 
       {scannerOpen && (

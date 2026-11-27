@@ -537,6 +537,8 @@ export interface SuitModel {
   modelId: string;
   variation: string;
   title: string;
+  /** Виды исходных изделий, по которым модель найдена в каталоге. */
+  matchedKinds?: string[];
   /** В каталоге: тип борта, явно указанный у всех пиджаков модели. */
   jacketFront?: "Однобортный" | "Двубортный" | null;
   color: string | null;

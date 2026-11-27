@@ -157,7 +157,7 @@ function catalogTextQuery(query: string) {
     ${p.size}, ${p.height}, concat_ws('/', ${p.size}, ${p.height}), ${p.variation}, ${p.article}, ${p.code}, ${p.barcode})`);
   const codes = foldedCode(sql`concat_ws(chr(31), ${p.variation}, ${p.article}, ${p.code}, ${p.barcode})`);
   const variation = foldedCode(sql`trim(${p.variation})`);
-  const condition = and(...terms.map(t => or(
+  const condition = and(...terms.map(t => t.phrase ? sql`${text} ~ ${t.phrase}` : or(
     sql`strpos(${text}, ${t.text}) > 0`,
     t.color ? sql`strpos(${text}, ${t.color}) > 0` : undefined,
     t.code ? sql`strpos(${codes}, ${t.code}) > 0` : undefined,
@@ -833,14 +833,15 @@ async function hallGroupCounts(section: HallSectionId): Promise<Record<string, n
 }
 
 /**
- * Каталог зала, не дерево МойСклад. Костюмные части (пиджак, жилет, брюки
- * костюма) только внутри модели. Штучные брюки, сорочки из папки костюмов,
- * верх, обувь и аксессуары — по виду вещи.
+ * В разделах зала костюмные части показаны внутри модели. Общий поиск
+ * также возвращает совпавшие позиции, как подбор товара в заявке.
  */
 export async function browseCatalogPaged(query: CatalogBrowseQuery): Promise<CatalogBrowseResult> {
   const hall = normalizeHallSection(query.section);
   const hallGroup = query.subCategory?.trim() || "";
   const isSuitSection = hall === "suits";
+  const search = catalogTextQuery(query.q ?? "");
+  const allSectionsSearch = !hall && query.kind === "all" && Boolean(search.condition);
   const wantSuits =
     query.kind !== "items" && (isSuitSection || (!hall && (query.kind === "suits" || Boolean(query.q?.trim()))));
   const emptyOverview = !hall && !query.q?.trim() && query.kind === "all";
@@ -912,12 +913,12 @@ export async function browseCatalogPaged(query: CatalogBrowseQuery): Promise<Cat
     };
   }
 
-  const search = catalogTextQuery(query.q ?? "");
-
-  const conditions = [sql`${products.msType} IN ('product', 'variant')`];
-  conditions.push(sql`NOT ${suitPieceSql()}`);
-  conditions.push(sql`${products.name} NOT ILIKE ${"%сертификат%"}`);
-  conditions.push(hasVariationSql());
+  const conditions = [
+    sql`${products.msType} IN ('product', 'variant')`,
+    sql`${products.name} NOT ILIKE ${"%сертификат%"}`,
+    allSectionsSearch ? notBareParentSql() : sql`NOT ${suitPieceSql()}`,
+  ];
+  if (!search.condition) conditions.push(hasVariationSql());
   if (hall) {
     conditions.push(hallSectionSql(hall, hallGroup || undefined));
   }
@@ -966,7 +967,7 @@ export async function browseCatalogPaged(query: CatalogBrowseQuery): Promise<Cat
     SELECT *, count(*) OVER() AS full_count
     FROM base
     WHERE ${stockCondition}
-    ORDER BY variation_rank, category NULLS LAST, name, ms_id
+    ORDER BY variation_rank, ${allSectionsSearch ? sql`` : sql`category NULLS LAST,`} name, ms_id
     LIMIT ${pageSize} OFFSET ${offset}
   `);
 

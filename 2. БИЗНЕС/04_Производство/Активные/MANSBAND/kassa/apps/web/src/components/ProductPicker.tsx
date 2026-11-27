@@ -30,9 +30,9 @@ import { useReveal } from "../lib/reveal";
 
 const SEARCH_PAGE_SIZE = 30;
 
-function matchesSavedProduct(terms: ReturnType<typeof catalogSearchTerms>, name: string, sku: string) {
+function matchesSavedProduct(terms: ReturnType<typeof catalogSearchTerms>, name: string, sku: string, barcode?: string) {
   const modifiers = name.match(/\(([^()]*)\)\s*$/)?.[1]?.split(",").map(s => s.trim()) ?? [];
-  return matchesCatalogTerms(terms, [name], [sku, ...modifiers]);
+  return matchesCatalogTerms(terms, [name], [sku, barcode, ...modifiers]);
 }
 
 function itemKey(it: CartItem): string {
@@ -494,7 +494,7 @@ export function ProductPicker({
     if (allowedMap) {
       setLoading(false);
       const list = allowedList
-        .filter(it => matchesSavedProduct(terms, it.name, it.productId))
+        .filter(it => matchesSavedProduct(terms, it.name, it.productId, it.barcode))
         .map(
           (it): Product => ({
             id: it.productId,
@@ -516,7 +516,7 @@ export function ProductPicker({
     }
     if (USE_MOCK) {
       setLoading(false);
-      setFound(PRODUCTS.filter(p => matchesSavedProduct(terms, p.name, p.sku)));
+      setFound(PRODUCTS.filter(p => matchesSavedProduct(terms, p.name, p.sku, p.barcode)));
       return;
     }
     setFound([]);
@@ -713,6 +713,7 @@ export function ProductPicker({
         const qNorm = code.trim().toLowerCase();
         const match = allowedList.find(
           (it) =>
+            it.barcode?.trim().toLowerCase() === qNorm ||
             it.productId.toLowerCase() === qNorm ||
             it.name.toLowerCase().includes(qNorm)
         );
