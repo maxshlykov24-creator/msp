@@ -21,17 +21,12 @@ function sameList(left: string[], right: string[]): boolean {
   return left.length === right.length && left.every((item, index) => item === right[index]);
 }
 
-function appearances(row: PhotoReviewCase): Set<string> {
-  return new Set(row.variants.map(fields => fields.slice(1, 5).map(part).join("|")));
-}
-
-/** Один кадр, и его имя совпало с артикулом и со всеми вариациями каталога. Цвет и крой тоже одни. */
+/** Один кадр, и его имя совпало с артикулом и со всеми вариациями каталога. Разные цвета и кроя этого артикула — тот же кадр. */
 function frameIsSettled(row: PhotoReviewCase, own: string, photos: Record<string, PhotoReviewImage>): boolean {
   if (row.photoIds.length !== 1 || row.variants.length === 0) return false;
   const photo = photos[row.photoIds[0]!];
   if (!photo || photoCodeKey(photo.name) !== own) return false;
-  if (!row.variants.every(fields => photoCodeKey(fields[0] ?? "") === own)) return false;
-  return appearances(row).size === 1;
+  return row.variants.every(fields => photoCodeKey(fields[0] ?? "") === own);
 }
 
 function openQuestion(row: PhotoReviewCase): string {
@@ -48,7 +43,7 @@ function openQuestion(row: PhotoReviewCase): string {
 /**
  * Кадр остаётся на карточке своего артикула.
  * Файл, чьё имя совпало с другим артикулом той же ячейки, с этой карточки снимается.
- * Если после этого артикул, кадр, цвет и крой одни, карточку не показываем: выбирать нечего.
+ * Если после этого у артикула один свой кадр, карточку не показываем: цвет и крой не разделяют её.
  * Пустая карточка с тем же артикулом, что уже разобранная соседняя, тоже снимается.
  * Это случай `s23/37b2+` и файла `s23-37b2+.ARW`.
  */
@@ -62,6 +57,12 @@ export function settlePhotoReview<T extends Manifest>(data: T): T {
 
   const settled: PhotoReviewCase[] = [];
   const decidedPhotos = new Set<string>();
+  const decidedVariants = new Map<string, Set<string>>();
+  function remember(row: PhotoReviewCase) {
+    const signatures = decidedVariants.get(photoCodeKey(row.code)) ?? new Set<string>();
+    signatures.add(JSON.stringify(row.variants));
+    decidedVariants.set(photoCodeKey(row.code), signatures);
+  }
   for (const row of data.cases) {
     const own = photoCodeKey(row.code);
     const siblingKeys = new Set(
@@ -76,6 +77,11 @@ export function settlePhotoReview<T extends Manifest>(data: T): T {
       return key === own || !siblingKeys.has(key);
     });
     if (sameList(photoIds, row.photoIds)) {
+      if (frameIsSettled(row, own, data.photos)) {
+        for (const id of row.photoIds) decidedPhotos.add(id);
+        remember(row);
+        continue;
+      }
       settled.push(row);
       continue;
     }
@@ -91,6 +97,7 @@ export function settlePhotoReview<T extends Manifest>(data: T): T {
     }
     if (frameIsSettled(next, own, data.photos)) {
       for (const id of photoIds) decidedPhotos.add(id);
+      remember(next);
       continue;
     }
     settled.push({ ...next, reason: openQuestion(next) });
@@ -110,7 +117,8 @@ export function settlePhotoReview<T extends Manifest>(data: T): T {
     for (const blank of group) {
       if (blank.photoIds.length > 0) continue;
       const signature = JSON.stringify(blank.variants);
-      if (owners.some(owner => JSON.stringify(owner.variants) === signature)) hidden.add(blank.id);
+      const decided = decidedVariants.get(photoCodeKey(blank.code));
+      if (decided?.has(signature) || owners.some(owner => JSON.stringify(owner.variants) === signature)) hidden.add(blank.id);
     }
   }
 

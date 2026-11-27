@@ -263,6 +263,85 @@ def suit_piece_without_photo(row):
     return "одежд" not in category and category.split("/")[0] not in ("clothes", "outerwear")
 
 
+def attach_code_shots(choice, group, by_variation, files, sources):
+    # Один файл на все цвета и кроя артикула. «-» и «/» один разделитель, регистр не важен.
+    cell = choice["cell"]
+    evidence = str(choice.get("code_match_evidence", "")).strip()
+    shots = choice.get("shots") or []
+    if not evidence or not shots:
+        raise ValueError(f"{cell}: для общего кадра артикула нужна сверка владельца и список кадров")
+    if any(key in choice for key in ("source", "variations", "models", "color", "pattern")):
+        raise ValueError(f"{cell}: общий кадр артикула не смешивается с отбором одной расцветки")
+    excluded = {norm(k): v for k, v in choice.get("excluded_entries", {}).items()}
+    entries = group["catalog"]
+    entry_norms = {norm(e["entry"]) for e in entries}
+    if excluded.keys() - entry_norms or any(not str(v or "").strip() for v in excluded.values()):
+        raise ValueError(f"{cell}: укажи причину для каждой пропущенной записи этой группы")
+    if entry_norms <= excluded.keys():
+        raise ValueError(f"{cell}: нельзя пропустить все записи группы")
+    by_source = {}
+    for shot in shots:
+        key = sheet_code(shot["source"])
+        if key in by_source:
+            raise ValueError(f"{cell}: повтор кадра {shot['source']}")
+        by_source[key] = shot
+    used = set()
+    for entry in entries:
+        if norm(entry["entry"]) in excluded:
+            continue
+        key = sheet_code(entry["entry"])
+        if key not in by_source:
+            raise ValueError(f"{cell}: запись {entry['entry']} не входит ни в кадр, ни в пропуск")
+        used.add(key)
+    if set(by_source) != used:
+        raise ValueError(f"{cell}: в кадрах есть артикул, которого нет в группе")
+    attached = []
+    for shot in shots:
+        variations, seen_variations = [], set()
+        for value in shot["variations"]:
+            actual = norm(value)
+            if not actual or actual in seen_variations:
+                raise ValueError(f"{cell}: повтор или пустая вариация у {shot['source']}")
+            seen_variations.add(actual)
+            variations.append(actual)
+        seen_looks = set()
+        for item in shot["appearances"]:
+            look = (norm(item["model"]), norm(item["color"]), norm(item["pattern"]), norm(item.get("fit", "")))
+            if look in seen_looks or not look[0]:
+                raise ValueError(f"{cell}: повтор или пустой вид у {shot['source']}")
+            seen_looks.add(look)
+        if not variations or not seen_looks:
+            raise ValueError(f"{cell}: у {shot['source']} нет вариаций или видов")
+        rows, seen_ids = [], set()
+        for code in variations:
+            for row in by_variation.get(code, []):
+                if row["ms_type"] != "variant":
+                    continue
+                look = (split_name(row["name"])[0], norm(row["color"]), norm(row["pattern"]), norm(row["fit"]))
+                if look not in seen_looks or suit_piece_without_photo(row) or row["ms_id"] in seen_ids:
+                    continue
+                seen_ids.add(row["ms_id"])
+                rows.append(row)
+        if not rows:
+            raise ValueError(f"{cell}: каталог не подтверждает {shot['source']}")
+        got_variations = {norm(row["variation"]) for row in rows}
+        got_looks = {(split_name(row["name"])[0], norm(row["color"]), norm(row["pattern"]), norm(row["fit"]))
+                     for row in rows}
+        if got_variations != seen_variations or got_looks != seen_looks:
+            raise ValueError(f"{cell}: каталог не подтверждает все виды {shot['source']}")
+        selected_files = files.get(norm(shot["source"]), [])
+        if len(selected_files) != 1:
+            raise ValueError(f"{cell}: выбранный ARW отсутствует или его имя неоднозначно")
+        path, = selected_files
+        if (sources and path not in sources) or (len(sources) != 1 and not evidence):
+            raise ValueError(f"{cell}: требуется подтверждённый кадр этой группы")
+        suit = bool(shot.get("suit"))
+        if suit and (any(row["suit_part"] != "jacket" for row in rows) or any(not row["suit_line"] for row in rows)):
+            raise ValueError(f"{cell}: фото костюма можно привязать только к пиджаку известной линии")
+        attached.append((path, rows, suit))
+    return attached
+
+
 def match_selection(choice, group, by_variation):
     codes = {norm(v) for v in choice["variations"]}
     color, pattern = norm(choice["color"]), norm(choice["pattern"])
@@ -379,6 +458,50 @@ def build(args, files, catalog, audit):
             raise ValueError(f"{cell}: нужна однозначная пронумерованная группа Excel")
         group = groups[cell]
         sources = sheet_sources(group, files)
+        def record(path, rows, suit):
+            small, large = encode(path)
+            asset = hashlib.sha256(small + large).hexdigest()[:32]
+            assets[asset] = (small, large)
+            for row in rows:
+                base, mask, key = name_layout(row)
+                put(index["products"].setdefault(base, {}).setdefault(mask, {}), key, asset)
+                if row["ms_id"] in expected:
+                    raise ValueError("Карточка повторяется в двух группах: " + row["name"])
+                expected[row["ms_id"]] = asset
+                if suit:
+                    if row["suit_part"] != "jacket" or not row["suit_line"]:
+                        raise ValueError(f"{cell}: фото костюма можно привязать только к пиджаку известной линии")
+                    put(index["suits"], suit_key(row), asset)
+            summary.append(dict(cell=cell, number=group["number"], source=path.name, asset=asset,
+                                variants=len(rows), sizes=sorted({row["size"] for row in rows}),
+                                heights=sorted({row["height"] for row in rows}), raw=path.stat().st_size,
+                                small=len(small), large=len(large)))
+
+        def record_extra():
+            extra = choice.get("also_shots")
+            if not extra:
+                return
+            if not str(choice.get("code_match_evidence", "")).strip():
+                raise ValueError(f"{cell}: для дополнительного артикула нужна сверка владельца")
+            shot_keys = {sheet_code(shot["source"]) for shot in extra}
+            synthetic = {
+                "cell": cell,
+                "code_match_evidence": choice["code_match_evidence"],
+                "shots": extra,
+                "excluded_entries": {
+                    entry["entry"]: "Эту запись закрывает основной кадр ячейки"
+                    for entry in group["catalog"]
+                    if sheet_code(entry["entry"]) not in shot_keys
+                },
+            }
+            for path, rows, suit in attach_code_shots(synthetic, group, by_variation, files, sources):
+                record(path, rows, suit)
+
+        if "shots" in choice:
+            for path, rows, suit in attach_code_shots(choice, group, by_variation, files, sources):
+                record(path, rows, suit)
+            record_extra()
+            continue
         selected_files = files.get(norm(choice["source"]), [])
         if len(selected_files) != 1:
             raise ValueError(f"{cell}: выбранный ARW отсутствует или его имя неоднозначно")
@@ -403,6 +526,7 @@ def build(args, files, catalog, audit):
                             variants=len(rows), sizes=sorted({r["size"] for r in rows}),
                             heights=sorted({r["height"] for r in rows}), raw=path.stat().st_size,
                             small=len(small), large=len(large)))
+        record_extra()
     for row in catalog:
         found = lookup(index["products"], row["name"])
         if found and suit_piece_without_photo(row):

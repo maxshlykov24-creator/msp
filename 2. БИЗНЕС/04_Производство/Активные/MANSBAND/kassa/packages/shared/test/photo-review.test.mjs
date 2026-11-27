@@ -22,15 +22,9 @@ test("косая черта и дефис в коде одного артику�
   assert.notEqual(photoCodeKey("s03-501m10"), photoCodeKey("SB03/501MM"));
 });
 
-test("на карточке остаётся только файл её артикула", () => {
-  const jacket = find("B2", "sb03-501mm");
-  const other = find("B2", "s03-501m10");
-  assert.equal(jacket.length, 1);
-  assert.equal(other.length, 1);
-  assert.deepEqual(names(jacket[0]), ["sb03-501mm.ARW"]);
-  assert.deepEqual(names(other[0]), ["s03-501m10.ARW"]);
-  assert.equal(jacket[0].reason, "Сверить цвет и узор");
-  assert.equal(other[0].reason, "Сверить цвет и узор");
+test("свой кадр артикула уходит из очереди при разных цветах и кроях", () => {
+  assert.equal(find("B2", "sb03-501mm").length, 0);
+  assert.equal(find("B2", "s03-501m10").length, 0);
 });
 
 test("файл другого артикула той же ячейки нигде не предлагается как выбор", () => {
@@ -64,12 +58,9 @@ test("однозначный кадр уходит из очереди, чужо
   assert.equal(withoutFile[0].reason, "Нужен исходный кадр");
 });
 
-test("s23/37b2+ не числится без кадра: тот же артикул уже есть как s23-37b2+", () => {
+test("s23/37b2+ не числится без кадра: тот же артикул уже закрыт своим файлом", () => {
   assert.equal(find("B393", "s23/37b2+").length, 0);
-  const kept = find("B404", "s23-37b2+");
-  assert.equal(kept.length, 1);
-  assert.deepEqual(names(kept[0]), ["s23-37b2+.ARW"]);
-  assert.equal(kept[0].reason, "Сверить цвет и узор");
+  assert.equal(find("B404", "s23-37b2+").length, 0);
 });
 
 test("похожее, но другое имя файла не приклеивается и не выбрасывается", () => {
@@ -83,6 +74,6 @@ test("похожее, но другое имя файла не приклеив�
 
 test("повторный проход ничего не меняет", () => {
   assert.deepEqual(settlePhotoReview(settled), settled);
-  assert.equal(settled.cases.length, 369);
-  assert.equal(settled.unpublished.length, 301);
+  assert.equal(settled.cases.length, 110);
+  assert.equal(settled.unpublished.length, 59);
 });
