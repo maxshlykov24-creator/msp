@@ -121,6 +121,11 @@ export function Layout({
     }
   });
   const tipRef = useRef<HTMLDivElement>(null);
+  const mainRef = useRef<HTMLElement>(null);
+
+  useLayoutEffect(() => {
+    mainRef.current?.scrollTo(0, 0);
+  }, [route]);
 
   useEffect(() => {
     try {
@@ -223,7 +228,7 @@ export function Layout({
   ];
 
   return (
-    <div className={`min-h-screen flex flex-col w-full overflow-x-hidden ${route === "crm-analytics" ? "analytics-layout" : ""}`}>
+    <div className={`kassa-shell flex flex-col w-full ${route === "crm-analytics" ? "analytics-layout" : ""}`}>
       <OfflineBanner />
       <div className="flex flex-1 min-h-0 w-full">
       <aside className="hidden md:flex shrink-0 sticky top-0 h-dvh p-3 z-20">
@@ -274,8 +279,8 @@ export function Layout({
       </aside>
 
       {/* Main */}
-      <div className="flex-1 flex flex-col min-w-0 w-full overflow-x-hidden">
-        <header className="kassa-chrome sticky top-0 z-30 border-b pt-[env(safe-area-inset-top)]">
+      <div className="flex-1 flex flex-col min-w-0 min-h-0 w-full">
+        <header className="kassa-chrome sticky top-0 z-30 shrink-0 border-b pt-[var(--safe-top)]">
           {/* Мобильная шапка: лого слева, переключатели в одну линию, магазин снизу */}
           <div className="md:hidden px-3 pt-2.5 pb-2.5">
             <div className="flex items-center gap-2 min-w-0">
@@ -327,17 +332,16 @@ export function Layout({
           </div>
         </header>
         <main
-          className="kassa-main flex-1 px-4 md:px-8 py-6 overflow-x-hidden max-w-full"
+          ref={mainRef}
+          className="kassa-main flex-1 px-3 md:px-8 py-4 md:py-6 max-w-full"
         >
           <div key={route} className="page-in">
             {children}
           </div>
         </main>
-        {/* Вне прокрутки, анимации страниц и модальных окон — всегда у края экрана. */}
-        {createPortal(
           <nav
             aria-label="Основное меню"
-            className={`kassa-mobile-nav kassa-chrome md:hidden border-t grid pb-[env(safe-area-inset-bottom)] ${
+            className={`kassa-mobile-nav kassa-chrome md:hidden border-t grid shrink-0 ${
               mobileNav.length === 5 ? "grid-cols-5" : "grid-cols-4"
             }`}
           >
@@ -349,7 +353,7 @@ export function Layout({
                   key={n.id}
                   aria-current={route === n.id ? "page" : undefined}
                   onClick={() => (n.id === "board" ? onBoard("all", "all") : setRoute(n.id))}
-                  className={`relative flex flex-col items-center justify-center gap-1 py-2.5 min-h-[64px] text-[10px] font-medium transition active:bg-ink-800 ${
+                  className={`relative flex flex-col items-center justify-center gap-1 py-2 min-h-14 text-[10px] font-medium transition active:bg-ink-800 ${
                     route === n.id ? "text-gold" : "text-mute"
                   }`}
                 >
@@ -363,9 +367,7 @@ export function Layout({
                 </button>
               );
             })}
-          </nav>,
-          document.body
-        )}
+          </nav>
       </div>
       </div>
     </div>

@@ -1369,7 +1369,7 @@ export function StageActions({
       : stage;
 
   return (
-    <div className="flex items-center gap-2 sm:gap-3 justify-end flex-wrap py-0.5">
+    <div className="kassa-stage-actions flex items-center gap-2 sm:gap-3 justify-end flex-wrap py-0.5">
       {successHint && (
         <span className="text-[11px] sm:text-[12px] text-amber-300/90 mr-auto w-full sm:w-auto">
           {successHint}
@@ -1502,39 +1502,38 @@ export function FormShell({
       ref={rootRef}
       data-reveal-root=""
       className={`max-w-3xl mx-auto ${
-        hasDock ? "pb-[calc(9.5rem+env(safe-area-inset-bottom))] sm:pb-36" : ""
+        hasDock ? "md:pb-36" : ""
       }`}
     >
       <RevealScope rootRef={rootRef}>
       {!embedded && (
         <button
           onClick={onBack}
-          className="inline-flex items-center gap-1.5 text-mute hover:text-white text-sm mb-4"
+          type="button"
+          className="inline-flex items-center gap-1.5 text-mute hover:text-white text-sm mb-2 md:mb-4"
         >
           <ArrowLeft size={16} /> Назад к выбору
         </button>
       )}
-      <div className="mb-5 flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <h1 className="text-2xl font-extrabold text-white">{title}</h1>
-            {meta && (
-              <>
-                <span className="chip bg-white/10 text-white font-mono text-[15px] font-semibold tracking-wide">
-                  Заявка №{meta.number}
-                </span>
-                <span className="chip bg-white/10 text-white/90 font-mono">
-                  {dateRu(meta.createdAt)}
-                </span>
-              </>
-            )}
-            {storeAddress && <StoreAddressChip address={storeAddress} />}
-          </div>
-          {subtitle && <p className="text-mute text-sm mt-0.5">{subtitle}</p>}
+      <header className="mb-3 flex flex-col gap-2 md:mb-5 md:flex-row md:items-center md:justify-between">
+        <div className="min-w-0 space-y-1.5">
+          <h1 className="text-xl font-extrabold leading-tight text-white md:text-2xl">{title}</h1>
+          {meta && (
+            <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5 text-[13px] text-mute-soft">
+              <span className="font-semibold text-white">Заявка №{meta.number}</span>
+              <time dateTime={meta.createdAt}>{dateRu(meta.createdAt)}</time>
+            </div>
+          )}
+          {(subtitle || storeAddress) && (
+            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[12px] text-mute">
+              {subtitle && <span>{subtitle}</span>}
+              {storeAddress && <StoreAddressChip address={storeAddress} />}
+            </div>
+          )}
         </div>
-        {stageBadge && <div className="shrink-0 self-center">{stageBadge}</div>}
-      </div>
-      {headerActions && <div className="mb-5">{headerActions}</div>}
+        {stageBadge && <div className="hidden md:block md:shrink-0">{stageBadge}</div>}
+      </header>
+      {headerActions && <div className="mb-3 md:mb-5">{headerActions}</div>}
       <div className="space-y-5">{children}</div>
 
       {missing.length > 0 && (
@@ -1548,9 +1547,9 @@ export function FormShell({
         </div>
       )}
 
-      {/* Фиксированный нижний блок: сумма/оплата/остаток + этапы — всегда на экране */}
+      {/* Суммы и действия закреплены внизу формы. */}
       {hasDock && (
-        <div className="kassa-action-dock fixed inset-x-0 z-40 border-t border-ink-700 bg-ink-950/95 backdrop-blur md:pb-[env(safe-area-inset-bottom)]">
+        <div className={`kassa-action-dock kassa-flow-dock ${embedded ? "" : "kassa-viewport-dock"} fixed inset-x-0 z-40 border-t border-ink-700 bg-ink-950/95 backdrop-blur md:pb-[var(--safe-bottom)]`}>
           <div className="max-w-3xl mx-auto px-3 sm:px-4 pt-2.5 pb-2.5 space-y-2">
             {summary}
             {footer}

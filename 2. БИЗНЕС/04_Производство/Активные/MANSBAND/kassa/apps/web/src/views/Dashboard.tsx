@@ -1,3 +1,4 @@
+import { DatePicker } from "../components/DatePicker";
 import { useEffect, useState, type ReactNode } from "react";
 import { BarChart3, ChevronRight, Store, Loader2, ShoppingCart } from "lucide-react";
 import { StatTile, Card } from "../components/ui";
@@ -279,24 +280,22 @@ export function Dashboard() {
             </button>
           ))}
         </div>
-        <input
-          type="date"
-          className="input py-2 text-sm w-auto"
+        <DatePicker
+          className="input py-2 text-sm"
           value={range.from}
-          onChange={(e) => {
+          onChange={(value) => {
             setPreset("custom");
-            setRange((prev) => ({ ...prev, from: e.target.value }));
+            setRange((prev) => ({ ...prev, from: value }));
           }}
           aria-label="Период с"
         />
-        <input
-          type="date"
-          className="input py-2 text-sm w-auto"
+        <DatePicker
+          className="input py-2 text-sm"
           value={range.to}
           min={range.from}
-          onChange={(e) => {
+          onChange={(value) => {
             setPreset("custom");
-            setRange((prev) => ({ ...prev, to: e.target.value }));
+            setRange((prev) => ({ ...prev, to: value }));
           }}
           aria-label="Период по"
         />

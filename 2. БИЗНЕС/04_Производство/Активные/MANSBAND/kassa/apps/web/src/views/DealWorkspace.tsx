@@ -188,7 +188,6 @@ export function DealWorkspace({
   const reserveTracked = useRef({ manual: false, wasPartial: false, seenPaid: null as number | null });
   const [meetingDate, setMeetingDate] = useState((live.meetingDate || "").slice(0, 10));
   const [approxMeetingDate, setApproxMeetingDate] = useState((live.approxMeetingDate || "").slice(0, 10));
-  useEffect(() => { if (stage === "Дано обещание" && !actualUntil) setActualUntil(defaultPromiseUntil()); }, [stage, actualUntil]);
   useEffect(() => {
     const leadId = live.amoLeadId;
     if (USE_MOCK || leadId == null || leadId <= 0) return;
@@ -259,7 +258,7 @@ export function DealWorkspace({
     setIssued(form.issued);
     setRentalFrom(form.rentalFrom);
     setRentalTo(form.rentalTo);
-    setActualUntil(form.actualUntil);
+    setActualUntil(form.actualUntil || (form.stage === "Дано обещание" ? defaultPromiseUntil() : ""));
     setMovementCreated(false);
     setReservedUntil(form.reservedUntil);
     reserveTracked.current = { manual: false, wasPartial: false, seenPaid: null };
@@ -437,8 +436,8 @@ export function DealWorkspace({
             chosen: partialPay ? reservedUntil : paid <= 0 && track.wasPartial && !track.manual ? "" : reservedUntil,
           });
         })(),
-        meetingDate: meetingDate || undefined,
-        approxMeetingDate: approxMeetingDate || undefined,
+        meetingDate: live.meetingDate || meetingDate ? meetingDate : undefined,
+        approxMeetingDate: live.approxMeetingDate || approxMeetingDate ? approxMeetingDate : undefined,
         reason: stageReason.trim() || undefined,
         total,
         paid,
@@ -454,8 +453,8 @@ export function DealWorkspace({
           : {}),
         ...(live.kind === "rental"
           ? {
-              rentalFrom: rentalFrom || undefined,
-              rentalTo: rentalTo || undefined,
+              rentalFrom: live.rentalFrom || rentalFrom ? rentalFrom : undefined,
+              rentalTo: live.rentalTo || rentalTo ? rentalTo : undefined,
             }
           : {}),
         ...(refundAmount > 0 ? returnDealFields(refundAmount, returnInfo) : {}),
@@ -507,6 +506,13 @@ export function DealWorkspace({
     !closed && !live.moneyCancellation &&
     (live.kind === "deferred" || live.kind === "promise" || live.kind === "sale");
 
+  function changeStage(next: string) {
+    if (next === "Дано обещание" && stage !== next) {
+      setActualUntil((value) => value || defaultPromiseUntil());
+    }
+    setStage(next);
+  }
+
   async function convertKind(payload: ConvertKindPayload) {
     setConverting(true);
     setError(null);
@@ -534,7 +540,7 @@ export function DealWorkspace({
 
   return (
     <div
-      className={`${hideBack ? "" : "max-w-3xl mx-auto"} pb-[calc(9.5rem+env(safe-area-inset-bottom))] sm:pb-36`}
+      className={`${hideBack ? "" : "max-w-3xl mx-auto"} md:pb-36`}
     >
       {!hideBack && (
         <button
@@ -546,7 +552,7 @@ export function DealWorkspace({
         </button>
       )}
 
-      <div className="mb-5 flex items-center justify-between gap-3">
+      <div className="mb-4 flex flex-col items-start gap-2 md:mb-5 md:flex-row md:items-center md:justify-between">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-2xl font-extrabold text-white">{KIND_LABEL[live.kind] ?? live.kind}</h1>
@@ -569,7 +575,7 @@ export function DealWorkspace({
             )}
           </div>
         </div>
-        <StageBadge stage={stage} options={stageChoices.filter((s) => !HOLD_DEAL_KINDS.includes(live.kind) || !AUTOMATIC_HOLD_STAGES.includes(s))} onChange={live.moneyCancellation ? undefined : setStage} className="text-[16px] px-3.5 py-2 font-semibold shrink-0 self-center" />
+        <StageBadge stage={stage} options={stageChoices.filter((s) => !HOLD_DEAL_KINDS.includes(live.kind) || !AUTOMATIC_HOLD_STAGES.includes(s))} onChange={live.moneyCancellation ? undefined : changeStage} className="text-[16px] px-3.5 py-2 font-semibold" />
       </div>
       <Hint>
         Этап меняется в цветной плашке. Перемещение сохраняет вид заявки.
@@ -886,7 +892,7 @@ export function DealWorkspace({
         )}
       </div>
 
-      <div className="kassa-action-dock fixed inset-x-0 z-40 border-t border-ink-700 bg-ink-950/95 backdrop-blur md:pb-[env(safe-area-inset-bottom)]">
+      <div className={`kassa-action-dock kassa-flow-dock ${hideBack ? "" : "kassa-viewport-dock"} fixed inset-x-0 z-40 border-t border-ink-700 bg-ink-950/95 backdrop-blur md:pb-[var(--safe-bottom)]`}>
         <div className="max-w-3xl mx-auto px-3 sm:px-4 pt-2.5 pb-2.5 space-y-2">
           <SummaryBar total={live.total || total} paid={paid} />
           {showSuccess && successGaps.length > 0 && baseFilled && (
@@ -896,7 +902,7 @@ export function DealWorkspace({
             <StageBadge
               stage={stage}
               options={stageChoices}
-              onChange={live.moneyCancellation ? undefined : setStage}
+              onChange={live.moneyCancellation ? undefined : changeStage}
               compact
               className="text-[13px]"
             />

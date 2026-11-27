@@ -1,3 +1,4 @@
+import { DatePicker } from "../components/DatePicker";
 import { useEffect, useMemo, useState } from "react";
 import { Send, Check, ArrowLeftRight, Banknote, Coins, ReceiptText, Plus, Trash2, Undo2, Wallet } from "lucide-react";
 import { useStore } from "../store";
@@ -351,7 +352,7 @@ export function EdwinQueue() {
 
   async function saveExpense() {
     const amount = Number(expenseAmount);
-    if (!amount) return;
+    if (!amount || !expenseDate) return;
     if (expenseSplits.length === 0 && !expenseMethod) {
       setExpenseError("Выберите способ оплаты");
       return;
@@ -488,21 +489,21 @@ export function EdwinQueue() {
       <div className="card filter-bar p-4 mb-3 flex flex-wrap items-center gap-2.5">
         <label className="text-[12px] text-mute flex items-center gap-2">
           с
-          <input
-            type="date"
-            className="input py-2 text-sm w-[150px]"
+          <DatePicker
+            className="input py-2 text-sm min-w-[150px]"
+            aria-label="Период с"
             value={dateFrom}
-            onChange={(e) => setDateFrom(e.target.value)}
+            onChange={setDateFrom}
           />
         </label>
         <label className="text-[12px] text-mute flex items-center gap-2">
           по
-          <input
-            type="date"
-            className="input py-2 text-sm w-[150px]"
+          <DatePicker
+            className="input py-2 text-sm min-w-[150px]"
+            aria-label="Период по"
             value={dateTo}
             min={dateFrom || undefined}
-            onChange={(e) => setDateTo(e.target.value)}
+            onChange={setDateTo}
           />
         </label>
       </div>
@@ -830,11 +831,11 @@ export function EdwinQueue() {
             </label>
             <label>
               <div className="field-label">Дата счёта</div>
-              <input
-                type="date"
+              <DatePicker
                 className="input"
+                aria-label="Дата счёта"
                 value={invoiceDate}
-                onChange={(e) => setInvoiceDate(e.target.value)}
+                onChange={setInvoiceDate}
               />
             </label>
           </div>
@@ -912,7 +913,7 @@ export function EdwinQueue() {
             </label>
             <label>
               <div className="field-label">Дата расхода</div>
-              <input type="date" className="input" value={expenseDate} onChange={(e) => setExpenseDate(e.target.value)} />
+              <DatePicker aria-label="Дата расхода" className="input" value={expenseDate} onChange={setExpenseDate} />
             </label>
           </div>
 
@@ -987,7 +988,7 @@ export function EdwinQueue() {
           <div className="flex justify-end">
             <Button
               disabled={
-                !Number(expenseAmount) ||
+                !Number(expenseAmount) || !expenseDate ||
                 (expenseSplits.length === 0 ? !expenseMethod : expenseSplits.some((r) => !r.methodId))
               }
               onClick={() => void saveExpense()}

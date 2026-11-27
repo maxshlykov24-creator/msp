@@ -47,6 +47,26 @@ function matchesQuery(item: SelectOption, q: string): boolean {
   return [item.label, item.shortLabel, item.hint].some((part) => (part ?? "").toLowerCase().includes(q));
 }
 
+/** Координаты для порталов с position: fixed, с учётом клавиатуры и вырезов экрана. */
+export function popoverViewport() {
+  const viewport = window.visualViewport;
+  const root = document.documentElement;
+  const css = getComputedStyle(root);
+  const inset = (side: string) => parseFloat(css.getPropertyValue(`--safe-${side}`)) || 0;
+  const left = Math.max(inset("left"), viewport?.offsetLeft ?? 0) + 8;
+  const right = Math.min(
+    root.clientWidth - inset("right"),
+    (viewport?.offsetLeft ?? 0) + (viewport?.width ?? root.clientWidth)
+  ) - 8;
+  const top = Math.max(inset("top"), viewport?.offsetTop ?? 0) + 8;
+  const nav = document.querySelector(".kassa-mobile-nav")?.getBoundingClientRect();
+  const bottom = Math.min(
+    (viewport?.offsetTop ?? 0) + (viewport?.height ?? root.clientHeight),
+    nav?.height ? nav.top : root.clientHeight - inset("bottom")
+  ) - 8;
+  return { left, right, top, bottom };
+}
+
 export function Select({
   value,
   onChange,
@@ -89,6 +109,8 @@ export function Select({
   const btnRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const focusSearch = useRef(false);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [highlight, setHighlight] = useState(0);
@@ -112,35 +134,6 @@ export function Select({
 
   const flat = useMemo(() => flatten(visible), [visible]);
 
-  function place() {
-    const el = btnRef.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    const width = Math.min(Math.max(rect.width, menuMinWidth), window.innerWidth - 16);
-    const left = Math.min(Math.max(8, rect.left), window.innerWidth - width - 8);
-    const gap = 8;
-    const desired = 420;
-    const view = window.visualViewport;
-    const viewTop = view?.offsetTop ?? 0;
-    const viewH = view?.height ?? window.innerHeight;
-    const navRect = document.querySelector(".kassa-mobile-nav")?.getBoundingClientRect();
-    const viewBottom = navRect?.height ? Math.min(viewTop + viewH, navRect.top) : viewTop + viewH;
-    const below = viewBottom - rect.bottom - gap;
-    const above = rect.top - viewTop - gap;
-    // Поле у нижнего края: вниз остаётся узкая полоска. Поднимаем список,
-    // если сверху места больше, и не даём ему вылезать за экран.
-    const up = below < desired && above > below;
-    const room = Math.max(0, up ? above : below);
-    const maxH = Math.min(desired, room);
-    setBox({
-      top: up ? rect.top - gap : rect.bottom + gap,
-      left,
-      width,
-      maxH,
-      up,
-    });
-  }
-
   function close() {
     setOpen(false);
     setQuery("");
@@ -149,13 +142,44 @@ export function Select({
   function pick(next: string) {
     onChange(next);
     close();
-    btnRef.current?.focus();
+    btnRef.current?.focus({ preventScroll: true });
   }
 
   useLayoutEffect(() => {
     if (!open) return;
+    function place() {
+      const el = btnRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const view = popoverViewport();
+      const width = Math.min(Math.max(rect.width, menuMinWidth), view.right - view.left);
+      const left = Math.min(Math.max(view.left, rect.left), view.right - width);
+      const gap = 8;
+      const desired = 420;
+      const belowTop = Math.max(view.top, rect.bottom + gap);
+      const aboveBottom = Math.min(view.bottom, rect.top - gap);
+      const below = view.bottom - belowTop;
+      const above = aboveBottom - view.top;
+
+      // При нехватке места рядом с кнопкой список занимает доступную область экрана.
+      if (Math.max(above, below) < 140) {
+        setBox({ top: view.top, left, width, maxH: Math.max(0, view.bottom - view.top), up: false });
+        return;
+      }
+      const up = below < desired && above > below;
+      setBox({
+        top: up ? aboveBottom : belowTop,
+        left,
+        width,
+        maxH: Math.min(desired, up ? above : below),
+        up,
+      });
+    }
     place();
-    const sync = () => place();
+    const sync = (event: Event) => {
+      if (event.target instanceof Node && menuRef.current?.contains(event.target)) return;
+      place();
+    };
     window.addEventListener("resize", sync);
     window.addEventListener("scroll", sync, true);
     window.visualViewport?.addEventListener("resize", sync);
@@ -166,78 +190,87 @@ export function Select({
       window.visualViewport?.removeEventListener("resize", sync);
       window.visualViewport?.removeEventListener("scroll", sync);
     };
-  }, [open, visible.length, menuMinWidth]);
+  }, [open, menuMinWidth]);
 
   useEffect(() => {
     if (!open) return;
-    const onDoc = (event: MouseEvent) => {
+    const onDoc = (event: PointerEvent) => {
       const node = event.target as Node;
       if (btnRef.current?.contains(node) || menuRef.current?.contains(node)) return;
       close();
     };
     const onForeign = () => close();
-    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("pointerdown", onDoc);
     window.addEventListener("kassa-select-open", onForeign);
     return () => {
-      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("pointerdown", onDoc);
       window.removeEventListener("kassa-select-open", onForeign);
     };
   }, [open]);
 
   useEffect(() => {
     if (!open) return;
-    const idx = Math.max(0, flat.findIndex((item) => item.value === value));
-    setHighlight(idx);
-    if (withSearch) {
-      requestAnimationFrame(() => searchRef.current?.focus());
-    } else {
-      requestAnimationFrame(() => menuRef.current?.focus());
-    }
+    const target = withSearch && focusSearch.current ? searchRef : menuRef;
+    const frame = requestAnimationFrame(() => target.current?.focus({ preventScroll: true }));
+    return () => cancelAnimationFrame(frame);
+  }, [open, withSearch]);
+
+  function revealOption(index: number) {
+    const list = listRef.current;
+    const option = list?.querySelector(`[data-idx="${index}"]`);
+    if (!list || !option) return;
+    const bounds = list.getBoundingClientRect();
+    const rect = option.getBoundingClientRect();
+    if (rect.top < bounds.top) list.scrollTop -= bounds.top - rect.top;
+    else if (rect.bottom > bounds.bottom) list.scrollTop += rect.bottom - bounds.bottom;
+  }
+
+  useLayoutEffect(() => {
+    if (open) revealOption(highlight);
+    // Прокручиваем к выбранному при открытии. Наведение мыши список не двигает.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  useEffect(() => {
-    if (!open) return;
-    if (highlight >= flat.length) setHighlight(Math.max(0, flat.length - 1));
-  }, [flat.length, highlight, open]);
-
-  useEffect(() => {
-    if (!open) return;
-    const node = menuRef.current?.querySelector(`[data-idx="${highlight}"]`);
-    node?.scrollIntoView({ block: "nearest" });
-  }, [highlight, open]);
-
-  function openMenu(seed = "") {
+  function openMenu(searchOnOpen: boolean, seed = "") {
     if (disabled) return;
     window.dispatchEvent(new Event("kassa-select-open"));
-    if (seed) setQuery(seed);
+    focusSearch.current = searchOnOpen;
+    setQuery(seed);
+    setHighlight(seed ? 0 : Math.max(0, all.findIndex((item) => item.value === value)));
     setOpen(true);
+  }
+
+  function moveHighlight(index: number) {
+    setHighlight(index);
+    revealOption(index);
   }
 
   function onNavKey(event: KeyboardEvent<HTMLElement>) {
     if (event.key === "Escape") {
       event.preventDefault();
+      event.stopPropagation();
       close();
-      btnRef.current?.focus();
+      btnRef.current?.focus({ preventScroll: true });
       return;
     }
     if (event.key === "ArrowDown") {
       event.preventDefault();
-      setHighlight((i) => Math.min(flat.length - 1, i + 1));
+      moveHighlight(Math.max(0, Math.min(flat.length - 1, highlight + 1)));
       return;
     }
     if (event.key === "ArrowUp") {
       event.preventDefault();
-      setHighlight((i) => Math.max(0, i - 1));
+      moveHighlight(Math.max(0, highlight - 1));
       return;
     }
     if (event.key === "Home") {
       event.preventDefault();
-      setHighlight(0);
+      moveHighlight(0);
       return;
     }
     if (event.key === "End") {
       event.preventDefault();
-      setHighlight(Math.max(0, flat.length - 1));
+      moveHighlight(Math.max(0, flat.length - 1));
       return;
     }
     if (event.key === "Enter") {
@@ -251,12 +284,12 @@ export function Select({
     if (disabled) return;
     if (event.key === "ArrowDown" || event.key === "Enter" || event.key === " ") {
       event.preventDefault();
-      if (!open) openMenu();
+      if (!open) openMenu(true);
       return;
     }
     if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
       event.preventDefault();
-      openMenu(event.key);
+      if (withSearch) openMenu(true, event.key);
     }
   }
 
@@ -280,7 +313,7 @@ export function Select({
             close();
             return;
           }
-          openMenu();
+          openMenu(!window.matchMedia("(pointer: coarse)").matches);
         }}
         onKeyDown={onTriggerKey}
         className={`input w-full flex items-center gap-2 text-left cursor-pointer ${
@@ -304,8 +337,8 @@ export function Select({
             onKeyDown={onNavKey}
             style={{
               position: "fixed",
-              top: box.up ? undefined : box.top,
-              bottom: box.up ? window.innerHeight - box.top : undefined,
+              top: box.top,
+              translate: box.up ? "0 -100%" : undefined,
               left: box.left,
               width: box.width,
               maxHeight: box.maxH,
@@ -324,8 +357,8 @@ export function Select({
                     onChange={(e) => {
                       setQuery(e.target.value);
                       setHighlight(0);
+                      listRef.current?.scrollTo(0, 0);
                     }}
-                    onKeyDown={onNavKey}
                     placeholder="Найти…"
                     autoComplete="off"
                     autoCorrect="off"
@@ -334,7 +367,7 @@ export function Select({
                 </div>
               </div>
             )}
-            <div className="kassa-select-list">
+            <div ref={listRef} className="kassa-select-list">
               {flat.length === 0 && <div className="kassa-select-empty">Ничего не найдено</div>}
               {visible.map((group, gi) => (
                 <div key={`${group.label}-${gi}`}>
@@ -352,7 +385,7 @@ export function Select({
                         data-idx={idx}
                         aria-selected={active}
                         disabled={item.disabled}
-                        onMouseEnter={() => setHighlight(idx)}
+                        onPointerEnter={(event) => { if (event.pointerType === "mouse") setHighlight(idx); }}
                         onClick={() => !item.disabled && pick(item.value)}
                         className={`kassa-select-item${hi ? " is-hi" : ""}${active ? " is-on" : ""}${
                           item.value === "" && !active ? " is-empty" : ""

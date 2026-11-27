@@ -1,3 +1,4 @@
+import { DatePicker } from "../components/DatePicker";
 import { useCallback, useEffect, useState } from "react";
 import { SlidersHorizontal, Plus, Trash2, Check } from "lucide-react";
 import { api, USE_MOCK } from "../api/client";
@@ -27,9 +28,9 @@ function Workdays() {
   }
   return <div className="card p-4 space-y-3"><div className="text-white font-semibold">Рабочие дни для зарплаты</div>
     <p className="text-sm text-mute">Подтверди фактические рабочие дни, включая дни без продаж. Магазин: {activeStore}. Без подтверждения зарплата не ставится к выплате.</p>
-    <div className="grid sm:grid-cols-2 gap-3"><label>Имя сотрудника<input className="input" value={consultant} onChange={e=>setConsultant(e.target.value)}/></label><label>Дата<input className="input" type="date" value={date} onChange={e=>setDate(e.target.value)}/></label></div>
+    <div className="grid sm:grid-cols-2 gap-3"><label>Имя сотрудника<input className="input" value={consultant} onChange={e=>setConsultant(e.target.value)}/></label><label>Дата<DatePicker aria-label="Дата рабочего дня" className="input" value={date} onChange={setDate} /></label></div>
     <input className="input" aria-label="Основание подтверждения" placeholder="Основание подтверждения или исправления" value={reason} onChange={e=>setReason(e.target.value)}/>
-    <div className="flex gap-2"><Button disabled={busy||!consultant.trim()||reason.trim().length<3||USE_MOCK} onClick={()=>void save(true)}>Подтвердить рабочий день</Button><Button disabled={busy||!consultant.trim()||reason.trim().length<3||USE_MOCK} onClick={()=>void save(false)}>Отметить ошибочную запись</Button></div>
+    <div className="flex gap-2"><Button disabled={busy||!consultant.trim()||!date||reason.trim().length<3||USE_MOCK} onClick={()=>void save(true)}>Подтвердить рабочий день</Button><Button disabled={busy||!consultant.trim()||!date||reason.trim().length<3||USE_MOCK} onClick={()=>void save(false)}>Отметить ошибочную запись</Button></div>
     {error&&<p role="alert" className="text-red-400">{error}</p>}
     {rows.map(row=><div key={row.consultant+row.date} className="text-sm text-mute">{row.date} · {row.consultant} · {row.store} · {row.active?"подтверждён":"снят с расчёта"}</div>)}
   </div>;
@@ -225,24 +226,24 @@ function PayrollEnqueueCard() {
       <div className="flex flex-wrap items-end gap-2">
         <label>
           <div className="field-label">С</div>
-          <input
-            type="date"
-            className="input py-2 w-auto"
+          <DatePicker
+            className="input py-2"
+            aria-label="Период с"
             value={from}
-            onChange={(e) => setFrom(e.target.value)}
+            onChange={setFrom}
           />
         </label>
         <label>
           <div className="field-label">По</div>
-          <input
-            type="date"
-            className="input py-2 w-auto"
+          <DatePicker
+            className="input py-2"
+            aria-label="Период по"
             value={to}
             min={from}
-            onChange={(e) => setTo(e.target.value)}
+            onChange={setTo}
           />
         </label>
-        <Button variant="subtle" disabled={busy || USE_MOCK} onClick={() => void run()}>
+        <Button variant="subtle" disabled={busy || !from || !to || USE_MOCK} onClick={() => void run()}>
           {busy ? "Считаем…" : "Посчитать и поставить задачу"}
         </Button>
       </div>

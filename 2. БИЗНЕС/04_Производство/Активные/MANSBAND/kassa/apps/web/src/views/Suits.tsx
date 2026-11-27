@@ -1,3 +1,4 @@
+import { DatePicker } from "../components/DatePicker";
 import { useEffect, useMemo, useState } from "react";
 import { CalendarClock, Download, Loader2, Search, Shirt } from "lucide-react";
 import { ITEM_LOCATIONS, SUIT_PART_LABEL } from "@kassa/shared";
@@ -233,9 +234,7 @@ export function BreaksTab() {
     if (USE_MOCK) return;
     setLoading(true);
     try {
-      const res = await api.get<{ rows: SuitBreak[] }>(
-        `/suits/breaks?from=${from}&to=${to}`
-      );
+      const res = await api.getQuery<{ rows: SuitBreak[] }>("/suits/breaks", { from, to });
       setRows(res.rows);
     } finally {
       setLoading(false);
@@ -259,16 +258,16 @@ export function BreaksTab() {
         <div className="grid gap-3 sm:grid-cols-[auto_auto_1fr]">
           <label>
             <div className="field-label">С даты</div>
-            <input
-              type="date"
+            <DatePicker
               className="input"
+              aria-label="Период с"
               value={from}
-              onChange={(e) => setFrom(e.target.value)}
+              onChange={setFrom}
             />
           </label>
           <label>
             <div className="field-label">По дату</div>
-            <input type="date" className="input" value={to} onChange={(e) => setTo(e.target.value)} />
+            <DatePicker aria-label="Период по" className="input" value={to} onChange={setTo} />
           </label>
           {canSnapshot && (
             <div className="flex items-end">

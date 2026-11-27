@@ -87,10 +87,14 @@ function visibleZone(root: HTMLElement): { top: number; bottom: number } {
   const view = window.visualViewport;
   const viewTop = view?.offsetTop ?? 0;
   const viewBottom = viewTop + (view?.height ?? window.innerHeight);
+  const scroller = scrollTarget(root);
+  const scrollBounds = isDocumentScroller(scroller) ? null : scroller.getBoundingClientRect();
+  const top = Math.max(viewTop, scrollBounds?.top ?? viewTop);
+  const bottom = Math.min(viewBottom, scrollBounds?.bottom ?? viewBottom);
   const dock = root.querySelector<HTMLElement>(".kassa-action-dock");
   const dockTop = dock?.getBoundingClientRect().top;
-  const limit = dockTop == null || dockTop <= viewTop + 40 ? viewBottom : Math.min(viewBottom, dockTop);
-  return { top: viewTop + 12, bottom: limit - 16 };
+  const limit = dockTop == null || dockTop <= top + 40 ? bottom : Math.min(bottom, dockTop);
+  return { top: top + 12, bottom: limit - 16 };
 }
 
 /** Меню, календарь или чужое окно. Окно самой формы не мешает. Список товара глушит чужие запросы, но не свою подгонку. */

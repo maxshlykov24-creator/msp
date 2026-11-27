@@ -68,6 +68,10 @@
 .catalog-photo-dialog figcaption span { display: block; color: rgb(var(--mute-soft)); font-size: 12px; margin-bottom: 2px; }
 
 :root {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
   --mobile-nav-height: 0px;
   color-scheme: dark;
   --ink-950: 0 0 0;
@@ -133,26 +137,23 @@ body.theme-light {
 html,
 body,
 #root {
-  height: 100%;
+  min-height: 100%;
   max-width: 100%;
-  width: 100%;
-  overflow-x: hidden;
-  /* На телефоне запрещаем горизонтальный свайп всей страницы */
+}
+
+html {
+  overflow-x: clip;
   overscroll-behavior-x: none;
 }
 
-html,
-body {
-  touch-action: pan-y;
-  position: relative;
+.kassa-shell {
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding-inline: var(--safe-left) var(--safe-right);
 }
 
-/* iOS: убрать «резину» влево-вправо у страницы */
-@supports (-webkit-touch-callout: none) {
-  html,
-  body {
-    overflow-x: clip;
-  }
+.kassa-main {
+  overflow-x: clip;
 }
 
 /* Горизонтальный скролл только внутри списка заявок */
@@ -693,10 +694,10 @@ html.theme-light nav {
 }
 
 .kassa-mobile-nav {
-  position: fixed;
-  inset: auto 0 0;
+  position: relative;
   z-index: 130;
   height: var(--mobile-nav-height);
+  padding-bottom: var(--safe-bottom);
   background: rgb(var(--ink-950));
 }
 
@@ -988,31 +989,101 @@ html:not(.theme-light) .rail-mark-img {
   border-color: var(--line-2);
 }
 
+.product-cart-row,
+.product-cart-controls {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+.product-cart-controls {
+  flex-shrink: 0;
+  align-items: center;
+}
+.product-cart-price {
+  min-width: 6rem;
+}
+.product-cart-step {
+  display: grid;
+  place-items: center;
+  min-width: 1.625rem;
+  min-height: 1.625rem;
+}
+
 @media (max-width: 767px) {
   :root {
-    --mobile-nav-height: calc(65px + env(safe-area-inset-bottom, 0px));
+    --mobile-nav-height: calc(57px + var(--safe-bottom));
+  }
+  .kassa-shell {
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
   }
   .kassa-main {
-    padding-bottom: calc(var(--mobile-nav-height) + 1.5rem);
+    --page-gutter: 0.75rem;
+    min-height: 0;
+    overflow: hidden auto;
+    overscroll-behavior-y: contain;
   }
-  .analytics-layout .kassa-main {
-    padding-bottom: calc(var(--mobile-nav-height) + 12px);
+  .kassa-main:has(.kassa-viewport-dock) {
+    padding-bottom: 0;
+  }
+  .kassa-flow-dock.kassa-action-dock {
+    position: sticky;
+    bottom: 0;
+    margin-inline: calc(-1 * var(--page-gutter, 1rem));
+  }
+  .product-cart-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 0.5rem 0.75rem;
+  }
+  .product-cart-name {
+    grid-column: 2;
+  }
+  .product-cart-row:not(:has(> .catalog-photo-thumb)) .product-cart-name {
+    grid-column: 1 / -1;
+  }
+  .product-cart-controls {
+    grid-column: 1 / -1;
+    min-width: 0;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  .product-cart-price {
+    margin-inline-start: auto;
+    min-width: 0;
+  }
+  .product-cart-step {
+    min-width: 2.25rem;
+    min-height: 2.25rem;
+  }
+  .kassa-stage-actions .stage-select-trigger.stage-select-dock {
+    padding-inline: 10px;
+    font-size: 12px;
+  }
+  .kassa-stage-actions > button {
+    padding-inline: 10px;
+    font-size: 13px;
   }
   .kassa-ov {
     bottom: var(--mobile-nav-height);
     align-items: flex-end;
-    padding: 8px;
+    padding: max(8px, var(--safe-top)) max(8px, var(--safe-right)) 8px max(8px, var(--safe-left));
   }
   .kassa-modal {
-    max-height: calc(100dvh - var(--mobile-nav-height) - 16px);
+    max-height: 100%;
     border-radius: 18px 18px 10px 10px;
+  }
+  .kassa-modal-body {
+    --page-gutter: 1rem;
+    padding: 1rem;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .page-in,
   .page-hint,
-  .kassa-select-menu,
   .stat-tile {
     animation: none;
     transform: none;
@@ -1079,11 +1150,16 @@ html:not(.theme-light) .rail-mark-img {
   animation: kassa-select-in 0.16s var(--ease);
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .kassa-select-menu { animation: none; }
+}
+
 html.theme-light .kassa-select-menu {
   box-shadow: var(--shadow-glow), 0 16px 36px -16px rgba(0, 0, 0, 0.18);
 }
 
 .kassa-select-search {
+  flex: none;
   position: relative;
   padding: 2px 2px 8px;
   margin-bottom: 2px;
@@ -1100,7 +1176,10 @@ html.theme-light .kassa-select-menu {
 }
 
 .kassa-select-list {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
+  touch-action: pan-y;
   overscroll-behavior: contain;
   padding: 2px 0;
 }
@@ -1293,7 +1372,26 @@ html.theme-light .date-picker-panel { box-shadow: var(--glass-edge), 0 18px 48px
   color: rgb(var(--mute-soft));
 }
 .date-picker-nav:hover:not(:disabled) { background: rgb(var(--ink-700)); color: rgb(var(--fg)); }
-.date-picker-caption { min-height: 30px; padding: 5px 6px 10px; font-size: 12px; color: rgb(var(--mute)); }
+.date-picker-caption {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0 8px;
+  min-height: 36px;
+  padding: 0 6px 4px;
+  font-size: 12px;
+  color: rgb(var(--mute));
+}
+.date-picker-caption button {
+  min-height: 36px;
+  padding-inline: 8px;
+  border-radius: 6px;
+  color: rgb(var(--fg));
+}
+.date-picker-caption button:hover {
+  background: rgb(var(--ink-700));
+}
 .date-picker-week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; margin-bottom: 3px; }
 .date-picker-week [role="columnheader"] { padding: 8px 0; color: rgb(var(--mute)); text-align: center; font-size: 11px; font-weight: 600; }
 .date-picker-day {
@@ -1320,7 +1418,7 @@ html.theme-light .date-picker-panel { box-shadow: var(--glass-edge), 0 18px 48px
 .date-picker-shortcuts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
 .date-picker-shortcuts button { padding: 8px 2px; min-height: 36px; border-radius: 10px; border: 1px solid rgb(var(--ink-600)); font-size: 12px; font-weight: 500; }
 .date-picker-shortcuts button:hover:not(:disabled) { background: rgb(var(--ink-700)); border-color: rgb(var(--mute)); }
-.date-picker-footer { display: flex; justify-content: space-between; gap: 12px; padding-top: 10px; }
+.date-picker-footer { display: flex; justify-content: flex-end; gap: 12px; padding-top: 10px; }
 .date-picker-footer button { padding: 6px; font-size: 12px; color: rgb(var(--mute)); border-radius: 6px; }
 .date-picker-footer button:hover:not(:disabled) { color: rgb(var(--fg)); }
 @media (prefers-reduced-motion: reduce) { .date-picker-panel { animation: none; } }

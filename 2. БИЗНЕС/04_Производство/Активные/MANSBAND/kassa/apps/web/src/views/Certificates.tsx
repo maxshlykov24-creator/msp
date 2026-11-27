@@ -1,3 +1,4 @@
+import { DatePicker } from "../components/DatePicker";
 import { useState, useMemo, useEffect } from "react";
 import { Ticket, Wallet, Search, Filter, RefreshCw, Loader2 } from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
@@ -195,21 +196,21 @@ export function Certificates() {
         </div>
         <div className="min-w-[140px]">
           <div className="text-[11px] uppercase tracking-wider text-mute mb-1">Действует до · с</div>
-          <input
-            type="date"
+          <DatePicker
             className="input"
+            aria-label="Действует до, начало периода"
             value={validFrom}
-            onChange={(e) => setValidFrom(e.target.value)}
+            onChange={setValidFrom}
           />
         </div>
         <div className="min-w-[140px]">
           <div className="text-[11px] uppercase tracking-wider text-mute mb-1">по</div>
-          <input
-            type="date"
+          <DatePicker
             className="input"
+            aria-label="Действует до, конец периода"
             value={validTo}
             min={validFrom || undefined}
-            onChange={(e) => setValidTo(e.target.value)}
+            onChange={setValidTo}
           />
         </div>
         {hasDateFilter && (

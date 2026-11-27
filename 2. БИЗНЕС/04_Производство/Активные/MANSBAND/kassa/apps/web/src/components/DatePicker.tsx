@@ -1,7 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
-import { Select } from "./Select";
+import { Select, popoverViewport } from "./Select";
 
 type Props = {
   value: string;
@@ -46,6 +46,7 @@ export function DatePicker({ value, onChange, className = "input", disabled, rea
   const selected = parse(value);
   const today = iso(new Date());
   const locked = disabled || readOnly;
+  const canClear = Boolean(value && onChange && !locked && !required);
   const allowed = (date: Date) => (!min || iso(date) >= min) && (!max || iso(date) <= max);
 
   function clamp(date: Date) {
@@ -55,11 +56,16 @@ export function DatePicker({ value, onChange, className = "input", disabled, rea
   }
   function close() {
     setOpen(false);
-    trigger.current?.focus();
+    trigger.current?.focus({ preventScroll: true });
   }
   function pick(date: Date) {
     if (!allowed(date)) return;
     onChange?.(iso(date));
+    close();
+  }
+  function clear() {
+    if (!canClear) return;
+    onChange?.("");
     close();
   }
   function show() {
@@ -70,27 +76,22 @@ export function DatePicker({ value, onChange, className = "input", disabled, rea
   }
   useLayoutEffect(() => {
     if (!open) return;
-    function place() {
+    function place(event?: Event) {
       if (!trigger.current || !panel.current) return;
+      if (event?.target instanceof Node && panel.current.contains(event.target)) return;
       const rect = trigger.current.getBoundingClientRect();
-      const viewport = window.visualViewport;
-      const top = viewport?.offsetTop ?? 0;
-      const navRect = document.querySelector(".kassa-mobile-nav")?.getBoundingClientRect();
-      const viewHeight = viewport?.height ?? window.innerHeight;
-      const height = navRect?.height ? Math.min(viewHeight, navRect.top - top) : viewHeight;
-      const width = Math.min(328, window.innerWidth - 16);
-      const below = top + height - rect.bottom - 8;
-      const above = rect.top - top - 8;
-      const maxHeight = Math.max(0, Math.min(480, height - 16));
-      const panelHeight = Math.min(panel.current.scrollHeight + 2, maxHeight);
-      // Если рядом с полем тесно, сдвигаем весь календарь внутрь экрана,
-      // чтобы быстрые сроки оставались видимыми без прокрутки.
-      const panelTop = below >= panelHeight ? rect.bottom + 8
-        : above >= panelHeight ? rect.top - panelHeight - 8
-        : Math.max(top + 8, top + height - panelHeight - 8);
+      const view = popoverViewport();
+      const width = Math.min(328, view.right - view.left);
+      const maxHeight = Math.max(0, Math.min(480, view.bottom - view.top));
+      const height = Math.min(panel.current.scrollHeight + 2, maxHeight);
+      const below = Math.max(view.top, rect.bottom + 8);
+      const above = Math.min(view.bottom, rect.top - 8);
+      const top = below + height <= view.bottom ? below
+        : above - height >= view.top ? above - height
+        : Math.max(view.top, view.bottom - height);
       setBox({
-        top: panelTop,
-        left: Math.min(Math.max(8, rect.left), window.innerWidth - width - 8),
+        top,
+        left: Math.min(Math.max(view.left, rect.left), view.right - width),
         width,
         maxHeight,
       });
@@ -114,14 +115,14 @@ export function DatePicker({ value, onChange, className = "input", disabled, rea
   }, [open, cursor]);
   useEffect(() => {
     if (!open) return;
-    function outside(event: MouseEvent) {
+    function outside(event: PointerEvent) {
       const node = event.target as HTMLElement;
       // Списки месяца и года рендерятся порталом общего Select.
       if (panel.current?.contains(node) || trigger.current?.contains(node) || node.closest(".kassa-select-menu")) return;
       setOpen(false);
     }
-    document.addEventListener("mousedown", outside);
-    return () => document.removeEventListener("mousedown", outside);
+    document.addEventListener("pointerdown", outside);
+    return () => document.removeEventListener("pointerdown", outside);
   }, [open]);
 
   function onKey(event: KeyboardEvent) {
@@ -150,7 +151,15 @@ export function DatePicker({ value, onChange, className = "input", disabled, rea
         aria-label={ariaLabel} aria-describedby={`${uid}-value`} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? `${uid}-calendar` : undefined}
         className={`${className} date-picker-trigger${open ? " kassa-select-trigger-open" : ""}`}
         onClick={() => open ? close() : show()}
-        onKeyDown={(event) => { if (event.key === "ArrowDown" && !locked) { event.preventDefault(); show(); } }}>
+        onKeyDown={(event) => {
+          if (event.key === "ArrowDown" && !locked) {
+            event.preventDefault();
+            show();
+          } else if ((event.key === "Delete" || event.key === "Backspace") && canClear) {
+            event.preventDefault();
+            clear();
+          }
+        }}>
         <span className={selected ? "" : "date-picker-placeholder"}>{selected ? selected.toLocaleDateString("ru-RU") : "Выбрать дату"}</span>
         <CalendarDays size={17} aria-hidden="true" />
       </button>
@@ -168,7 +177,10 @@ export function DatePicker({ value, onChange, className = "input", disabled, rea
             </div>
             <button type="button" className="date-picker-nav" aria-label="Следующий месяц" disabled={!allowed(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1))} onClick={() => setCursor(clamp(shiftMonth(cursor, 1)))}><ChevronRight size={17} /></button>
           </div>
-          <div className="date-picker-caption" aria-live="polite">{selected ? selected.toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" }) : "Выбери удобную дату"}</div>
+          <div className="date-picker-caption">
+            <span aria-live="polite">{selected ? selected.toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" }) : "Дата не выбрана"}</span>
+            {canClear && <button type="button" onClick={clear}>Очистить дату</button>}
+          </div>
           <div className="date-picker-grid" role="grid" aria-label={`${months[cursor.getMonth()]} ${cursor.getFullYear()}`}>
             <div className="date-picker-week" role="row">{weekdays.map((day) => <span key={day} role="columnheader">{day}</span>)}</div>
             {Array.from({ length: 6 }, (_, week) => <div className="date-picker-week" role="row" key={week}>
@@ -190,7 +202,6 @@ export function DatePicker({ value, onChange, className = "input", disabled, rea
             {[{ label: "Сегодня", date: new Date() }, { label: "Завтра", date: shift(new Date(), 1) }, { label: "+7 дней", date: shift(new Date(), 7) }].map(({ label, date }) => <button type="button" key={label} disabled={!allowed(date)} onClick={() => pick(date)}>{label}</button>)}
           </div>
           <div className="date-picker-footer">
-            <button type="button" disabled={!value || required} onClick={() => { onChange?.(""); close(); }}>Очистить</button>
             <button type="button" onClick={close}>Закрыть</button>
           </div>
         </div>, document.body)}

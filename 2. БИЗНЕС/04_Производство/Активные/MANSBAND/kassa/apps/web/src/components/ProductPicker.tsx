@@ -827,7 +827,7 @@ export function ProductPicker({
       )}
       {!readOnly && <div className="relative" data-reveal-companion="search">
         <div className="flex gap-2">
-          <div className="relative flex-1">
+          <div className="relative min-w-0 flex-1">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-mute" />
             <input
               ref={searchInputRef}
@@ -877,8 +877,8 @@ export function ProductPicker({
                 <div key={p.id} className="flex items-center gap-2 rounded-lg px-3 hover:bg-ink-800">
                   <CatalogPhoto name={p.name} />
                   <button type="button" onClick={() => addProduct(p)}
-                    className="flex flex-1 min-w-0 items-center gap-3 text-left py-2">
-                    <div className="flex-1">
+                    className="grid flex-1 min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 text-left py-2 md:flex">
+                    <div className="col-span-2 min-w-0 flex-1">
                       <div className="text-[14px] text-white break-words whitespace-normal leading-snug">{p.name}</div>
                       <div className="text-[12px] text-mute">
                         {allowedMap
@@ -886,8 +886,8 @@ export function ProductPicker({
                           : [p.sku, `доступно ${fmtQty(p.stock)}`].filter(Boolean).join(" · ")}
                       </div>
                     </div>
-                    {!noPrice && <div className="text-gold-soft font-semibold">{money(p.price)}</div>}
-                    <Plus size={16} className="text-gold" />
+                    {!noPrice && <div className="whitespace-nowrap text-gold-soft font-semibold">{money(p.price)}</div>}
+                    <Plus size={16} className="col-start-2 shrink-0 text-gold" />
                   </button>
                 </div>
               ))}
@@ -925,12 +925,12 @@ export function ProductPicker({
                 const groupIsGift = !!first?.isGift;
                 return (
                   <div key={groupId} data-reveal-product={groupItems.map((part) => part.productId).join(" ")} className="px-3 py-2.5 bg-ink-900/50">
-                    <div className="flex items-start gap-3">
+                    <div className="product-cart-row">
                       <CatalogPhoto name={jacketItem.name} />
                       <button
                         type="button"
                         onClick={() => toggleSuitExpanded(groupId)}
-                        className="flex-1 text-left min-w-0 rounded-lg hover:bg-ink-800/60 -mx-1 px-1 py-0.5 transition flex items-start gap-1.5"
+                        className="product-cart-name flex-1 text-left min-w-0 rounded-lg hover:bg-ink-800/60 -mx-1 px-1 py-0.5 transition flex items-start gap-1.5"
                       >
                         {expanded ? (
                           <ChevronDown size={15} className="mt-0.5 text-mute shrink-0" />
@@ -960,17 +960,19 @@ export function ProductPicker({
                           )}
                         </div>
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => splitSuit(groupId)}
-                        title="Разделить на части — дальше продаются по отдельным ценам МойСклад"
-                        className="inline-flex items-center gap-1 rounded-lg border border-ink-700 px-2 py-1 text-[12px] text-mute hover:text-white hover:border-gold/40 shrink-0 mt-0.5"
-                      >
-                        <Unlink size={13} /> Разделить
-                      </button>
-                      <span className="w-8 text-center text-white text-sm shrink-0 mt-1">×{groupQty}</span>
-                      <div className="w-24 text-right font-semibold text-white shrink-0 mt-0.5">
-                        {money(groupTotal)}
+                      <div className="product-cart-controls">
+                        <button
+                          type="button"
+                          onClick={() => splitSuit(groupId)}
+                          title="Разделить на части — дальше продаются по отдельным ценам МойСклад"
+                          className="inline-flex items-center gap-1 rounded-lg border border-ink-700 px-2 py-1 text-[12px] text-mute hover:text-white hover:border-gold/40 shrink-0 mt-0.5"
+                        >
+                          <Unlink size={13} /> Разделить
+                        </button>
+                        <span className="w-8 text-center text-white text-sm shrink-0 mt-1">×{groupQty}</span>
+                        <div className="product-cart-price text-right font-semibold text-white shrink-0 mt-0.5">
+                          {money(groupTotal)}
+                        </div>
                       </div>
                     </div>
                     {expanded && (
@@ -988,7 +990,7 @@ export function ProductPicker({
                           return (
                             <div key={it.productId} className="text-[12px] text-mute flex justify-between gap-2">
                               <CatalogPhoto name={it.name} />
-                              <span className={`flex-1 break-words ${odd ? "text-amber-200" : ""}`}>{it.name}</span>
+                              <span className={`min-w-0 flex-1 break-words ${odd ? "text-amber-200" : ""}`}>{it.name}</span>
                               <span className="shrink-0 text-white">{money(it.price)}</span>
                             </div>
                           );
@@ -1025,12 +1027,12 @@ export function ProductPicker({
               const avail = availableById[it.productId];
               return (
                 <div key={itemKey(it)} data-reveal-product={it.productId} className="px-3 py-2.5 bg-ink-900/50">
-                  <div className="flex items-start gap-3">
+                  <div className="product-cart-row">
                     <CatalogPhoto name={it.name} />
                     <button
                       type="button"
                       onClick={() => openStockModal(it)}
-                      className="flex-1 text-left min-w-0 rounded-lg hover:bg-ink-800/60 -mx-1 px-1 py-0.5 transition"
+                      className="product-cart-name flex-1 text-left min-w-0 rounded-lg hover:bg-ink-800/60 -mx-1 px-1 py-0.5 transition"
                       title="Остатки по складам"
                     >
                       <div className="text-[14px] text-white break-words whitespace-normal leading-snug">{it.name}</div>
@@ -1056,61 +1058,69 @@ export function ProductPicker({
                         </div>
                       )}
                     </button>
-                    {!readOnly && it.suitGroupId && it.suitSplit && (
-                      <button
-                        type="button"
-                        onClick={() => mergeSuit(it.suitGroupId!)}
-                        title="Собрать костюм обратно — цена матрицы подтянется автоматически"
-                        className="inline-flex items-center gap-1 rounded-lg border border-ink-700 px-2 py-1 text-[12px] text-mute hover:text-white hover:border-gold/40 shrink-0 mt-0.5"
-                      >
-                        <Link2 size={13} /> Собрать костюм
-                      </button>
-                    )}
-                    {!readOnly && (
-                      <div className="flex items-center gap-1 bg-ink-800 rounded-lg p-1 shrink-0 mt-0.5">
+                    <div className="product-cart-controls">
+                      {!readOnly && it.suitGroupId && it.suitSplit && (
                         <button
-                          onClick={() => {
-                            if (it.qty <= 1) {
-                              onChange(items.filter((x) => itemKey(x) !== itemKey(it)));
-                              return;
-                            }
-                            update(itemKey(it), { qty: it.qty - 1 });
-                          }}
-                          className="px-1.5 text-mute hover:text-white"
+                          type="button"
+                          onClick={() => mergeSuit(it.suitGroupId!)}
+                          title="Собрать костюм обратно — цена матрицы подтянется автоматически"
+                          className="inline-flex items-center gap-1 rounded-lg border border-ink-700 px-2 py-1 text-[12px] text-mute hover:text-white hover:border-gold/40 shrink-0 mt-0.5"
                         >
-                          <Minus size={14} />
+                          <Link2 size={13} /> Собрать костюм
                         </button>
-                        <span className="w-6 text-center text-white text-sm">{it.qty}</span>
-                        <button
-                          onClick={() => {
-                            const max = maxQtyFor(it.productId);
-                            const next = it.qty + 1;
-                            if (max != null && next > max) {
-                              flash(`В исходной сделке было только ${max} шт.`);
-                              return;
-                            }
-                            update(itemKey(it), { qty: next });
-                          }}
-                          className="px-1.5 text-mute hover:text-white"
-                        >
-                          <Plus size={14} />
-                        </button>
+                      )}
+                      {!readOnly && (
+                        <div className="flex items-center gap-1 bg-ink-800 rounded-lg p-1 shrink-0 mt-0.5">
+                          <button
+                            onClick={() => {
+                              if (it.qty <= 1) {
+                                onChange(items.filter((x) => itemKey(x) !== itemKey(it)));
+                                return;
+                              }
+                              update(itemKey(it), { qty: it.qty - 1 });
+                            }}
+                            type="button"
+                            aria-label="Уменьшить количество"
+                            className="product-cart-step text-mute hover:text-white"
+                          >
+                            <Minus size={14} />
+                          </button>
+                          <span className="w-6 text-center text-white text-sm">{it.qty}</span>
+                          <button
+                            onClick={() => {
+                              const max = maxQtyFor(it.productId);
+                              const next = it.qty + 1;
+                              if (max != null && next > max) {
+                                flash(`В исходной сделке было только ${max} шт.`);
+                                return;
+                              }
+                              update(itemKey(it), { qty: next });
+                            }}
+                            type="button"
+                            aria-label="Увеличить количество"
+                            className="product-cart-step text-mute hover:text-white"
+                          >
+                            <Plus size={14} />
+                          </button>
+                        </div>
+                      )}
+                      {readOnly && (
+                        <span className="w-8 text-center text-white text-sm shrink-0 mt-1">×{it.qty}</span>
+                      )}
+                      <div className="product-cart-price text-right font-semibold text-white shrink-0 mt-0.5">
+                        {it.noPrice ? "—" : money(lineTotal(it))}
                       </div>
-                    )}
-                    {readOnly && (
-                      <span className="w-8 text-center text-white text-sm shrink-0 mt-1">×{it.qty}</span>
-                    )}
-                    <div className="w-24 text-right font-semibold text-white shrink-0 mt-0.5">
-                      {it.noPrice ? "—" : money(lineTotal(it))}
+                      {!readOnly && (
+                        <button
+                          onClick={() => onChange(items.filter((x) => itemKey(x) !== itemKey(it)))}
+                          type="button"
+                          aria-label="Удалить товар"
+                          className="product-cart-step text-mute hover:text-white shrink-0"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      )}
                     </div>
-                    {!readOnly && (
-                      <button
-                        onClick={() => onChange(items.filter((x) => itemKey(x) !== itemKey(it)))}
-                        className="text-mute hover:text-white shrink-0 mt-0.5"
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    )}
                   </div>
                   {!readOnly && !it.noPrice && (
                     <div className="flex flex-wrap gap-2 mt-2 items-center">

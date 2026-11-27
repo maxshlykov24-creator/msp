@@ -1,3 +1,4 @@
+import { DatePicker } from "../components/DatePicker";
 import { useEffect, useMemo, useState } from "react";
 import { isDealOverdue, isDealRelevantToUser, type Task } from "@kassa/shared";
 import { useAuth } from "../auth/AuthContext";
@@ -412,11 +413,11 @@ export function DealsBoard({
             </div>
             <div className="min-w-[120px]">
               <div className="field-label">Создана с</div>
-              <input type="date" className="input py-2 text-sm" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+              <DatePicker aria-label="Создана с" className="input py-2 text-sm" value={dateFrom} onChange={setDateFrom} />
             </div>
             <div className="min-w-[120px]">
               <div className="field-label">по</div>
-              <input type="date" className="input py-2 text-sm" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+              <DatePicker aria-label="Создана по" className="input py-2 text-sm" value={dateTo} onChange={setDateTo} />
             </div>
           </div>
         )}
